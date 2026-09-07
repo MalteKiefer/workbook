@@ -1,4 +1,5 @@
 pub mod attachments;
+pub mod cli;
 pub mod clipboard;
 pub mod commands;
 pub mod config;
@@ -45,8 +46,13 @@ pub fn run() {
     let hotkey_config = app_config.hotkeys.clone();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            window::show_and_focus_main(app);
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let action = cli::parse_args(&argv);
+            if action == cli::CliAction::None {
+                window::show_and_focus_main(app);
+            } else {
+                cli::dispatch(app, action);
+            }
         }))
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(AppState { pool, config: Mutex::new(app_config), previous_foreground: Mutex::new(None) })
@@ -82,6 +88,9 @@ pub fn run() {
                 eprintln!("Globale Hotkeys konnten nicht registriert werden: {e}");
             }
 
+            let first_launch_args: Vec<String> = std::env::args().collect();
+            cli::dispatch(app.handle(), cli::parse_args(&first_launch_args));
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -102,6 +111,7 @@ pub fn run() {
             commands::entries::format_timestamp_for_display,
             commands::quickcapture::get_last_selection,
             commands::quickcapture::quick_capture_close,
+            commands::quickcapture::open_quick_capture_with_context,
             commands::search::search_entries,
             commands::search::search_directory,
         ])

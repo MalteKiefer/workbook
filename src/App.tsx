@@ -1,6 +1,10 @@
 import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
 import { useAppStore } from "./state/appStore";
 import CustomerListView from "./components/CustomerListView";
+import SystemListView from "./components/SystemListView";
+import JournalView from "./components/JournalView";
+import CommandPalette from "./components/CommandPalette";
+import ShortcutOverview from "./components/ShortcutOverview";
 
 export default function App() {
   useGlobalHotkeys();
@@ -9,8 +13,10 @@ export default function App() {
   return (
     <main style={{ fontFamily: "sans-serif", padding: "1rem" }}>
       {view === "customers" && <CustomerListView />}
-      {view === "systems" && <p>Systemliste folgt (Phase 4b).</p>}
-      {view === "journal" && <p>Journal folgt (Phase 4d).</p>}
+      {view === "systems" && <SystemListView />}
+      {view === "journal" && <JournalView />}
+      <CommandPalette />
+      <ShortcutOverview />
     </main>
   );
 }
