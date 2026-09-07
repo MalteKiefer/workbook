@@ -7,18 +7,20 @@ interface ShortcutRow {
   description: string;
 }
 
-// Static content mirroring the spec's "Tastaturbelegung" table.
+// Static content — kept in sync with the real per-view bindings (see
+// SHORTCUTS.md at the repo root for the fully detailed, view-by-view
+// reference; this is the compact in-app version).
 const SHORTCUTS: ShortcutRow[] = [
   { keys: "Strg+K", description: "Command Palette öffnen" },
-  { keys: "Strg+N", description: "Neuer Eintrag im aktuellen Kontext" },
-  { keys: "Strg+S", description: "Speichern" },
-  { keys: "/", description: "Suche fokussieren" },
+  { keys: "Strg+N", description: "Schnellerfassungsfenster öffnen — für einen Eintrag im Hauptfenster: Strg+K → „Neuer Eintrag“" },
+  { keys: "Strg+S", description: "Speichern (im geöffneten Editor)" },
+  { keys: "/", description: "Noch nicht gebunden" },
   { keys: "g c", description: "Zu Kundenliste" },
   { keys: "g s", description: "Zu Systemliste des aktuellen Kunden" },
   { keys: "g j", description: "Zum Journal" },
   { keys: "j / k", description: "Liste abwärts / aufwärts" },
-  { keys: "Enter", description: "Auswählen/öffnen" },
-  { keys: "e", description: "Ausgewählten Eintrag bearbeiten" },
+  { keys: "Enter", description: "Auswählen/öffnen — wirkt je nach Ansicht unterschiedlich (siehe SHORTCUTS.md)" },
+  { keys: "e", description: "Ausgewählten Eintrag/Kunde/System bearbeiten" },
   { keys: "Strg+V", description: "Screenshot aus Zwischenablage als Anhang" },
   { keys: "Esc", description: "Abbrechen, Ebene zurück" },
   { keys: "?", description: "Diese Shortcut-Übersicht" },

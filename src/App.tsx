@@ -6,6 +6,7 @@ import JournalView from "./components/JournalView";
 import CommandPalette from "./components/CommandPalette";
 import ShortcutOverview from "./components/ShortcutOverview";
 import EntryEditor from "./components/EntryEditor";
+import ExportDialog from "./components/ExportDialog";
 
 export default function App() {
   useGlobalHotkeys();
@@ -19,6 +20,7 @@ export default function App() {
       <CommandPalette />
       <ShortcutOverview />
       <EntryEditor />
+      <ExportDialog />
     </main>
   );
 }
