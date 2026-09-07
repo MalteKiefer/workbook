@@ -63,7 +63,7 @@ WindowsAndMessaging, Windows-only), `arboard` + `image` (clipboard image → PNG
   `pub fn restore_foreground(handle: &ForegroundHandle)`,
   `pub fn foreground_window_title() -> Option<String>`
 
-- [ ] **Step 1: `windows`-Crate hinzufügen**
+- [x] **Step 1: `windows`-Crate hinzufügen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -72,7 +72,7 @@ cargo add windows --features Win32_Foundation,Win32_UI_WindowsAndMessaging
 cd ..
 ```
 
-- [ ] **Step 2: Windows-Implementierung schreiben**
+- [x] **Step 2: Windows-Implementierung schreiben**
 
 ```rust
 // src-tauri/src/context_capture/windows.rs
@@ -116,7 +116,7 @@ pub fn foreground_window_title() -> Option<String> {
 `*mut c_void` kapselt und damit nicht `Send`/`Sync` ist) — `AppState` muss zwischen
 Tauri-Threads wandern können.
 
-- [ ] **Step 3: Stub für andere Plattformen schreiben**
+- [x] **Step 3: Stub für andere Plattformen schreiben**
 
 ```rust
 // src-tauri/src/context_capture/unsupported.rs
@@ -134,7 +134,7 @@ pub fn foreground_window_title() -> Option<String> {
 }
 ```
 
-- [ ] **Step 4: `mod.rs` mit Plattform-Weiche**
+- [x] **Step 4: `mod.rs` mit Plattform-Weiche**
 
 ```rust
 // src-tauri/src/context_capture/mod.rs
@@ -149,7 +149,7 @@ mod unsupported;
 pub use unsupported::{capture_foreground, foreground_window_title, restore_foreground, ForegroundHandle};
 ```
 
-- [ ] **Step 5: In `lib.rs` einhängen, Build verifizieren**
+- [x] **Step 5: In `lib.rs` einhängen, Build verifizieren**
 
 ```rust
 // src-tauri/src/lib.rs — Modul-Deklaration ergänzen
@@ -164,7 +164,7 @@ cd src-tauri && cargo build --bin wartungsdoku && cd ..
 Expected: kompiliert (Windows-Zweig aktiv auf diesem Rechner; `unsupported.rs` wird auf
 diesem Host nicht mitkompiliert — das ist die oben genannte Grenze).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/context_capture src-tauri/src/lib.rs
@@ -186,7 +186,7 @@ git commit -m "feat: add platform foreground-window capture (Windows real, other
 - Produces: neues `AppState`-Feld `previous_foreground: Mutex<Option<context_capture::ForegroundHandle>>`,
   `#[tauri::command] quick_capture_close`, `QuickCaptureActivated.context_note: Option<String>`
 
-- [ ] **Step 1: `AppState` erweitern**
+- [x] **Step 1: `AppState` erweitern**
 
 ```rust
 // src-tauri/src/lib.rs — Struct-Definition
@@ -202,7 +202,7 @@ pub struct AppState {
         .manage(AppState { pool, config: Mutex::new(app_config), previous_foreground: Mutex::new(None) })
 ```
 
-- [ ] **Step 2: `quickcapture::open` um Fokus-Erfassung und Kontext-Notiz erweitern**
+- [x] **Step 2: `quickcapture::open` um Fokus-Erfassung und Kontext-Notiz erweitern**
 
 ```rust
 // src-tauri/src/quickcapture.rs — komplett ersetzen
@@ -249,7 +249,7 @@ pub fn open(app: &AppHandle) -> Result<(), AppError> {
 }
 ```
 
-- [ ] **Step 3: `quick_capture_close`-Command ergänzen**
+- [x] **Step 3: `quick_capture_close`-Command ergänzen**
 
 ```rust
 // src-tauri/src/commands/quickcapture.rs — ergänzen
@@ -268,7 +268,7 @@ pub fn quick_capture_close(app: AppHandle, state: State<AppState>) -> Result<(),
 }
 ```
 
-- [ ] **Step 4: Command registrieren**
+- [x] **Step 4: Command registrieren**
 
 ```rust
 // src-tauri/src/lib.rs — invoke_handler-Liste ergänzen
@@ -276,7 +276,7 @@ pub fn quick_capture_close(app: AppHandle, state: State<AppState>) -> Result<(),
             commands::quickcapture::quick_capture_close,
 ```
 
-- [ ] **Step 5: Frontend auf den neuen Command umstellen, Kontext-Notiz übernehmen**
+- [x] **Step 5: Frontend auf den neuen Command umstellen, Kontext-Notiz übernehmen**
 
 ```tsx
 // src/quick-capture/QuickCapture.tsx — Ersetzungen:
@@ -293,7 +293,7 @@ await invoke("quick_capture_close");
 //    onFocusChanged-Listener gebraucht — Import bleibt bestehen.
 ```
 
-- [ ] **Step 6: Bauen, testen**
+- [x] **Step 6: Bauen, testen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -303,7 +303,7 @@ npm run build
 
 Expected: Build grün, alle 59 Rust-Tests grün, Frontend-Build grün.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src-tauri/src/lib.rs src-tauri/src/quickcapture.rs src-tauri/src/commands/quickcapture.rs src/quick-capture/QuickCapture.tsx
@@ -326,7 +326,7 @@ git commit -m "feat: capture and restore foreground focus, wire optional context
   `pub fn quickcapture::open_with_clipboard_screenshot(app: &AppHandle) -> Result<(), AppError>`,
   Tauri-Event `"quick-capture-paste-image"` mit Payload `{ bytes_base64, mime_type }`
 
-- [ ] **Step 1: Abhängigkeiten hinzufügen**
+- [x] **Step 1: Abhängigkeiten hinzufügen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -336,7 +336,7 @@ cargo add image
 cd ..
 ```
 
-- [ ] **Step 2: `clipboard.rs` schreiben**
+- [x] **Step 2: `clipboard.rs` schreiben**
 
 ```rust
 // src-tauri/src/clipboard.rs
@@ -370,7 +370,7 @@ Kein automatisierter Test möglich — braucht eine echte, mit einem Bild gefül
 OS-Zwischenablage. Verifikation erfolgt manuell (Nutzer kopiert ein Bild, drückt
 `Strg+Alt+S`).
 
-- [ ] **Step 3: `quickcapture::open_with_clipboard_screenshot` ergänzen**
+- [x] **Step 3: `quickcapture::open_with_clipboard_screenshot` ergänzen**
 
 ```rust
 // src-tauri/src/quickcapture.rs — ergänzen
@@ -397,14 +397,14 @@ pub fn open_with_clipboard_screenshot(app: &AppHandle) -> Result<(), AppError> {
 }
 ```
 
-- [ ] **Step 4: Modul einhängen**
+- [x] **Step 4: Modul einhängen**
 
 ```rust
 // src-tauri/src/lib.rs — Modul-Deklaration ergänzen
 pub mod clipboard;
 ```
 
-- [ ] **Step 5: Frontend-Listener für automatisch eingefügtes Bild**
+- [x] **Step 5: Frontend-Listener für automatisch eingefügtes Bild**
 
 ```tsx
 // src/quick-capture/QuickCapture.tsx — neuer Effekt, z. B. nach dem
@@ -423,7 +423,7 @@ useEffect(() => {
 }, []);
 ```
 
-- [ ] **Step 6: Bauen, testen**
+- [x] **Step 6: Bauen, testen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -433,7 +433,7 @@ npm run build
 
 Expected: Build grün, 59 Rust-Tests weiterhin grün, Frontend-Build grün.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/clipboard.rs src-tauri/src/lib.rs src-tauri/src/quickcapture.rs src/quick-capture/QuickCapture.tsx
@@ -452,14 +452,14 @@ git commit -m "feat: add clipboard-screenshot capture for the no-focused-webview
 - Consumes: `config::HotkeyConfig`, `quickcapture::open`, `quickcapture::open_with_clipboard_screenshot`, `window::show_and_focus_main`
 - Produces: `pub fn register(app: &tauri::AppHandle, hotkeys: &config::HotkeyConfig) -> Result<(), AppError>`
 
-- [ ] **Step 1: Abhängigkeit hinzufügen**
+- [x] **Step 1: Abhängigkeit hinzufügen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
 cd src-tauri && cargo add tauri-plugin-global-shortcut && cd ..
 ```
 
-- [ ] **Step 2: `hotkeys.rs` schreiben**
+- [x] **Step 2: `hotkeys.rs` schreiben**
 
 ```rust
 // src-tauri/src/hotkeys.rs
@@ -527,7 +527,7 @@ bereits ein `&mut App`/`&AppHandle`-kompatibler Typ mit derselben Methode — be
 sind in der offiziellen Tauri-Dokumentation für dynamische Plugin-Registrierung im
 Setup-Callback belegt.
 
-- [ ] **Step 3: In `lib.rs` einhängen und mit der geladenen Konfiguration aufrufen**
+- [x] **Step 3: In `lib.rs` einhängen und mit der geladenen Konfiguration aufrufen**
 
 ```rust
 // src-tauri/src/lib.rs — Modul-Deklaration ergänzen
@@ -578,7 +578,7 @@ pub mod hotkeys;
         })
 ```
 
-- [ ] **Step 4: Bauen, testen**
+- [x] **Step 4: Bauen, testen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -589,7 +589,7 @@ Expected: Build grün, alle 59 Rust-Tests grün (Hotkey-Registrierung selbst ist
 unit-testbar — braucht einen echten `AppHandle` mit laufendem Event-Loop; Verifikation
 im End-to-End-Smoke-Test, Task 5).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/hotkeys.rs src-tauri/src/lib.rs
@@ -600,7 +600,7 @@ git commit -m "feat: register configurable global hotkeys for quick-capture, sea
 
 ## Task 5: End-to-End-Verifikation
 
-- [ ] **Step 1: App real starten, Boot-Log prüfen**
+- [x] **Step 1: App real starten, Boot-Log prüfen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -616,7 +616,7 @@ Expected: kein `panic!`/`expect`-Abbruch; insbesondere keine Meldung
 aus `HotkeyConfig::default()` lassen sich nicht parsen — dann Format prüfen, nicht
 ignorieren).
 
-- [ ] **Step 2: Aufräumen, Plan committen**
+- [x] **Step 2: Aufräumen, Plan committen**
 
 ```bash
 rm -rf .smoke-test-data smoke-test.log
@@ -631,6 +631,17 @@ Fokus-Rückgabe an die zuvor aktive Anwendung — dieses Environment kann native
 OS-Fenster nicht interaktiv bedienen.
 
 ---
+
+## Ausführungsnotizen
+
+- **Task 4, im Smoke-Test entdeckt**: `Strg+Alt+Leertaste` war auf diesem Rechner bereits
+  von einer anderen Anwendung belegt. `with_shortcuts([...])` registriert alle
+  konfigurierten Hotkeys als eine atomare Sammel-Operation — ein einzelner
+  OS-Konflikt hätte damit stillschweigend alle drei Hotkeys deaktiviert, nicht nur den
+  betroffenen. Behoben: Plugin wird nur mit `.with_handler(...)` gebaut, jeder Hotkey
+  danach einzeln über `GlobalShortcutExt::register()` registriert — ein Konflikt
+  betrifft jetzt nachweislich nur den einen Hotkey (im Log bestätigt: nur
+  "Schnellerfassung" meldete den Konflikt, App lief weiter).
 
 ## Self-Review (durchgeführt vor Ausführung)
 
