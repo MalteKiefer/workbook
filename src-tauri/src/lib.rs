@@ -10,6 +10,8 @@ pub use error::AppError;
 
 use std::sync::Mutex;
 
+use tauri::Manager;
+
 use crate::config::Config;
 use crate::db::pool::{build_pool, DbPool};
 
@@ -35,12 +37,26 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            window::show_and_focus_main(app);
+        }))
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(AppState { pool, config: Mutex::new(app_config) })
         .setup(|app| {
             window::install_hide_on_close(app.handle());
             if let Err(e) = tray::build_tray(app.handle()) {
                 eprintln!("Tray konnte nicht eingerichtet werden: {e}");
             }
+
+            let state = app.state::<AppState>();
+            let autostart_enabled = state.config.lock().expect("Config-Mutex vergiftet").autostart_enabled;
+            use tauri_plugin_autostart::ManagerExt;
+            let autolaunch = app.autolaunch();
+            let sync_result = if autostart_enabled { autolaunch.enable() } else { autolaunch.disable() };
+            if let Err(e) = sync_result {
+                eprintln!("Autostart konnte nicht synchronisiert werden: {e}");
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
