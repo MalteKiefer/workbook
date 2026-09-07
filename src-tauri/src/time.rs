@@ -66,6 +66,16 @@ pub fn parse_temporal_input(
     Err(AppError::InvalidTimestamp(trimmed.to_string()))
 }
 
+pub fn format_timestamp_for_display(utc: &str, tz_name: &str) -> Result<String, AppError> {
+    let parsed = DateTime::parse_from_rfc3339(utc)
+        .map_err(|e| AppError::InvalidTimestamp(format!("{utc}: {e}")))?
+        .with_timezone(&Utc);
+    let tz: Tz = tz_name
+        .parse()
+        .map_err(|_| AppError::Timezone(format!("unbekannte Zone: {tz_name}")))?;
+    Ok(parsed.with_timezone(&tz).format("%d.%m.%Y %H:%M %Z").to_string())
+}
+
 fn localize(
     date: NaiveDate,
     hour: u32,
@@ -159,5 +169,17 @@ mod tests {
     fn invalid_calendar_date_is_rejected() {
         let result = parse_temporal_input("31.02.2026 10:00", &berlin(), fixed_now());
         assert!(matches!(result, Err(AppError::InvalidTimestamp(_))));
+    }
+
+    #[test]
+    fn formats_utc_timestamp_in_target_zone_with_abbreviation() {
+        let display = format_timestamp_for_display("2026-09-07T12:32:00.000Z", "Europe/Berlin").unwrap();
+        assert!(display.starts_with("07.09.2026 14:32"));
+    }
+
+    #[test]
+    fn rejects_invalid_timezone_name() {
+        let result = format_timestamp_for_display("2026-09-07T12:32:00.000Z", "Not/AZone");
+        assert!(matches!(result, Err(AppError::Timezone(_))));
     }
 }
