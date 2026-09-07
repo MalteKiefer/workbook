@@ -35,7 +35,7 @@ and tray both operate on the `"main"` window via `app.get_webview_window("main")
 **Files:**
 - Modify: `src-tauri/Cargo.toml`
 
-- [ ] **Step 1: `tray-icon`-Feature und Plugins hinzufügen**
+- [x] **Step 1: `tray-icon`-Feature und Plugins hinzufügen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -46,7 +46,7 @@ cargo add tauri-plugin-autostart
 cd ..
 ```
 
-- [ ] **Step 2: Build verifizieren**
+- [x] **Step 2: Build verifizieren**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -55,7 +55,7 @@ cd src-tauri && cargo build --bin wartungsdoku && cd ..
 
 Expected: kompiliert (Plugins noch nicht registriert, nur Abhängigkeiten vorhanden).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock
@@ -73,7 +73,7 @@ git commit -m "feat: add tray-icon feature and single-instance/autostart plugin 
 **Interfaces:**
 - Produces: `pub fn show_and_focus_main(app: &tauri::AppHandle)`, `pub fn install_hide_on_close(app: &tauri::AppHandle)`
 
-- [ ] **Step 1: `window.rs` schreiben**
+- [x] **Step 1: `window.rs` schreiben**
 
 ```rust
 // src-tauri/src/window.rs
@@ -106,7 +106,7 @@ pub fn install_hide_on_close(app: &AppHandle) {
 Kein isolierter Unit-Test möglich (braucht echtes `AppHandle`/Fenster) — Verifikation
 erfolgt in Task 5 über den echten App-Start.
 
-- [ ] **Step 2: In `lib.rs` im `.setup()`-Callback verdrahten**
+- [x] **Step 2: In `lib.rs` im `.setup()`-Callback verdrahten**
 
 ```rust
 // src-tauri/src/lib.rs — Modul-Deklaration ergänzen
@@ -121,14 +121,14 @@ pub mod window;
         })
 ```
 
-- [ ] **Step 3: Build verifizieren**
+- [x] **Step 3: Build verifizieren**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
 cd src-tauri && cargo build --bin wartungsdoku && cd ..
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/window.rs src-tauri/src/lib.rs
@@ -147,7 +147,7 @@ git commit -m "feat: hide main window on close instead of quitting"
 - Consumes: `window::show_and_focus_main` (Task 2)
 - Produces: `pub fn build_tray(app: &tauri::AppHandle) -> Result<(), AppError>`
 
-- [ ] **Step 1: `tray.rs` schreiben**
+- [x] **Step 1: `tray.rs` schreiben**
 
 ```rust
 // src-tauri/src/tray.rs
@@ -195,7 +195,7 @@ pub fn build_tray(app: &AppHandle) -> Result<(), AppError> {
 }
 ```
 
-- [ ] **Step 2: In `lib.rs` einhängen**
+- [x] **Step 2: In `lib.rs` einhängen**
 
 ```rust
 // src-tauri/src/lib.rs — Modul-Deklaration ergänzen
@@ -213,14 +213,14 @@ pub mod tray;
         })
 ```
 
-- [ ] **Step 3: Build verifizieren**
+- [x] **Step 3: Build verifizieren**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
 cd src-tauri && cargo build --bin wartungsdoku && cd ..
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/tray.rs src-tauri/src/lib.rs
@@ -237,7 +237,7 @@ git commit -m "feat: add tray icon with show/quit menu"
 **Interfaces:**
 - Consumes: `window::show_and_focus_main` (Task 2), `config::Config.autostart_enabled` (Phase 1)
 
-- [ ] **Step 1: Single-Instance-Plugin als erstes Plugin registrieren**
+- [x] **Step 1: Single-Instance-Plugin als erstes Plugin registrieren**
 
 ```rust
 // src-tauri/src/lib.rs — .manage(...) direkt VORAUSGEHEND einfügen (muss vor jedem
@@ -290,7 +290,7 @@ danach erst `.setup()`. Der Codeblock oben zeigt die *gewünschte Logik*; beim
 Einfügen in `lib.rs` steht `.plugin(tauri_plugin_autostart::Builder::new().build())`
 direkt nach `.manage(...)`, vor `.setup(...)`.)
 
-- [ ] **Step 2: Endgültige Reihenfolge in `run()` herstellen**
+- [x] **Step 2: Endgültige Reihenfolge in `run()` herstellen**
 
 ```rust
 // src-tauri/src/lib.rs — vollständiger run()-Körper ab tauri::Builder::default()
@@ -341,7 +341,7 @@ direkt nach `.manage(...)`, vor `.setup(...)`.)
         .expect("error while running tauri application");
 ```
 
-- [ ] **Step 3: Build verifizieren**
+- [x] **Step 3: Build verifizieren**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -351,7 +351,7 @@ cd src-tauri && cargo build --bin wartungsdoku && cargo test && cd ..
 Expected: Build grün; alle 45 Rust-Tests weiterhin grün (an der Datenschicht ändert
 sich nichts).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/lib.rs
@@ -364,7 +364,7 @@ git commit -m "feat: register single-instance plugin and sync autostart with con
 
 **Files:** keine neuen.
 
-- [ ] **Step 1: App real starten, Boot-Log prüfen**
+- [x] **Step 1: App real starten, Boot-Log prüfen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -380,13 +380,13 @@ Expected: kein `panic!`/`expect`-Abbruch; kein `"Tray konnte nicht eingerichtet
 werden"` oder `"Autostart konnte nicht synchronisiert werden"` im Log (beides wäre
 sichtbar, aber nicht fatal, falls doch — dann Ursache klären statt ignorieren).
 
-- [ ] **Step 2: Aufräumen**
+- [x] **Step 2: Aufräumen**
 
 ```bash
 rm -rf .smoke-test-data smoke-test.log
 ```
 
-- [ ] **Step 3: Plan-Datei mit abgehaktem Stand committen**
+- [x] **Step 3: Plan-Datei mit abgehaktem Stand committen**
 
 ```bash
 git add docs/superpowers/plans/2026-09-07-wartungsdoku-plan-phase3a.md
