@@ -1,0 +1,17 @@
+# Node / Frontend
+node_modules/
+dist/
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
+
+# Rust
+src-tauri/target/
+
+# Runtime data (never committed — see docs/superpowers/specs data layout)
+*.db
+*.db-wal
+*.db-shm
+*.db.bak-*
+.smoke-test-data/
+smoke-test.log
