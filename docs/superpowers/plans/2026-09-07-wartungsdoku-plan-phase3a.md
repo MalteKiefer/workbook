@@ -395,6 +395,11 @@ git commit -m "docs: mark Phase 3a plan tasks complete"
 
 ---
 
+## Ausführungsnotizen
+
+- **Task 3**: `use tauri::Manager` unnötig in `tray.rs` (Compiler-Warnung) — entfernt.
+- **Task 4**: zwei Compile-Fehler beim Verdrahten von Autostart in `.setup()`: (1) `app.state::<AppState>()` brauchte `use tauri::Manager;` im Scope, (2) `MutexGuard`-Temporary lebte nicht lang genug am Block-Ende — behoben durch Zwischenbindung von `autostart_enabled` statt Rückgabe des Guard-Feldzugriffs direkt aus dem Block.
+
 ## Self-Review (durchgeführt vor Ausführung)
 
 - **Spec-Abdeckung**: Tray-Icon mit Menü ✓, Fenster-schließen-versteckt ✓, Single-Instance mit Fokus-Signal ✓, Autostart synchronisiert mit Konfiguration ✓.
