@@ -26,7 +26,22 @@ pub fn create_entry(state: State<AppState>, input: NewEntry) -> Result<Entry, Ap
     let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
     let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
-    entries::create(&conn, &data_dir, input, &tz)
+    let entry = entries::create(&conn, &data_dir, input, &tz)?;
+
+    let mut config = state.config.lock().expect("Config-Mutex vergiftet");
+    config.last_customer_id = Some(entry.customer_id);
+    config.last_system_id = entry.system_id;
+    let config_path = config.data_dir.join("config.toml");
+    if let Err(e) = config.save(&config_path) {
+        eprintln!("Letzte Auswahl konnte nicht gespeichert werden: {e}");
+    }
+
+    Ok(entry)
+}
+
+#[tauri::command]
+pub fn format_timestamp_for_display(utc: String, tz: String) -> Result<String, AppError> {
+    time::format_timestamp_for_display(&utc, &tz)
 }
 
 #[tauri::command]

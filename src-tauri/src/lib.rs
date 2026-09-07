@@ -89,6 +89,8 @@ pub fn run() {
             commands::entries::create_entry,
             commands::entries::update_entry,
             commands::entries::parse_temporal_input,
+            commands::entries::format_timestamp_for_display,
+            commands::quickcapture::get_last_selection,
             commands::search::search_entries,
             commands::search::search_directory,
         ])
