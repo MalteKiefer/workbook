@@ -5,6 +5,7 @@ pub mod config;
 pub mod context_capture;
 pub mod db;
 pub mod error;
+pub mod hotkeys;
 pub mod quickcapture;
 pub mod time;
 pub mod tray;
@@ -41,13 +42,15 @@ pub fn run() {
         db::migrations::run_migrations(&mut conn, &db_path, &system_tz).expect("Migration fehlgeschlagen");
     }
 
+    let hotkey_config = app_config.hotkeys.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             window::show_and_focus_main(app);
         }))
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(AppState { pool, config: Mutex::new(app_config), previous_foreground: Mutex::new(None) })
-        .setup(|app| {
+        .setup(move |app| {
             window::install_hide_on_close(app.handle());
             if let Err(e) = tray::build_tray(app.handle()) {
                 eprintln!("Tray konnte nicht eingerichtet werden: {e}");
@@ -73,6 +76,10 @@ pub fn run() {
             let sync_result = if autostart_enabled { autolaunch.enable() } else { autolaunch.disable() };
             if let Err(e) = sync_result {
                 eprintln!("Autostart konnte nicht synchronisiert werden: {e}");
+            }
+
+            if let Err(e) = hotkeys::register(app.handle(), &hotkey_config) {
+                eprintln!("Globale Hotkeys konnten nicht registriert werden: {e}");
             }
 
             Ok(())
