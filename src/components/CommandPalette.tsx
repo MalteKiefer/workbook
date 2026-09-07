@@ -25,6 +25,7 @@ interface StaticCommand {
   label: string;
   shortcut: string;
   run: () => void;
+  keepOpen?: boolean;
 }
 
 type Section = "commands" | "directory" | "entries";
@@ -50,6 +51,7 @@ export default function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [directoryHits, setDirectoryHits] = useState<DirectoryHit[]>([]);
   const [entryHits, setEntryHits] = useState<EntryHit[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -62,6 +64,7 @@ export default function CommandPalette() {
   const goToJournal = useAppStore((s) => s.goToJournal);
   const selectCustomer = useAppStore((s) => s.selectCustomer);
   const selectSystem = useAppStore((s) => s.selectSystem);
+  const openEntryEditor = useAppStore((s) => s.openEntryEditor);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -69,6 +72,7 @@ export default function CommandPalette() {
     setDirectoryHits([]);
     setEntryHits([]);
     setSelectedIndex(0);
+    setNotice(null);
     if (debounceTimerRef.current !== null) {
       window.clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
@@ -93,14 +97,30 @@ export default function CommandPalette() {
   // Static, always-available commands (context-dependent per current view/selection).
   const staticCommands = useMemo<StaticCommand[]>(() => {
     const cmds: StaticCommand[] = [
+      { id: "new-entry", label: "Neuer Eintrag", shortcut: "Strg+N", run: () => openEntryEditor("new") },
       { id: "goto-customers", label: "Zu Kundenliste", shortcut: "g c", run: goToCustomers },
     ];
     if (selectedCustomerId !== null) {
       cmds.push({ id: "goto-systems", label: "Zu Systemliste", shortcut: "g s", run: () => goToSystems() });
     }
     cmds.push({ id: "goto-journal", label: "Zum Journal", shortcut: "g j", run: goToJournal });
+    cmds.push({
+      id: "cleanup-orphans",
+      label: "Anhänge bereinigen",
+      shortcut: "",
+      keepOpen: true,
+      run: () => {
+        setNotice("Bereinige…");
+        invoke<{ removed_count: number; removed_bytes: number }>("cleanup_orphans")
+          .then((result) => {
+            const kb = (result.removed_bytes / 1024).toFixed(1);
+            setNotice(`${result.removed_count} verwaiste Datei(en) entfernt (${kb} KB freigegeben).`);
+          })
+          .catch((e) => setNotice(`Fehler: ${e}`));
+      },
+    });
     return cmds;
-  }, [selectedCustomerId, goToCustomers, goToSystems, goToJournal]);
+  }, [selectedCustomerId, goToCustomers, goToSystems, goToJournal, openEntryEditor]);
 
   const filteredCommands = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -158,7 +178,7 @@ export default function CommandPalette() {
         ),
         activate: () => {
           cmd.run();
-          close();
+          if (!cmd.keepOpen) close();
         },
       })),
     [filteredCommands, close],
@@ -321,6 +341,11 @@ export default function CommandPalette() {
             outline: "none",
           }}
         />
+        {notice && (
+          <div style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem", color: "#a0a0a0", borderBottom: "1px solid #333" }}>
+            {notice}
+          </div>
+        )}
         <div style={{ overflowY: "auto", padding: "0.25rem 0" }}>
           {items.length === 0 && <div style={{ padding: "0.75rem", opacity: 0.6 }}>Keine Treffer</div>}
           {items.map((item, idx) => {
