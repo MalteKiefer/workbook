@@ -118,10 +118,11 @@ mod tests {
     use crate::db::customers::{self, NewCustomer};
     use crate::db::entries::{self, Category, NewEntry};
 
-    fn seed_entry(conn: &Connection, tz: &Tz) -> i64 {
+    fn seed_entry(conn: &Connection, data_dir: &Path, tz: &Tz) -> i64 {
         let customer_id = customers::create(conn, NewCustomer { name: "ACME".into(), short_code: "ACME".into(), notes: "".into() }, tz).unwrap().id;
         entries::create(
             conn,
+            data_dir,
             NewEntry {
                 customer_id,
                 system_id: None,
@@ -131,6 +132,7 @@ mod tests {
                 performed_at_utc: "2026-09-07T12:00:00.000Z".into(),
                 performed_at_tz: "Europe/Berlin".into(),
                 tag_names: vec![],
+                pending_attachments: vec![],
             },
             tz,
         )
@@ -143,7 +145,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let conn = crate::db::test_support::migrated_connection();
         let tz: Tz = "Europe/Berlin".parse().unwrap();
-        let entry_id = seed_entry(&conn, &tz);
+        let entry_id = seed_entry(&conn, dir.path(), &tz);
 
         let attachment = attach_bytes_to_entry(&conn, dir.path(), entry_id, b"png bytes", "shot.png", "image/png", &tz).unwrap();
 
@@ -171,7 +173,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let conn = crate::db::test_support::migrated_connection();
         let tz: Tz = "Europe/Berlin".parse().unwrap();
-        let entry_id = seed_entry(&conn, &tz);
+        let entry_id = seed_entry(&conn, dir.path(), &tz);
 
         let first = attach_bytes_to_entry(&conn, dir.path(), entry_id, b"shared bytes", "shot.png", "image/png", &tz).unwrap();
         let relative_path = relative_path_for(&first.sha256, "shot.png");

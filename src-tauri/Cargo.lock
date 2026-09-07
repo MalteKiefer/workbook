@@ -4449,6 +4449,7 @@ dependencies = [
 name = "wartungsdoku"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "chrono",
  "chrono-tz",
  "dirs 7.0.0",

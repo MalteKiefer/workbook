@@ -25,14 +25,16 @@ pub fn get_entry(state: State<AppState>, id: i64) -> Result<Entry, AppError> {
 pub fn create_entry(state: State<AppState>, input: NewEntry) -> Result<Entry, AppError> {
     let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
-    entries::create(&conn, input, &tz)
+    let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
+    entries::create(&conn, &data_dir, input, &tz)
 }
 
 #[tauri::command]
 pub fn update_entry(state: State<AppState>, id: i64, input: UpdateEntry) -> Result<Entry, AppError> {
     let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
-    entries::update(&conn, id, input, &tz)
+    let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
+    entries::update(&conn, &data_dir, id, input, &tz)
 }
 
 #[tauri::command]

@@ -70,6 +70,14 @@ pub struct Entry {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct PendingAttachment {
+    pub placeholder_token: String,
+    pub bytes_base64: String,
+    pub original_filename: String,
+    pub mime_type: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct NewEntry {
     pub customer_id: i64,
     pub system_id: Option<i64>,
@@ -79,6 +87,8 @@ pub struct NewEntry {
     pub performed_at_utc: String,
     pub performed_at_tz: String,
     pub tag_names: Vec<String>,
+    #[serde(default)]
+    pub pending_attachments: Vec<PendingAttachment>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -90,6 +100,8 @@ pub struct UpdateEntry {
     pub performed_at_utc: String,
     pub performed_at_tz: String,
     pub tag_names: Vec<String>,
+    #[serde(default)]
+    pub pending_attachments: Vec<PendingAttachment>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -120,7 +132,7 @@ fn row_to_entry(row: &Row) -> rusqlite::Result<Entry> {
     })
 }
 
-pub fn create(conn: &Connection, input: NewEntry, tz: &Tz) -> Result<Entry, AppError> {
+pub fn create(conn: &Connection, data_dir: &std::path::Path, input: NewEntry, tz: &Tz) -> Result<Entry, AppError> {
     let (now_utc, now_tz) = now_with_tz(tz);
     conn.execute(
         "INSERT INTO entries (customer_id, system_id, title, body_md, category, performed_at_utc, performed_at_tz, created_at_utc, created_at_tz, updated_at_utc, updated_at_tz)
@@ -139,6 +151,7 @@ pub fn create(conn: &Connection, input: NewEntry, tz: &Tz) -> Result<Entry, AppE
     )?;
     let id = conn.last_insert_rowid();
     tags::set_tags_for_entry(conn, id, &input.tag_names)?;
+    resolve_pending_attachments(conn, data_dir, id, &input.pending_attachments, tz)?;
     get(conn, id)
 }
 
@@ -151,7 +164,7 @@ pub fn get(conn: &Connection, id: i64) -> Result<Entry, AppError> {
     Ok(entry)
 }
 
-pub fn update(conn: &Connection, id: i64, input: UpdateEntry, tz: &Tz) -> Result<Entry, AppError> {
+pub fn update(conn: &Connection, data_dir: &std::path::Path, id: i64, input: UpdateEntry, tz: &Tz) -> Result<Entry, AppError> {
     let (now_utc, now_tz) = now_with_tz(tz);
     let changed = conn.execute(
         "UPDATE entries SET system_id = ?1, title = ?2, body_md = ?3, category = ?4, performed_at_utc = ?5, performed_at_tz = ?6, updated_at_utc = ?7, updated_at_tz = ?8 WHERE id = ?9",
@@ -171,7 +184,34 @@ pub fn update(conn: &Connection, id: i64, input: UpdateEntry, tz: &Tz) -> Result
         return Err(AppError::NotFound(format!("Eintrag {id} nicht gefunden")));
     }
     tags::set_tags_for_entry(conn, id, &input.tag_names)?;
+    resolve_pending_attachments(conn, data_dir, id, &input.pending_attachments, tz)?;
     get(conn, id)
+}
+
+fn resolve_pending_attachments(
+    conn: &Connection,
+    data_dir: &std::path::Path,
+    entry_id: i64,
+    pending: &[PendingAttachment],
+    tz: &Tz,
+) -> Result<(), AppError> {
+    if pending.is_empty() {
+        return Ok(());
+    }
+    use base64::prelude::*;
+    let mut body_md: String = conn.query_row("SELECT body_md FROM entries WHERE id = ?1", params![entry_id], |r| r.get(0))?;
+    for item in pending {
+        let bytes = BASE64_STANDARD
+            .decode(&item.bytes_base64)
+            .map_err(|e| AppError::Config(format!("Anhang konnte nicht dekodiert werden: {e}")))?;
+        let attachment = crate::attachments::store::attach_bytes_to_entry(
+            conn, data_dir, entry_id, &bytes, &item.original_filename, &item.mime_type, tz,
+        )?;
+        let relative_path = crate::attachments::store::relative_path_for(&attachment.sha256, &item.original_filename);
+        body_md = body_md.replace(&item.placeholder_token, &relative_path);
+    }
+    conn.execute("UPDATE entries SET body_md = ?1 WHERE id = ?2", params![body_md, entry_id])?;
+    Ok(())
 }
 
 pub fn list(conn: &Connection, filter: &EntryFilter) -> Result<Vec<Entry>, AppError> {
@@ -212,6 +252,10 @@ mod tests {
         "Europe/Berlin".parse().unwrap()
     }
 
+    fn temp_data_dir() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
+    }
+
     fn seed_customer(conn: &Connection) -> i64 {
         customers::create(conn, NewCustomer { name: "ACME".into(), short_code: "ACME".into(), notes: "".into() }, &berlin())
             .unwrap()
@@ -228,14 +272,16 @@ mod tests {
             performed_at_utc: performed_at_utc.into(),
             performed_at_tz: "Europe/Berlin".into(),
             tag_names: vec!["exchange".into()],
+            pending_attachments: vec![],
         }
     }
 
     #[test]
     fn create_then_get_includes_tags() {
         let conn = migrated_connection();
+        let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
-        let created = create(&conn, new_entry(customer_id, "Update", "2026-09-07T12:00:00.000Z", Category::Wartung), &berlin()).unwrap();
+        let created = create(&conn, data_dir.path(), new_entry(customer_id, "Update", "2026-09-07T12:00:00.000Z", Category::Wartung), &berlin()).unwrap();
         assert_eq!(created.tags, vec!["exchange".to_string()]);
         assert_eq!(created.created_at_utc, created.updated_at_utc);
         assert_eq!(get(&conn, created.id).unwrap(), created);
@@ -244,11 +290,13 @@ mod tests {
     #[test]
     fn update_replaces_tags_and_keeps_created_at() {
         let conn = migrated_connection();
+        let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
-        let created = create(&conn, new_entry(customer_id, "Update", "2026-09-07T12:00:00.000Z", Category::Wartung), &berlin()).unwrap();
+        let created = create(&conn, data_dir.path(), new_entry(customer_id, "Update", "2026-09-07T12:00:00.000Z", Category::Wartung), &berlin()).unwrap();
 
         let updated = update(
             &conn,
+            data_dir.path(),
             created.id,
             UpdateEntry {
                 system_id: None,
@@ -258,6 +306,7 @@ mod tests {
                 performed_at_utc: "2026-09-06T09:00:00.000Z".into(),
                 performed_at_tz: "Europe/Berlin".into(),
                 tag_names: vec!["firewall".into()],
+                pending_attachments: vec![],
             },
             &berlin(),
         )
@@ -272,9 +321,10 @@ mod tests {
     #[test]
     fn list_orders_by_performed_at_descending() {
         let conn = migrated_connection();
+        let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
-        let older = create(&conn, new_entry(customer_id, "Älter", "2026-09-01T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
-        let newer = create(&conn, new_entry(customer_id, "Neuer", "2026-09-07T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
+        let older = create(&conn, data_dir.path(), new_entry(customer_id, "Älter", "2026-09-01T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
+        let newer = create(&conn, data_dir.path(), new_entry(customer_id, "Neuer", "2026-09-07T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
 
         let result = list(&conn, &EntryFilter::default()).unwrap();
         assert_eq!(result.iter().map(|e| e.id).collect::<Vec<_>>(), vec![newer.id, older.id]);
@@ -283,9 +333,10 @@ mod tests {
     #[test]
     fn list_filters_by_category_and_date_range() {
         let conn = migrated_connection();
+        let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
-        create(&conn, new_entry(customer_id, "Wartung", "2026-09-05T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
-        let stoerung = create(&conn, new_entry(customer_id, "Störung", "2026-09-06T10:00:00.000Z", Category::Stoerung), &berlin()).unwrap();
+        create(&conn, data_dir.path(), new_entry(customer_id, "Wartung", "2026-09-05T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
+        let stoerung = create(&conn, data_dir.path(), new_entry(customer_id, "Störung", "2026-09-06T10:00:00.000Z", Category::Stoerung), &berlin()).unwrap();
 
         let by_category = list(&conn, &EntryFilter { category: Some(Category::Stoerung), ..Default::default() }).unwrap();
         assert_eq!(by_category.iter().map(|e| e.id).collect::<Vec<_>>(), vec![stoerung.id]);
@@ -301,10 +352,12 @@ mod tests {
     #[test]
     fn list_filters_by_tag() {
         let conn = migrated_connection();
+        let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
-        let with_tag = create(&conn, new_entry(customer_id, "Mit Tag", "2026-09-05T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
+        let with_tag = create(&conn, data_dir.path(), new_entry(customer_id, "Mit Tag", "2026-09-05T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
         create(
             &conn,
+            data_dir.path(),
             NewEntry { tag_names: vec!["anderes".into()], ..new_entry(customer_id, "Ohne passendes Tag", "2026-09-06T10:00:00.000Z", Category::Wartung) },
             &berlin(),
         )
@@ -312,5 +365,32 @@ mod tests {
 
         let result = list(&conn, &EntryFilter { tag: Some("exchange".into()), ..Default::default() }).unwrap();
         assert_eq!(result.iter().map(|e| e.id).collect::<Vec<_>>(), vec![with_tag.id]);
+    }
+
+    #[test]
+    fn create_resolves_pending_attachment_placeholder_in_body() {
+        use base64::prelude::*;
+        let conn = migrated_connection();
+        let data_dir = temp_data_dir();
+        let customer_id = seed_customer(&conn);
+
+        let mut input = new_entry(customer_id, "Mit Screenshot", "2026-09-07T12:00:00.000Z", Category::Wartung);
+        input.body_md = "Vorher\n![Screenshot](pending:tok1)\nNachher".into();
+        input.pending_attachments = vec![PendingAttachment {
+            placeholder_token: "pending:tok1".into(),
+            bytes_base64: BASE64_STANDARD.encode(b"fake png bytes"),
+            original_filename: "screenshot.png".into(),
+            mime_type: "image/png".into(),
+        }];
+
+        let created = create(&conn, data_dir.path(), input, &berlin()).unwrap();
+
+        assert!(!created.body_md.contains("pending:tok1"));
+        assert!(created.body_md.contains("attachments/"));
+        assert!(created.body_md.contains(".png"));
+
+        let sha256 = crate::attachments::store::sha256_hex(b"fake png bytes");
+        let relative_path = crate::attachments::store::relative_path_for(&sha256, "screenshot.png");
+        assert!(data_dir.path().join(&relative_path).exists());
     }
 }

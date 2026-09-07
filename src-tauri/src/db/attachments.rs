@@ -70,10 +70,11 @@ mod tests {
         "Europe/Berlin".parse().unwrap()
     }
 
-    fn seed_entry(conn: &Connection) -> i64 {
+    fn seed_entry(conn: &Connection, data_dir: &std::path::Path) -> i64 {
         let customer_id = customers::create(conn, NewCustomer { name: "ACME".into(), short_code: "ACME".into(), notes: "".into() }, &berlin()).unwrap().id;
         entries::create(
             conn,
+            data_dir,
             NewEntry {
                 customer_id,
                 system_id: None,
@@ -83,6 +84,7 @@ mod tests {
                 performed_at_utc: "2026-09-07T12:00:00.000Z".into(),
                 performed_at_tz: "Europe/Berlin".into(),
                 tag_names: vec![],
+                pending_attachments: vec![],
             },
             &berlin(),
         )
@@ -93,7 +95,8 @@ mod tests {
     #[test]
     fn create_then_list_roundtrips() {
         let conn = migrated_connection();
-        let entry_id = seed_entry(&conn);
+        let dir = tempfile::tempdir().unwrap();
+        let entry_id = seed_entry(&conn, dir.path());
         let created = create(&conn, entry_id, "abc123", "screenshot.png", "image/png", 42, &berlin()).unwrap();
         assert_eq!(created.entry_id, entry_id);
         assert_eq!(list_for_entry(&conn, entry_id).unwrap(), vec![created]);
@@ -102,7 +105,8 @@ mod tests {
     #[test]
     fn list_for_entry_without_attachments_is_empty() {
         let conn = migrated_connection();
-        let entry_id = seed_entry(&conn);
+        let dir = tempfile::tempdir().unwrap();
+        let entry_id = seed_entry(&conn, dir.path());
         assert!(list_for_entry(&conn, entry_id).unwrap().is_empty());
     }
 
