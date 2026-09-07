@@ -58,7 +58,7 @@ that pull a connection from the pool, resolve the system timezone once, and dele
   `pub struct UpdateCustomer { name, short_code, notes: String }`,
   `pub fn create/get/list/update/archive(...)`
 
-- [ ] **Step 1: `NotFound`-Variante ergänzen**
+- [x] **Step 1: `NotFound`-Variante ergänzen**
 
 ```rust
 // src-tauri/src/error.rs — Enum-Definition erweitern
@@ -98,7 +98,7 @@ Test ergänzen in `error.rs`:
     }
 ```
 
-- [ ] **Step 2: Test-Helper für migrierte Connection**
+- [x] **Step 2: Test-Helper für migrierte Connection**
 
 ```rust
 // src-tauri/src/db/test_support.rs
@@ -116,7 +116,7 @@ pub fn migrated_connection() -> Connection {
 }
 ```
 
-- [ ] **Step 3: `customers.rs` mit failing tests schreiben**
+- [x] **Step 3: `customers.rs` mit failing tests schreiben**
 
 ```rust
 // src-tauri/src/db/customers.rs
@@ -292,7 +292,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Module einhängen**
+- [x] **Step 4: Module einhängen**
 
 ```rust
 // src-tauri/src/db/mod.rs
@@ -304,7 +304,7 @@ pub mod pool;
 pub mod test_support;
 ```
 
-- [ ] **Step 5: Tests laufen lassen**
+- [x] **Step 5: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -313,7 +313,7 @@ cd src-tauri && cargo test error:: db::customers:: && cd ..
 
 Expected: 4 Tests aus `error.rs` + 5 Tests aus `db::customers` grün.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/error.rs src-tauri/src/db/test_support.rs src-tauri/src/db/customers.rs src-tauri/src/db/mod.rs
@@ -334,7 +334,7 @@ git commit -m "feat: add NotFound error and customers repository"
   `pub struct NewSystem`, `pub struct UpdateSystem`,
   `pub fn create/get/list_by_customer/update/archive(...)`
 
-- [ ] **Step 1: `systems.rs` mit failing tests schreiben**
+- [x] **Step 1: `systems.rs` mit failing tests schreiben**
 
 ```rust
 // src-tauri/src/db/systems.rs
@@ -525,14 +525,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Modul einhängen**
+- [x] **Step 2: Modul einhängen**
 
 ```rust
 // src-tauri/src/db/mod.rs — Zeile ergänzen
 pub mod systems;
 ```
 
-- [ ] **Step 3: Tests laufen lassen**
+- [x] **Step 3: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -541,7 +541,7 @@ cd src-tauri && cargo test db::systems:: && cd ..
 
 Expected: 4 Tests grün.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/db/systems.rs src-tauri/src/db/mod.rs
@@ -566,7 +566,7 @@ git commit -m "feat: add systems repository"
 Tests seed `customers`/`entries` rows via raw SQL (the `entries` repository module does
 not exist yet — it is built in Task 4 and will *consume* this module).
 
-- [ ] **Step 1: `tags.rs` mit failing tests schreiben**
+- [x] **Step 1: `tags.rs` mit failing tests schreiben**
 
 ```rust
 // src-tauri/src/db/tags.rs
@@ -670,14 +670,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Modul einhängen**
+- [x] **Step 2: Modul einhängen**
 
 ```rust
 // src-tauri/src/db/mod.rs — Zeile ergänzen
 pub mod tags;
 ```
 
-- [ ] **Step 3: Tests laufen lassen**
+- [x] **Step 3: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -686,7 +686,7 @@ cd src-tauri && cargo test db::tags:: && cd ..
 
 Expected: 3 Tests grün.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/db/tags.rs src-tauri/src/db/mod.rs
@@ -708,7 +708,7 @@ git commit -m "feat: add tags repository with entry association"
   `pub struct NewEntry`, `pub struct UpdateEntry`, `pub struct EntryFilter { customer_id, system_id: Option<i64>, category: Option<Category>, tag: Option<String>, from_utc: Option<String>, to_utc: Option<String> }`,
   `pub fn create/get/update/list(...)`
 
-- [ ] **Step 1: `entries.rs` mit failing tests schreiben**
+- [x] **Step 1: `entries.rs` mit failing tests schreiben**
 
 ```rust
 // src-tauri/src/db/entries.rs
@@ -1030,14 +1030,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Modul einhängen**
+- [x] **Step 2: Modul einhängen**
 
 ```rust
 // src-tauri/src/db/mod.rs — Zeile ergänzen
 pub mod entries;
 ```
 
-- [ ] **Step 3: Tests laufen lassen**
+- [x] **Step 3: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -1046,7 +1046,7 @@ cd src-tauri && cargo test db::entries:: && cd ..
 
 Expected: 5 Tests grün.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/db/entries.rs src-tauri/src/db/mod.rs
@@ -1068,7 +1068,7 @@ git commit -m "feat: add entries repository with category, tags and filtered lis
   `pub enum DirectoryKind { Customer, System }`, `pub struct DirectoryHit { kind, id, customer_id, label }`,
   `pub fn search_directory(conn, query: &str, limit: i64) -> Result<Vec<DirectoryHit>, AppError>`
 
-- [ ] **Step 1: `search.rs` mit failing tests schreiben**
+- [x] **Step 1: `search.rs` mit failing tests schreiben**
 
 ```rust
 // src-tauri/src/db/search.rs
@@ -1228,14 +1228,14 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Modul einhängen**
+- [x] **Step 2: Modul einhängen**
 
 ```rust
 // src-tauri/src/db/mod.rs — Zeile ergänzen
 pub mod search;
 ```
 
-- [ ] **Step 3: Tests laufen lassen**
+- [x] **Step 3: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -1244,7 +1244,7 @@ cd src-tauri && cargo test db::search:: && cd ..
 
 Expected: 4 Tests grün.
 
-- [ ] **Step 4: Gesamten Rust-Testlauf verifizieren**
+- [x] **Step 4: Gesamten Rust-Testlauf verifizieren**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -1253,7 +1253,7 @@ cd src-tauri && cargo test && cd ..
 
 Expected: alle Tests aus Phase 1 + Task 1–5 grün (21 + 1 + 5 + 4 + 3 + 5 + 4 = 43 Tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/db/search.rs src-tauri/src/db/mod.rs
@@ -1271,7 +1271,7 @@ git commit -m "feat: add entries full-text search and customer/system directory 
 **Interfaces:**
 - Produces: ein per `npm run build` baubares Frontend unter `dist/`, das `invoke("list_customers", { includeArchived: false })` aus `@tauri-apps/api/core` aufruft (Konsument von `commands::customers::list_customers`, Task 8).
 
-- [ ] **Step 1: `package.json` anlegen und Pakete installieren**
+- [x] **Step 1: `package.json` anlegen und Pakete installieren**
 
 ```bash
 cat > package.json <<'EOF'
@@ -1291,7 +1291,7 @@ npm install react react-dom
 npm install -D typescript vite @vitejs/plugin-react @types/react @types/react-dom @tauri-apps/api @tauri-apps/cli
 ```
 
-- [ ] **Step 2: Vite-/TS-Konfiguration schreiben**
+- [x] **Step 2: Vite-/TS-Konfiguration schreiben**
 
 ```typescript
 // vite.config.ts
@@ -1352,7 +1352,7 @@ export default defineConfig({
 }
 ```
 
-- [ ] **Step 3: `index.html` und React-Einstieg schreiben**
+- [x] **Step 3: `index.html` und React-Einstieg schreiben**
 
 ```html
 <!-- index.html -->
@@ -1415,7 +1415,7 @@ export default function App() {
 }
 ```
 
-- [ ] **Step 4: Build verifizieren** (schlägt hier noch fehl, da `@tauri-apps/api` zur Laufzeit `invoke` nur innerhalb einer Tauri-Webview auflöst — der TypeScript-Build selbst muss dennoch grün sein)
+- [x] **Step 4: Build verifizieren** (schlägt hier noch fehl, da `@tauri-apps/api` zur Laufzeit `invoke` nur innerhalb einer Tauri-Webview auflöst — der TypeScript-Build selbst muss dennoch grün sein)
 
 ```bash
 npm run build
@@ -1423,7 +1423,7 @@ npm run build
 
 Expected: `dist/index.html` und `dist/assets/*.js` werden erzeugt, kein TypeScript-Fehler.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add package.json package-lock.json vite.config.ts tsconfig.json tsconfig.node.json index.html src/main.tsx src/App.tsx
@@ -1447,7 +1447,7 @@ git commit -m "feat: add minimal Vite/React frontend scaffold with IPC smoke tes
 - Consumes: `config::Config`, `db::pool::build_pool`, `db::migrations::run_migrations`, `time::system_timezone` (Phase 1/2)
 - Produces: `pub fn config::resolve_data_dir() -> PathBuf`, `pub struct AppState { pool: DbPool, config: Mutex<Config> }`, `pub fn run()` (Tauri-Einstiegspunkt, noch ohne registrierte Commands — die kommen in Task 8)
 
-- [ ] **Step 1: `resolve_data_dir` ergänzen (löst den zirkulären Verweis config.toml↔data_dir auf)**
+- [x] **Step 1: `resolve_data_dir` ergänzen (löst den zirkulären Verweis config.toml↔data_dir auf)**
 
 ```rust
 // src-tauri/src/config.rs — nach `fn default_data_dir` einfügen
@@ -1472,7 +1472,7 @@ Test ergänzen:
     }
 ```
 
-- [ ] **Step 2: Tauri-Abhängigkeiten hinzufügen**
+- [x] **Step 2: Tauri-Abhängigkeiten hinzufügen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -1483,7 +1483,7 @@ cargo add serde_json
 cd ..
 ```
 
-- [ ] **Step 3: `build.rs` schreiben**
+- [x] **Step 3: `build.rs` schreiben**
 
 ```rust
 // src-tauri/build.rs
@@ -1492,7 +1492,7 @@ fn main() {
 }
 ```
 
-- [ ] **Step 4: `tauri.conf.json` schreiben**
+- [x] **Step 4: `tauri.conf.json` schreiben**
 
 ```json
 {
@@ -1529,7 +1529,7 @@ fn main() {
 }
 ```
 
-- [ ] **Step 5: Capability-Datei schreiben**
+- [x] **Step 5: Capability-Datei schreiben**
 
 ```json
 // src-tauri/capabilities/default.json
@@ -1551,7 +1551,7 @@ fn main() {
 }
 ```
 
-- [ ] **Step 6: `main.rs` schreiben**
+- [x] **Step 6: `main.rs` schreiben**
 
 ```rust
 // src-tauri/src/main.rs
@@ -1562,7 +1562,7 @@ fn main() {
 }
 ```
 
-- [ ] **Step 7: `lib.rs` mit `AppState` und `run()` erweitern**
+- [x] **Step 7: `lib.rs` mit `AppState` und `run()` erweitern**
 
 ```rust
 // src-tauri/src/lib.rs
@@ -1609,7 +1609,7 @@ pub fn run() {
 (Noch ohne `invoke_handler` — Commands und ihre Registrierung folgen in Task 8, weil sie
 selbst noch nicht existieren.)
 
-- [ ] **Step 8: Bibliothek weiter testen, Binary bauen**
+- [x] **Step 8: Bibliothek weiter testen, Binary bauen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -1623,7 +1623,7 @@ Expected: `resolve_data_dir_honours_env_override` grün; `cargo build --bin wart
 kompiliert ohne Fehler (lädt dabei `tauri`, `tauri-build` u. a. neu herunter — erster
 Lauf kann mehrere Minuten dauern).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/build.rs src-tauri/tauri.conf.json src-tauri/capabilities/default.json src-tauri/src/main.rs src-tauri/src/lib.rs src-tauri/src/config.rs
@@ -1647,7 +1647,7 @@ git commit -m "feat: wire minimal Tauri app shell with managed data-layer state"
 - Consumes: alle Repository-Funktionen aus Task 1–5, `AppState`, `time::system_timezone`, `time::parse_temporal_input`
 - Produces: registrierte Tauri-Commands `list_customers`, `create_customer`, `update_customer`, `archive_customer`, `list_systems`, `create_system`, `update_system`, `archive_system`, `list_tags`, `list_entries`, `get_entry`, `create_entry`, `update_entry`, `parse_temporal_input`, `search_entries`, `search_directory`
 
-- [ ] **Step 1: `commands/customers.rs` schreiben**
+- [x] **Step 1: `commands/customers.rs` schreiben**
 
 ```rust
 // src-tauri/src/commands/customers.rs
@@ -1684,7 +1684,7 @@ pub fn archive_customer(state: State<AppState>, id: i64) -> Result<(), AppError>
 }
 ```
 
-- [ ] **Step 2: `commands/systems.rs` schreiben**
+- [x] **Step 2: `commands/systems.rs` schreiben**
 
 ```rust
 // src-tauri/src/commands/systems.rs
@@ -1721,7 +1721,7 @@ pub fn archive_system(state: State<AppState>, id: i64) -> Result<(), AppError> {
 }
 ```
 
-- [ ] **Step 3: `commands/tags.rs` schreiben**
+- [x] **Step 3: `commands/tags.rs` schreiben**
 
 ```rust
 // src-tauri/src/commands/tags.rs
@@ -1737,7 +1737,7 @@ pub fn list_tags(state: State<AppState>) -> Result<Vec<String>, AppError> {
 }
 ```
 
-- [ ] **Step 4: `commands/entries.rs` schreiben (inkl. Zeitstempel-Parser-Command)**
+- [x] **Step 4: `commands/entries.rs` schreiben (inkl. Zeitstempel-Parser-Command)**
 
 ```rust
 // src-tauri/src/commands/entries.rs
@@ -1787,7 +1787,7 @@ pub fn parse_temporal_input(input: String) -> Result<TemporalPreview, AppError> 
 }
 ```
 
-- [ ] **Step 5: `commands/search.rs` schreiben**
+- [x] **Step 5: `commands/search.rs` schreiben**
 
 ```rust
 // src-tauri/src/commands/search.rs
@@ -1809,7 +1809,7 @@ pub fn search_directory(state: State<AppState>, query: String, limit: i64) -> Re
 }
 ```
 
-- [ ] **Step 6: `commands/mod.rs` schreiben**
+- [x] **Step 6: `commands/mod.rs` schreiben**
 
 ```rust
 // src-tauri/src/commands/mod.rs
@@ -1820,7 +1820,7 @@ pub mod systems;
 pub mod tags;
 ```
 
-- [ ] **Step 7: In `lib.rs` einhängen und im `invoke_handler` registrieren**
+- [x] **Step 7: In `lib.rs` einhängen und im `invoke_handler` registrieren**
 
 ```rust
 // src-tauri/src/lib.rs — Modul-Deklarationen ergänzen
@@ -1855,7 +1855,7 @@ pub mod time;
         .expect("error while running tauri application");
 ```
 
-- [ ] **Step 8: Bauen**
+- [x] **Step 8: Bauen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -1867,7 +1867,7 @@ cd ..
 
 Expected: Binary kompiliert; alle Rust-Tests (43 aus Task 1–5, unverändert) weiterhin grün — `commands/` hat keine eigenen Tests, es sind reine Wrapper, deren Typkorrektheit der Compiler prüft.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src-tauri/src/commands src-tauri/src/lib.rs
@@ -1880,7 +1880,7 @@ git commit -m "feat: expose repository layer as Tauri commands"
 
 **Files:** keine neuen — nur Ausführung.
 
-- [ ] **Step 1: Frontend bauen**
+- [x] **Step 1: Frontend bauen**
 
 ```bash
 npm run build
@@ -1888,7 +1888,7 @@ npm run build
 
 Expected: `dist/` aktuell, kein Fehler.
 
-- [ ] **Step 2: App im Hintergrund starten und Boot-Verhalten prüfen**
+- [x] **Step 2: App im Hintergrund starten und Boot-Verhalten prüfen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -1903,7 +1903,7 @@ Expected: kein Rust-`panic!`/`expect`-Abbruch im Log (Migration lief durch, Pool
 erstellt, Fenster wurde erzeugt). Ein Abbruch durch `timeout` nach 8s ist normal (die App
 läuft dauerhaft) und kein Fehlschlag.
 
-- [ ] **Step 3: Datenverzeichnis der Smoke-Test-Instanz prüfen**
+- [x] **Step 3: Datenverzeichnis der Smoke-Test-Instanz prüfen**
 
 ```bash
 ls -la .smoke-test-data
@@ -1913,13 +1913,13 @@ Expected: `wartungsdoku.db`, `wartungsdoku.db-wal`, `wartungsdoku.db-shm`, `conf
 vorhanden — bestätigt, dass `resolve_data_dir` + Migration + Pool beim echten App-Start
 zusammenspielen.
 
-- [ ] **Step 4: Smoke-Test-Artefakte aufräumen (nicht committen)**
+- [x] **Step 4: Smoke-Test-Artefakte aufräumen (nicht committen)**
 
 ```bash
 rm -rf .smoke-test-data smoke-test.log
 ```
 
-- [ ] **Step 5: Plan-Datei mit abgehaktem Stand committen**
+- [x] **Step 5: Plan-Datei mit abgehaktem Stand committen**
 
 ```bash
 git add docs/superpowers/plans/2026-09-07-wartungsdoku-plan-phase2.md
@@ -1927,6 +1927,30 @@ git commit -m "docs: mark Phase 2 plan tasks complete"
 ```
 
 ---
+
+## Ausführungsnotizen (während der Umsetzung entstanden)
+
+- **Task 5**: `search_directory_finds_customer_by_short_code` schlug beim ersten Lauf fehl
+  (erwartet 1 Treffer, tatsächlich 2) — Testannahme war falsch, nicht die Implementierung:
+  die Abfrage `"ACME"` matcht korrekt sowohl den Kunden (Name/Kürzel) als auch das System
+  (Hostname `fs01.acme.local` enthält `acme`, `COLLATE NOCASE`). Test in zwei Fälle
+  aufgeteilt: ein eindeutiger Treffer (`"GmbH"`) und ein Fall, der bewusst beide Treffer
+  prüft. Damit hat Phase 2 einen Test mehr als ursprünglich vorhergesagt (44 statt 43 nach
+  Task 5, 45 nach Task 7 durch `resolve_data_dir_honours_env_override`).
+- **Task 7**: `cargo build --bin wartungsdoku` schlug beim ersten Versuch fehl —
+  `icons/icon.ico` fehlte (unter Windows für die Ressourcen-Datei zwingend, auch für
+  Debug-Builds, nicht nur fürs Bundling). Mit `tauri icon` aus einem generierten
+  Platzhalter-Monogramm (`src-tauri/icons-source/icon-source.png`) ein Icon-Set erzeugt;
+  mobile/Windows-Store-Assets, die der Generator zusätzlich anlegt, wieder entfernt (kein
+  Ziel laut Spec). Danach kompilierte der Bin-Zielsatz sauber.
+- **Task 9**: Echter App-Start (`cargo run`, 8s über `timeout` begrenzt) lief ohne
+  `panic!`/`expect`-Abbruch durch; die einzige Log-Zeile
+  (`Failed to unregister class Chrome_WidgetWin_0`) ist ein bekannter, harmloser
+  WebView2-Cleanup-Hinweis beim harten Prozessabbruch. Datenverzeichnis enthielt danach
+  `wartungsdoku.db`, `.db-wal`, `.db-shm`, `config.toml` und `wartungsdoku.db.bak-0` —
+  Letzteres bestätigt, dass SQLite die Datei bereits beim Verbindungsaufbau anlegt (noch
+  vor der ersten Migration), weshalb selbst der allererste Start ein (leeres) Backup
+  erzeugt. Erwartetes, unschädliches Verhalten, kein Fehler.
 
 ## Self-Review (durchgeführt vor Ausführung)
 
