@@ -6,7 +6,9 @@ pub mod config;
 pub mod context_capture;
 pub mod db;
 pub mod error;
+pub mod export;
 pub mod hotkeys;
+pub mod plugin;
 pub mod quickcapture;
 pub mod time;
 pub mod tray;
@@ -123,6 +125,8 @@ pub fn run() {
             commands::attachments::copy_attachment_to,
             commands::attachments::cleanup_orphans,
             commands::attachments::open_attachment,
+            commands::export::export_markdown,
+            commands::export::export_pdf,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
