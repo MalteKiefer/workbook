@@ -3,6 +3,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod time;
+pub mod tray;
 pub mod window;
 
 pub use error::AppError;
@@ -37,6 +38,9 @@ pub fn run() {
         .manage(AppState { pool, config: Mutex::new(app_config) })
         .setup(|app| {
             window::install_hide_on_close(app.handle());
+            if let Err(e) = tray::build_tray(app.handle()) {
+                eprintln!("Tray konnte nicht eingerichtet werden: {e}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
