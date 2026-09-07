@@ -29,6 +29,8 @@ pub struct Config {
     pub context_capture_enabled: bool,
     pub late_entry_threshold_hours: i64,
     pub hotkeys: HotkeyConfig,
+    pub last_customer_id: Option<i64>,
+    pub last_system_id: Option<i64>,
 }
 
 impl Default for Config {
@@ -39,6 +41,8 @@ impl Default for Config {
             context_capture_enabled: false,
             late_entry_threshold_hours: 24,
             hotkeys: HotkeyConfig::default(),
+            last_customer_id: None,
+            last_system_id: None,
         }
     }
 }
@@ -117,6 +121,21 @@ mod tests {
 
         let result = Config::load_or_default(&path);
         assert!(matches!(result, Err(AppError::Config(_))));
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_last_selection() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.last_customer_id = Some(7);
+        config.last_system_id = Some(3);
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.last_customer_id, Some(7));
+        assert_eq!(loaded.last_system_id, Some(3));
     }
 
     #[test]
