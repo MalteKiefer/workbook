@@ -1,28 +1,15 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-
-interface Customer {
-  id: number;
-  name: string;
-  short_code: string;
-}
+import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
+import { useAppStore } from "./state/appStore";
 
 export default function App() {
-  const [customers, setCustomers] = useState<Customer[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    invoke<Customer[]>("list_customers", { includeArchived: false })
-      .then(setCustomers)
-      .catch((e) => setError(String(e)));
-  }, []);
+  useGlobalHotkeys();
+  const view = useAppStore((s) => s.view);
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
-      <h1>Wartungsdoku</h1>
-      <p>Backend-Kommandos verdrahtet. Command Palette und Editor folgen in späteren Phasen.</p>
-      {error && <p style={{ color: "crimson" }}>Fehler: {error}</p>}
-      {customers && <p>Kunden in der Datenbank: {customers.length}</p>}
+    <main style={{ fontFamily: "sans-serif", padding: "1rem" }}>
+      {view === "customers" && <p>Kundenliste folgt (Task 4 dieser Phase).</p>}
+      {view === "systems" && <p>Systemliste folgt (Phase 4b).</p>}
+      {view === "journal" && <p>Journal folgt (Phase 4d).</p>}
     </main>
   );
 }
