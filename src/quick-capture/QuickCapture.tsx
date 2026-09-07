@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import MarkdownEditor, { type MarkdownEditorHandle } from "../components/MarkdownEditor";
 
 interface Customer {
   id: number;
@@ -39,7 +40,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 
 export default function QuickCapture() {
   const titleRef = useRef<HTMLInputElement>(null);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<MarkdownEditorHandle>(null);
   const draftIsEmptyRef = useRef(true);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -166,22 +167,15 @@ export default function QuickCapture() {
   }
 
   function insertAtCursor(text: string) {
-    const el = bodyRef.current;
-    if (!el) {
+    const editor = editorRef.current;
+    if (!editor) {
       setBodyMd((prev) => `${prev}\n${text}`);
       return;
     }
-    const start = el.selectionStart ?? bodyMd.length;
-    const end = el.selectionEnd ?? bodyMd.length;
-    const next = `${bodyMd.slice(0, start)}${text}${bodyMd.slice(end)}`;
-    setBodyMd(next);
-    requestAnimationFrame(() => {
-      el.selectionStart = el.selectionEnd = start + text.length;
-      el.focus();
-    });
+    editor.insertAtCursor(text);
   }
 
-  async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+  async function handlePaste(e: ClipboardEvent) {
     const items = e.clipboardData?.items;
     if (!items) return;
     for (const item of Array.from(items)) {
@@ -289,14 +283,7 @@ export default function QuickCapture() {
         />
         <span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{performedAtPreview}</span>
       </div>
-      <textarea
-        ref={bodyRef}
-        value={bodyMd}
-        onChange={(e) => setBodyMd(e.target.value)}
-        onPaste={handlePaste}
-        placeholder="Markdown…"
-        style={{ flex: 1, minHeight: "10rem", fontFamily: "monospace" }}
-      />
+      <MarkdownEditor ref={editorRef} value={bodyMd} onChange={setBodyMd} onPaste={handlePaste} placeholder="Markdown…" />
       <input value={tagNames} onChange={(e) => setTagNames(e.target.value)} placeholder="Tags, durch Komma getrennt" />
       {error && <p style={{ color: "crimson" }}>Fehler: {error}</p>}
     </main>
