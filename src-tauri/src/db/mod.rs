@@ -1,6 +1,7 @@
 pub mod attachments;
 pub mod customers;
 pub mod entries;
+pub mod external_refs;
 pub mod migrations;
 pub mod pool;
 pub mod search;

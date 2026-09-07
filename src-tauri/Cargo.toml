@@ -15,6 +15,7 @@ chrono-tz = "0.10.4"
 dirs = "7.0.0"
 iana-time-zone = "0.1.65"
 image = "0.25.10"
+keyring = "4.2.0"
 r2d2 = "0.8.10"
 r2d2_sqlite = "0.35.0"
 regex = "1.13.1"
@@ -30,6 +31,10 @@ tauri-plugin-opener = "2.5.5"
 tauri-plugin-single-instance = "2.4.4"
 thiserror = "2.0.20"
 toml = "1.1.5"
+typst = "=0.15.1"
+typst-as-lib = { version = "0.16.0", features = ["typst-kit-fonts", "typst-kit-embed-fonts"] }
+typst-layout = "=0.15.1"
+typst-pdf = "0.15.1"
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
