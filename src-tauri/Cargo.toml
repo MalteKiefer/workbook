@@ -36,3 +36,6 @@ tempfile = "3.27.0"
 
 [build-dependencies]
 tauri-build = "2.6.3"
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+x11rb = "0.14.0"

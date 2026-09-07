@@ -10,3 +10,7 @@ pub fn restore_foreground(_handle: &ForegroundHandle) {}
 pub fn foreground_window_title() -> Option<String> {
     None
 }
+
+pub fn platform_supports_context_capture() -> bool {
+    false
+}

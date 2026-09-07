@@ -32,3 +32,7 @@ pub fn foreground_window_title() -> Option<String> {
     }
     Some(String::from_utf16_lossy(&buffer[..len as usize]))
 }
+
+pub fn platform_supports_context_capture() -> bool {
+    true
+}
