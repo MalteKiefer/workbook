@@ -21,17 +21,19 @@ pub fn relative_path_for(sha256: &str, original_filename: &str) -> String {
     format!("attachments/{prefix}/{sha256}{ext}")
 }
 
-fn to_hex(bytes: &[u8]) -> String {
+pub fn sha256_hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
+    let digest = Sha256::digest(bytes);
+    let digest_bytes: &[u8] = digest.as_ref();
+    let mut out = String::with_capacity(digest_bytes.len() * 2);
+    for byte in digest_bytes {
         write!(out, "{byte:02x}").expect("Schreiben in String kann nicht fehlschlagen");
     }
     out
 }
 
 pub fn save_content_addressed(data_dir: &Path, bytes: &[u8], original_filename: &str) -> Result<SavedFile, AppError> {
-    let sha256 = to_hex(Sha256::digest(bytes).as_ref());
+    let sha256 = sha256_hex(bytes);
     let relative_path = relative_path_for(&sha256, original_filename);
     let absolute_path = data_dir.join(&relative_path);
     let newly_written = !absolute_path.exists();
