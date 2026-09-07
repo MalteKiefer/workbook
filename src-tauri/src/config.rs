@@ -49,6 +49,13 @@ fn default_data_dir() -> PathBuf {
         .join("wartungsdoku")
 }
 
+pub fn resolve_data_dir() -> PathBuf {
+    if let Ok(override_dir) = std::env::var("WARTUNGSDOKU_DATA_DIR") {
+        return PathBuf::from(override_dir);
+    }
+    default_data_dir()
+}
+
 impl Config {
     pub fn load_or_default(config_path: &Path) -> Result<Self, AppError> {
         if !config_path.exists() {
@@ -110,5 +117,14 @@ mod tests {
 
         let result = Config::load_or_default(&path);
         assert!(matches!(result, Err(AppError::Config(_))));
+    }
+
+    #[test]
+    fn resolve_data_dir_honours_env_override() {
+        // SAFETY: Tests laufen sequenziell innerhalb dieses Prozesses für diese eine Variable.
+        std::env::set_var("WARTUNGSDOKU_DATA_DIR", "/tmp/wartungsdoku-test-override");
+        let resolved = resolve_data_dir();
+        std::env::remove_var("WARTUNGSDOKU_DATA_DIR");
+        assert_eq!(resolved, PathBuf::from("/tmp/wartungsdoku-test-override"));
     }
 }

@@ -7,6 +7,7 @@ vite.config.js
 
 # Rust
 src-tauri/target/
+src-tauri/gen/
 
 # Runtime data (never committed — see docs/superpowers/specs data layout)
 *.db
