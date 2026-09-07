@@ -1,6 +1,7 @@
 pub mod attachments;
 pub mod commands;
 pub mod config;
+pub mod context_capture;
 pub mod db;
 pub mod error;
 pub mod quickcapture;
