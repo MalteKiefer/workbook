@@ -14,6 +14,8 @@ pub enum AppError {
     Timezone(String),
     #[error("I/O-Fehler: {0}")]
     Io(String),
+    #[error("Nicht gefunden: {0}")]
+    NotFound(String),
 }
 
 impl AppError {
@@ -25,6 +27,7 @@ impl AppError {
             AppError::InvalidTimestamp(_) => "invalid_timestamp",
             AppError::Timezone(_) => "timezone",
             AppError::Io(_) => "io",
+            AppError::NotFound(_) => "not_found",
         }
     }
 }
@@ -80,5 +83,11 @@ mod tests {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "datei fehlt");
         let app_err: AppError = io_err.into();
         assert_eq!(app_err.code(), "io");
+    }
+
+    #[test]
+    fn not_found_has_not_found_code() {
+        let err = AppError::NotFound("Kunde 42".to_string());
+        assert_eq!(err.code(), "not_found");
     }
 }
