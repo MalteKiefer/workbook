@@ -55,13 +55,13 @@ keystroke through a giant central switch. Text-field suppression is one shared
   `selectCustomer`, `selectSystem`, `openForm`, `closeForm`),
   `pub function isTypingTarget(el: Element | null): boolean`, `useGlobalHotkeys()`
 
-- [ ] **Step 1: Zustand installieren**
+- [x] **Step 1: Zustand installieren**
 
 ```bash
 npm install zustand
 ```
 
-- [ ] **Step 2: `appStore.ts` schreiben**
+- [x] **Step 2: `appStore.ts` schreiben**
 
 ```typescript
 // src/state/appStore.ts
@@ -102,7 +102,7 @@ export const useAppStore = create<AppState>((set) => ({
 }));
 ```
 
-- [ ] **Step 3: `useGlobalHotkeys.ts` schreiben**
+- [x] **Step 3: `useGlobalHotkeys.ts` schreiben**
 
 ```typescript
 // src/hooks/useGlobalHotkeys.ts
@@ -182,7 +182,7 @@ export function useGlobalHotkeys() {
 }
 ```
 
-- [ ] **Step 4: In `App.tsx` einhängen (Platzhalter-Ansichten, echte Views folgen in Task 4)**
+- [x] **Step 4: In `App.tsx` einhängen (Platzhalter-Ansichten, echte Views folgen in Task 4)**
 
 ```tsx
 // src/App.tsx — komplett ersetzen
@@ -203,7 +203,7 @@ export default function App() {
 }
 ```
 
-- [ ] **Step 5: Build verifizieren**
+- [x] **Step 5: Build verifizieren**
 
 ```bash
 npm run build
@@ -211,7 +211,7 @@ npm run build
 
 Expected: kein TypeScript-Fehler, `dist/` aktuell.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add package.json package-lock.json src/state/appStore.ts src/hooks/useGlobalHotkeys.ts src/App.tsx
@@ -230,7 +230,7 @@ git commit -m "feat: add navigation store and global g-prefix/Esc hotkey handlin
   fokussiert beim Öffnen das erste Formularelement, gibt beim Schließen den Fokus an
   das zuvor aktive Element zurück.
 
-- [ ] **Step 1: `Modal.tsx` schreiben**
+- [x] **Step 1: `Modal.tsx` schreiben**
 
 ```tsx
 // src/components/Modal.tsx
@@ -298,13 +298,13 @@ export default function Modal({ onClose, children }: ModalProps) {
 }
 ```
 
-- [ ] **Step 2: Build verifizieren**
+- [x] **Step 2: Build verifizieren**
 
 ```bash
 npm run build
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/components/Modal.tsx
@@ -322,7 +322,7 @@ git commit -m "feat: add reusable modal with focus trap and focus-return"
 - Consumes: `create_customer`, `update_customer` (Phase 2), `Modal` (Task 2), `useAppStore.openForm/closeForm` (Task 1)
 - Produces: `<CustomerForm customer={Customer | null} onDone={() => void} />`
 
-- [ ] **Step 1: `CustomerForm.tsx` schreiben**
+- [x] **Step 1: `CustomerForm.tsx` schreiben**
 
 ```tsx
 // src/components/CustomerForm.tsx
@@ -409,13 +409,13 @@ export default function CustomerForm({ customer, onDone }: CustomerFormProps) {
 }
 ```
 
-- [ ] **Step 2: Build verifizieren**
+- [x] **Step 2: Build verifizieren**
 
 ```bash
 npm run build
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/components/CustomerForm.tsx
@@ -434,7 +434,7 @@ git commit -m "feat: add customer create/edit form"
 - Consumes: `list_customers`, `archive_customer` (Phase 2), `CustomerForm` (Task 3),
   `isTypingTarget` (Task 1)
 
-- [ ] **Step 1: `CustomerListView.tsx` schreiben**
+- [x] **Step 1: `CustomerListView.tsx` schreiben**
 
 ```tsx
 // src/components/CustomerListView.tsx
@@ -542,7 +542,7 @@ export default function CustomerListView() {
 }
 ```
 
-- [ ] **Step 2: In `App.tsx` einhängen**
+- [x] **Step 2: In `App.tsx` einhängen**
 
 ```tsx
 // src/App.tsx — komplett ersetzen
@@ -564,7 +564,7 @@ export default function App() {
 }
 ```
 
-- [ ] **Step 3: Build verifizieren**
+- [x] **Step 3: Build verifizieren**
 
 ```bash
 npm run build
@@ -572,7 +572,7 @@ npm run build
 
 Expected: kein TypeScript-Fehler.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/components/CustomerListView.tsx src/App.tsx
@@ -583,7 +583,7 @@ git commit -m "feat: add customer list view with keyboard navigation and CRUD"
 
 ## Task 5: End-to-End-Verifikation
 
-- [ ] **Step 1: Rust-Testsuite unverändert grün (Kontrolle, dass diese Phase backend-frei blieb)**
+- [x] **Step 1: Rust-Testsuite unverändert grün (Kontrolle, dass diese Phase backend-frei blieb)**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -592,7 +592,7 @@ cd src-tauri && cargo test 2>&1 | grep "test result" && cd ..
 
 Expected: weiterhin 59 Tests grün.
 
-- [ ] **Step 2: App real starten, Boot-Log prüfen**
+- [x] **Step 2: App real starten, Boot-Log prüfen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -605,7 +605,7 @@ cat smoke-test.log
 
 Expected: kein Absturz.
 
-- [ ] **Step 3: Aufräumen, Plan committen**
+- [x] **Step 3: Aufräumen, Plan committen**
 
 ```bash
 rm -rf .smoke-test-data smoke-test.log
