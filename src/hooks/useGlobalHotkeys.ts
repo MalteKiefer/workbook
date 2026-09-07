@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 
 export function isTypingTarget(el: Element | null): boolean {
@@ -17,6 +18,7 @@ export function useGlobalHotkeys() {
   const formOpen = useAppStore((s) => s.formOpen);
   const closeForm = useAppStore((s) => s.closeForm);
   const selectedCustomerId = useAppStore((s) => s.selectedCustomerId);
+  const selectedSystemId = useAppStore((s) => s.selectedSystemId);
   const view = useAppStore((s) => s.view);
 
   useEffect(() => {
@@ -37,6 +39,15 @@ export function useGlobalHotkeys() {
           goToCustomers();
         }
         clearPrefix();
+        return;
+      }
+
+      if (e.ctrlKey && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        void invoke("open_quick_capture_with_context", {
+          customerId: selectedCustomerId,
+          systemId: selectedSystemId,
+        });
         return;
       }
 
@@ -70,5 +81,5 @@ export function useGlobalHotkeys() {
       window.removeEventListener("keydown", onKeyDown);
       clearPrefix();
     };
-  }, [formOpen, view, selectedCustomerId, goToCustomers, goToSystems, goToJournal, closeForm]);
+  }, [formOpen, view, selectedCustomerId, selectedSystemId, goToCustomers, goToSystems, goToJournal, closeForm]);
 }
