@@ -93,11 +93,17 @@ export default function QuickCapture() {
   }, [customerId]);
 
   useEffect(() => {
-    const unlisten = listen<{ performed_at_utc: string; performed_at_tz: string; context_note: string | null }>(
+    const unlisten = listen<{
+      performed_at_utc: string;
+      performed_at_tz: string;
+      context_note: string | null;
+      override_customer_id: number | null;
+      override_system_id: number | null;
+    }>(
       "quick-capture-activated",
       async (event) => {
         if (draftIsEmptyRef.current) {
-          const { performed_at_utc, performed_at_tz, context_note } = event.payload;
+          const { performed_at_utc, performed_at_tz, context_note, override_customer_id, override_system_id } = event.payload;
           setPerformedAtUtc(performed_at_utc);
           setPerformedAtTz(performed_at_tz);
           setPerformedAtInput("");
@@ -109,6 +115,11 @@ export default function QuickCapture() {
           const last = await invoke<{ customer: Customer | null; system: System | null }>("get_last_selection");
           if (last.customer) setCustomerId(last.customer.id);
           if (last.system) setSystemId(last.system.id);
+
+          // Explicit navigation context (from the main window's Strg+N) takes
+          // precedence over the last-used selection above.
+          if (override_customer_id !== null) setCustomerId(override_customer_id);
+          if (override_system_id !== null) setSystemId(override_system_id);
         }
         titleRef.current?.focus();
       },
