@@ -1,5 +1,5 @@
 use chrono_tz::Tz;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use crate::error::AppError;
 use crate::time::now_with_tz;
@@ -55,6 +55,37 @@ pub fn list_for_entry(conn: &Connection, entry_id: i64) -> Result<Vec<Attachment
     let mut result = Vec::new();
     for row in rows {
         result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn get(conn: &Connection, id: i64) -> Result<Attachment, AppError> {
+    conn.query_row("SELECT * FROM attachments WHERE id = ?1", params![id], row_to_attachment)
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("Anhang {id} nicht gefunden")))
+}
+
+/// Löscht nur die Datenbank-Zeile. Die zugehörige Datei im Content-Addressed-Store
+/// bleibt unangetastet — sie kann per Dedup von anderen Anhang-Zeilen referenziert
+/// sein. Bereinigung nicht mehr referenzierter Dateien läuft ausschließlich über
+/// die separate, explizit aufzurufende `cleanup_orphans`-Funktionalität, nie
+/// automatisch.
+pub fn delete(conn: &Connection, id: i64) -> Result<(), AppError> {
+    let changed = conn.execute("DELETE FROM attachments WHERE id = ?1", params![id])?;
+    if changed == 0 {
+        return Err(AppError::NotFound(format!("Anhang {id} nicht gefunden")));
+    }
+    Ok(())
+}
+
+/// Alle im Moment referenzierten Content-Hashes, als Grundlage für die
+/// Orphan-Erkennung im Attachment-Store.
+pub fn all_referenced_hashes(conn: &Connection) -> Result<std::collections::HashSet<String>, AppError> {
+    let mut stmt = conn.prepare("SELECT DISTINCT sha256 FROM attachments")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    let mut result = std::collections::HashSet::new();
+    for row in rows {
+        result.insert(row?);
     }
     Ok(result)
 }
@@ -115,5 +146,77 @@ mod tests {
         let conn = migrated_connection();
         let result = create(&conn, 999, "abc123", "x.png", "image/png", 1, &berlin());
         assert!(matches!(result, Err(AppError::Database(_))));
+    }
+
+    #[test]
+    fn get_returns_existing_attachment() {
+        let conn = migrated_connection();
+        let dir = tempfile::tempdir().unwrap();
+        let entry_id = seed_entry(&conn, dir.path());
+        let created = create(&conn, entry_id, "abc123", "screenshot.png", "image/png", 42, &berlin()).unwrap();
+        assert_eq!(get(&conn, created.id).unwrap(), created);
+    }
+
+    #[test]
+    fn get_returns_not_found_for_unknown_id() {
+        let conn = migrated_connection();
+        let result = get(&conn, 999);
+        assert!(matches!(result, Err(AppError::NotFound(_))));
+    }
+
+    #[test]
+    fn delete_removes_row() {
+        let conn = migrated_connection();
+        let dir = tempfile::tempdir().unwrap();
+        let entry_id = seed_entry(&conn, dir.path());
+        let created = create(&conn, entry_id, "abc123", "screenshot.png", "image/png", 42, &berlin()).unwrap();
+        delete(&conn, created.id).unwrap();
+        assert!(matches!(get(&conn, created.id), Err(AppError::NotFound(_))));
+    }
+
+    #[test]
+    fn delete_returns_not_found_for_unknown_id() {
+        let conn = migrated_connection();
+        let result = delete(&conn, 999);
+        assert!(matches!(result, Err(AppError::NotFound(_))));
+    }
+
+    #[test]
+    fn delete_does_not_touch_file_on_disk() {
+        let conn = migrated_connection();
+        let dir = tempfile::tempdir().unwrap();
+        let entry_id = seed_entry(&conn, dir.path());
+        let attachment = crate::attachments::store::attach_bytes_to_entry(
+            &conn,
+            dir.path(),
+            entry_id,
+            b"png bytes",
+            "shot.png",
+            "image/png",
+            &berlin(),
+        )
+        .unwrap();
+        let relative_path = crate::attachments::store::relative_path_for(&attachment.sha256, "shot.png");
+        assert!(dir.path().join(&relative_path).exists());
+
+        delete(&conn, attachment.id).unwrap();
+
+        assert!(dir.path().join(&relative_path).exists(), "delete darf die Datei im Store nicht anfassen");
+    }
+
+    #[test]
+    fn all_referenced_hashes_returns_distinct_hashes() {
+        let conn = migrated_connection();
+        let dir = tempfile::tempdir().unwrap();
+        let entry_id = seed_entry(&conn, dir.path());
+        create(&conn, entry_id, "hash-a", "a.png", "image/png", 1, &berlin()).unwrap();
+        create(&conn, entry_id, "hash-a", "a2.png", "image/png", 1, &berlin()).unwrap();
+        create(&conn, entry_id, "hash-b", "b.png", "image/png", 1, &berlin()).unwrap();
+
+        let hashes = all_referenced_hashes(&conn).unwrap();
+
+        assert_eq!(hashes.len(), 2);
+        assert!(hashes.contains("hash-a"));
+        assert!(hashes.contains("hash-b"));
     }
 }
