@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
 import Modal from "./Modal";
+import MarkdownEditor, { type MarkdownEditorHandle } from "./MarkdownEditor";
+import AttachmentDropzone, { type PickedFile } from "./AttachmentDropzone";
+import AttachmentList from "./AttachmentList";
 
 interface Customer {
   id: number;
@@ -29,6 +33,34 @@ interface Entry {
   updated_at_utc: string;
   updated_at_tz: string;
   tags: string[];
+}
+
+interface Attachment {
+  id: number;
+  entry_id: number;
+  sha256: string;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at_utc: string;
+  created_at_tz: string;
+}
+
+interface PendingAttachment {
+  token: string;
+  bytesBase64: string;
+  filename: string;
+  mimeType: string;
+}
+
+// Mirrors src-tauri/src/attachments/store.rs's relative_path_for(): deterministic,
+// content-addressed naming — attachments/{first 2 hex chars}/{sha256}{.ext}. Used to
+// build a Markdown image reference immediately after add_attachment_to_entry returns,
+// without a second round-trip to ask the backend for the path it just computed.
+function relativePathFor(sha256: string, originalFilename: string): string {
+  const dotIndex = originalFilename.lastIndexOf(".");
+  const ext = dotIndex >= 0 ? originalFilename.slice(dotIndex) : "";
+  return `attachments/${sha256.slice(0, 2)}/${sha256}${ext}`;
 }
 
 // Kept local rather than shared — five static entries aren't worth a shared
@@ -64,8 +96,11 @@ export default function EntryEditor() {
   const [performedAtPreview, setPerformedAtPreview] = useState("");
   const [loadingEntry, setLoadingEntry] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
 
   const titleRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<MarkdownEditorHandle>(null);
 
   // Full customer list, once — used for both the create-mode select and the
   // disabled edit-mode select.
@@ -111,6 +146,8 @@ export default function EntryEditor() {
       setCustomerId(selectedCustomerId ?? "");
       setSystemId(selectedSystemId ?? "");
       setPerformedAtInput("");
+      setAttachments([]);
+      setPendingAttachments([]);
       (async () => {
         try {
           const now = await invoke<{ utc: string; tz: string }>("parse_temporal_input", { input: "" });
@@ -126,6 +163,7 @@ export default function EntryEditor() {
     }
 
     setLoadingEntry(true);
+    setPendingAttachments([]);
     invoke<Entry>("get_entry", { id: editorTarget })
       .then(async (entry) => {
         setTitle(entry.title);
@@ -141,6 +179,9 @@ export default function EntryEditor() {
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoadingEntry(false));
+    invoke<Attachment[]>("list_attachments_for_entry", { entryId: editorTarget })
+      .then(setAttachments)
+      .catch((e) => setError(String(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editorTarget]);
 
@@ -175,6 +216,86 @@ export default function EntryEditor() {
     }
   }
 
+  // Shared by drag&drop, the file-picker button, and clipboard paste. In edit
+  // mode the entry already exists, so a picked/pasted file is attached
+  // immediately via the backend (no "pending" state); in create mode the
+  // entry doesn't exist yet, so files are held locally and resolved into real
+  // attachments server-side when create_entry runs (same pending_attachments
+  // mechanism the quick-capture window already uses).
+  const handleFilesAdded = useCallback(
+    async (files: PickedFile[]) => {
+      for (const file of files) {
+        if (typeof editorTarget === "number") {
+          try {
+            const attachment = await invoke<Attachment>("add_attachment_to_entry", {
+              entryId: editorTarget,
+              bytesBase64: file.bytesBase64,
+              originalFilename: file.filename,
+              mimeType: file.mimeType,
+            });
+            const relativePath = relativePathFor(attachment.sha256, attachment.original_filename);
+            editorRef.current?.insertAtCursor(`![${file.filename}](${relativePath})`);
+            setAttachments((prev) => [...prev, attachment]);
+          } catch (e) {
+            setError(String(e));
+          }
+        } else {
+          const token = `pending:${crypto.randomUUID()}`;
+          editorRef.current?.insertAtCursor(`![${file.filename}](${token})`);
+          setPendingAttachments((prev) => [
+            ...prev,
+            { token, bytesBase64: file.bytesBase64, filename: file.filename, mimeType: file.mimeType },
+          ]);
+        }
+      }
+    },
+    [editorTarget],
+  );
+
+  const handleEditorPaste = useCallback(
+    (event: ClipboardEvent) => {
+      const items = event.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          event.preventDefault();
+          const file = item.getAsFile();
+          if (!file) return;
+          void file.arrayBuffer().then((buffer) => {
+            const bytes = new Uint8Array(buffer);
+            let binary = "";
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+            void handleFilesAdded([{ bytesBase64: btoa(binary), filename: "Screenshot.png", mimeType: item.type }]);
+          });
+          return;
+        }
+      }
+    },
+    [handleFilesAdded],
+  );
+
+  const handleAttachmentExport = useCallback(
+    async (attachmentId: number) => {
+      const attachment = attachments.find((a) => a.id === attachmentId);
+      if (!attachment) return;
+      try {
+        const destPath = await saveFileDialog({ defaultPath: attachment.original_filename });
+        if (destPath) {
+          await invoke("copy_attachment_to", { attachmentId, destPath });
+        }
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [attachments],
+  );
+
+  const handleAttachmentRemove = useCallback((attachmentId: number) => {
+    invoke("remove_attachment", { attachmentId })
+      .then(() => setAttachments((prev) => prev.filter((a) => a.id !== attachmentId)))
+      .catch((e) => setError(String(e)));
+  }, []);
+
   const save = useCallback(async () => {
     if (editorTarget === null) return;
     if (customerId === "") {
@@ -197,7 +318,12 @@ export default function EntryEditor() {
             performed_at_utc: performedAtUtc,
             performed_at_tz: performedAtTz,
             tag_names: tagNames,
-            pending_attachments: [],
+            pending_attachments: pendingAttachments.map((p) => ({
+              placeholder_token: p.token,
+              bytes_base64: p.bytesBase64,
+              original_filename: p.filename,
+              mime_type: p.mimeType,
+            })),
           },
         });
       } else {
@@ -230,6 +356,7 @@ export default function EntryEditor() {
     performedAtUtc,
     performedAtTz,
     tagsInput,
+    pendingAttachments,
     closeForm,
     closeEntryEditor,
   ]);
@@ -339,13 +466,32 @@ export default function EntryEditor() {
 
         <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1 }}>
           Beschreibung (Markdown)
-          <textarea
-            value={bodyMd}
-            onChange={(e) => setBodyMd(e.target.value)}
-            rows={15}
-            style={{ flex: 1, fontFamily: "monospace" }}
-          />
+          <AttachmentDropzone onFilesAdded={handleFilesAdded}>
+            <MarkdownEditor
+              ref={editorRef}
+              value={bodyMd}
+              onChange={setBodyMd}
+              onPaste={handleEditorPaste}
+              placeholder="Markdown…"
+            />
+          </AttachmentDropzone>
         </label>
+
+        {isEditMode && (
+          <AttachmentList
+            attachments={attachments}
+            onOpen={(id) => void invoke("open_attachment", { attachmentId: id }).catch((e) => setError(String(e)))}
+            onExport={handleAttachmentExport}
+            onRemove={handleAttachmentRemove}
+            resolveImageUrl={(attachment) => invoke<string>("read_attachment_data_url", { attachmentId: attachment.id })}
+          />
+        )}
+
+        {pendingAttachments.length > 0 && (
+          <p style={{ fontSize: "0.8rem", color: "#a0a0a0" }}>
+            {pendingAttachments.length} Anhang/Anhänge werden beim Speichern hinzugefügt.
+          </p>
+        )}
 
         <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
           Tags
