@@ -3,6 +3,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod time;
+pub mod window;
 
 pub use error::AppError;
 
@@ -34,6 +35,10 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(AppState { pool, config: Mutex::new(app_config) })
+        .setup(|app| {
+            window::install_hide_on_close(app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::customers::list_customers,
             commands::customers::create_customer,
