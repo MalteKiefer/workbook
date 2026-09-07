@@ -22,6 +22,11 @@ pub fn get_last_selection(state: State<AppState>) -> Result<LastSelection, AppEr
 }
 
 #[tauri::command]
+pub fn open_quick_capture_with_context(app: AppHandle, customer_id: Option<i64>, system_id: Option<i64>) -> Result<(), AppError> {
+    crate::quickcapture::open_with_context(&app, customer_id, system_id)
+}
+
+#[tauri::command]
 pub fn quick_capture_close(app: AppHandle, state: State<AppState>) -> Result<(), AppError> {
     if let Some(window) = app.get_webview_window("quick-capture") {
         let _ = window.hide();
