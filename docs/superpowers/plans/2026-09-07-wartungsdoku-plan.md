@@ -48,7 +48,7 @@ reviewed — per the user's explicit "pause after each section" instruction.
 **Interfaces:**
 - Produces: `pub enum AppError { Config(String), Database(String), Migration(String), InvalidTimestamp(String), Timezone(String), Io(String) }`, `impl From<rusqlite::Error> for AppError`, `impl From<std::io::Error> for AppError`, `impl serde::Serialize for AppError` (fields `code: &str`, `message: String`)
 
-- [ ] **Step 1: Verzeichnis und Cargo.toml anlegen**
+- [x] **Step 1: Verzeichnis und Cargo.toml anlegen**
 
 ```bash
 mkdir -p src-tauri/src
@@ -64,7 +64,7 @@ path = "src/lib.rs"
 EOF
 ```
 
-- [ ] **Step 2: Abhängigkeiten hinzufügen**
+- [x] **Step 2: Abhängigkeiten hinzufügen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -84,7 +84,7 @@ cargo add tempfile --dev
 cd ..
 ```
 
-- [ ] **Step 3: `error.rs` schreiben (inkl. Unit-Tests)**
+- [x] **Step 3: `error.rs` schreiben (inkl. Unit-Tests)**
 
 ```rust
 // src-tauri/src/error.rs
@@ -181,7 +181,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 cd src-tauri && cargo add serde_json --dev && cd ..
 ```
 
-- [ ] **Step 4: `lib.rs` schreiben**
+- [x] **Step 4: `lib.rs` schreiben**
 
 ```rust
 // src-tauri/src/lib.rs
@@ -190,7 +190,7 @@ pub mod error;
 pub use error::AppError;
 ```
 
-- [ ] **Step 5: Bauen und Tests laufen lassen**
+- [x] **Step 5: Bauen und Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -200,7 +200,7 @@ cd src-tauri && cargo test && cd ..
 Expected: 3 tests passed (`database_error_has_database_code_and_readable_message`,
 `serializes_to_code_and_message_json`, `io_error_converts_from_std_io_error`).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/lib.rs src-tauri/src/error.rs
@@ -222,7 +222,7 @@ git commit -m "feat: scaffold Rust data-layer crate with AppError"
   `(utc_iso_ms, tz_name)`),
   `pub fn parse_temporal_input(input: &str, tz: &chrono_tz::Tz, now_utc: chrono::DateTime<chrono::Utc>) -> Result<(String, String), AppError>`
 
-- [ ] **Step 1: Failing tests schreiben**
+- [x] **Step 1: Failing tests schreiben**
 
 ```rust
 // src-tauri/src/time.rs
@@ -392,7 +392,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: `time`-Modul in `lib.rs` einhängen**
+- [x] **Step 2: `time`-Modul in `lib.rs` einhängen**
 
 ```rust
 // src-tauri/src/lib.rs
@@ -402,7 +402,7 @@ pub mod time;
 pub use error::AppError;
 ```
 
-- [ ] **Step 3: Tests laufen lassen**
+- [x] **Step 3: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -411,7 +411,7 @@ cd src-tauri && cargo test time:: && cd ..
 
 Expected: 7 tests passed, 0 failed.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/time.rs src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/Cargo.lock
@@ -432,7 +432,7 @@ git commit -m "feat: add timestamp generation and quick-entry temporal parsing"
   `pub struct Config { data_dir: PathBuf, autostart_enabled: bool, context_capture_enabled: bool, late_entry_threshold_hours: i64, hotkeys: HotkeyConfig }`,
   `impl Config { pub fn load_or_default(path: &Path) -> Result<Config, AppError>; pub fn save(&self, path: &Path) -> Result<(), AppError>; }`
 
-- [ ] **Step 1: Failing tests schreiben**
+- [x] **Step 1: Failing tests schreiben**
 
 ```rust
 // src-tauri/src/config.rs
@@ -552,7 +552,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: `config`-Modul einhängen**
+- [x] **Step 2: `config`-Modul einhängen**
 
 ```rust
 // src-tauri/src/lib.rs
@@ -563,7 +563,7 @@ pub mod time;
 pub use error::AppError;
 ```
 
-- [ ] **Step 3: Tests laufen lassen**
+- [x] **Step 3: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -572,7 +572,7 @@ cd src-tauri && cargo test config:: && cd ..
 
 Expected: 3 tests passed.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/config.rs src-tauri/src/lib.rs
@@ -592,7 +592,7 @@ git commit -m "feat: add config.toml load/save with defaults"
 - Produces: `pub type DbPool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>`,
   `pub fn build_pool(db_path: &Path) -> Result<DbPool, AppError>`
 
-- [ ] **Step 1: Failing test schreiben**
+- [x] **Step 1: Failing test schreiben**
 
 ```rust
 // src-tauri/src/db/pool.rs
@@ -645,7 +645,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: `db/mod.rs` schreiben, in `lib.rs` einhängen**
+- [x] **Step 2: `db/mod.rs` schreiben, in `lib.rs` einhängen**
 
 ```rust
 // src-tauri/src/db/mod.rs
@@ -662,7 +662,7 @@ pub mod time;
 pub use error::AppError;
 ```
 
-- [ ] **Step 3: Tests laufen lassen**
+- [x] **Step 3: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -671,7 +671,7 @@ cd src-tauri && cargo test db::pool:: && cd ..
 
 Expected: 2 tests passed.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/db/mod.rs src-tauri/src/db/pool.rs src-tauri/src/lib.rs
@@ -692,7 +692,7 @@ git commit -m "feat: add SQLite connection pool with WAL and foreign keys"
 - Produces: `pub fn current_version(conn: &rusqlite::Connection) -> Result<i64, AppError>`,
   `pub fn run_migrations(conn: &mut rusqlite::Connection, db_path: &Path, system_tz: &chrono_tz::Tz) -> Result<(), AppError>`
 
-- [ ] **Step 1: Migrations-SQL schreiben**
+- [x] **Step 1: Migrations-SQL schreiben**
 
 ```sql
 -- src-tauri/migrations/0001_init.sql
@@ -813,7 +813,7 @@ CREATE TRIGGER entries_au AFTER UPDATE ON entries BEGIN
 END;
 ```
 
-- [ ] **Step 2: Failing tests für den Runner schreiben**
+- [x] **Step 2: Failing tests für den Runner schreiben**
 
 ```rust
 // src-tauri/src/db/migrations.rs
@@ -1009,7 +1009,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: `migrations`-Modul einhängen**
+- [x] **Step 3: `migrations`-Modul einhängen**
 
 ```rust
 // src-tauri/src/db/mod.rs
@@ -1017,7 +1017,7 @@ pub mod migrations;
 pub mod pool;
 ```
 
-- [ ] **Step 4: Tests laufen lassen**
+- [x] **Step 4: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -1026,7 +1026,7 @@ cd src-tauri && cargo test db:: && cd ..
 
 Expected: 8 tests passed (2 aus `pool.rs` + 6 aus `migrations.rs`), 0 failed.
 
-- [ ] **Step 5: Gesamten Testlauf der Phase verifizieren**
+- [x] **Step 5: Gesamten Testlauf der Phase verifizieren**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -1035,7 +1035,7 @@ cd src-tauri && cargo test && cd ..
 
 Expected: alle Tests aus Task 1–5 grün (3 + 7 + 3 + 2 + 6 = 21 Tests).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/migrations/0001_init.sql src-tauri/src/db/migrations.rs src-tauri/src/db/mod.rs
