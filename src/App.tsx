@@ -5,6 +5,7 @@ import SystemListView from "./components/SystemListView";
 import JournalView from "./components/JournalView";
 import CommandPalette from "./components/CommandPalette";
 import ShortcutOverview from "./components/ShortcutOverview";
+import EntryEditor from "./components/EntryEditor";
 
 export default function App() {
   useGlobalHotkeys();
@@ -17,6 +18,7 @@ export default function App() {
       {view === "journal" && <JournalView />}
       <CommandPalette />
       <ShortcutOverview />
+      <EntryEditor />
     </main>
   );
 }

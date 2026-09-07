@@ -82,6 +82,7 @@ export default function JournalView() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const formOpen = useAppStore((s) => s.formOpen);
+  const openEntryEditor = useAppStore((s) => s.openEntryEditor);
 
   useEffect(() => {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
@@ -145,7 +146,13 @@ export default function JournalView() {
       } else if (e.key === "k") {
         e.preventDefault();
         setSelectedIndex((i) => Math.max(i - 1, 0));
-      } else if (e.key === "Enter" || e.key === "e") {
+      } else if (e.key === "e") {
+        const entry = entries[selectedIndex];
+        if (entry) {
+          e.preventDefault();
+          openEntryEditor(entry.id);
+        }
+      } else if (e.key === "Enter") {
         const entry = entries[selectedIndex];
         if (entry) {
           e.preventDefault();
@@ -155,11 +162,14 @@ export default function JournalView() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [entries, selectedIndex, formOpen]);
+  }, [entries, selectedIndex, formOpen, openEntryEditor]);
 
   return (
     <div>
-      <h1 style={{ fontSize: "1.1rem" }}>Journal</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1 style={{ fontSize: "1.1rem" }}>Journal</h1>
+        <button onClick={() => openEntryEditor("new")}>+ Neuer Eintrag</button>
+      </div>
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
         <select value={customerId} onChange={(e) => setCustomerId(e.target.value === "" ? "" : Number(e.target.value))}>
           <option value="">Alle Kunden</option>
