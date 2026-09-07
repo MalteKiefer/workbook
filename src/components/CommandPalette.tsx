@@ -65,6 +65,7 @@ export default function CommandPalette() {
   const selectCustomer = useAppStore((s) => s.selectCustomer);
   const selectSystem = useAppStore((s) => s.selectSystem);
   const openEntryEditor = useAppStore((s) => s.openEntryEditor);
+  const openExportDialog = useAppStore((s) => s.openExportDialog);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -102,6 +103,7 @@ export default function CommandPalette() {
     ];
     if (selectedCustomerId !== null) {
       cmds.push({ id: "goto-systems", label: "Zu Systemliste", shortcut: "g s", run: () => goToSystems() });
+      cmds.push({ id: "export-customer", label: "Kunde exportieren", shortcut: "", run: () => openExportDialog() });
     }
     cmds.push({ id: "goto-journal", label: "Zum Journal", shortcut: "g j", run: goToJournal });
     cmds.push({
@@ -120,7 +122,7 @@ export default function CommandPalette() {
       },
     });
     return cmds;
-  }, [selectedCustomerId, goToCustomers, goToSystems, goToJournal, openEntryEditor]);
+  }, [selectedCustomerId, goToCustomers, goToSystems, goToJournal, openEntryEditor, openExportDialog]);
 
   const filteredCommands = useMemo(() => {
     const q = query.trim().toLowerCase();
