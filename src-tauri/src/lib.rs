@@ -1,3 +1,4 @@
+pub mod commands;
 pub mod config;
 pub mod db;
 pub mod error;
@@ -33,6 +34,24 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(AppState { pool, config: Mutex::new(app_config) })
+        .invoke_handler(tauri::generate_handler![
+            commands::customers::list_customers,
+            commands::customers::create_customer,
+            commands::customers::update_customer,
+            commands::customers::archive_customer,
+            commands::systems::list_systems,
+            commands::systems::create_system,
+            commands::systems::update_system,
+            commands::systems::archive_system,
+            commands::tags::list_tags,
+            commands::entries::list_entries,
+            commands::entries::get_entry,
+            commands::entries::create_entry,
+            commands::entries::update_entry,
+            commands::entries::parse_temporal_input,
+            commands::search::search_entries,
+            commands::search::search_directory,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
