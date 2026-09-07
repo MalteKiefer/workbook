@@ -55,6 +55,8 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState { pool, config: Mutex::new(app_config), previous_foreground: Mutex::new(None) })
         .setup(move |app| {
             window::install_hide_on_close(app.handle());
@@ -114,6 +116,13 @@ pub fn run() {
             commands::quickcapture::open_quick_capture_with_context,
             commands::search::search_entries,
             commands::search::search_directory,
+            commands::attachments::list_attachments_for_entry,
+            commands::attachments::add_attachment_to_entry,
+            commands::attachments::remove_attachment,
+            commands::attachments::read_attachment_data_url,
+            commands::attachments::copy_attachment_to,
+            commands::attachments::cleanup_orphans,
+            commands::attachments::open_attachment,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
