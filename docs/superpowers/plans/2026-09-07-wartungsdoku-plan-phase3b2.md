@@ -51,7 +51,7 @@ React entry point). No new Rust dependencies in this phase.
 **Interfaces:**
 - Produces: neue Felder `last_customer_id: Option<i64>`, `last_system_id: Option<i64>` auf `Config`
 
-- [ ] **Step 1: Felder ergänzen (mit Test)**
+- [x] **Step 1: Felder ergänzen (mit Test)**
 
 ```rust
 // src-tauri/src/config.rs — Config-Struct erweitern
@@ -104,7 +104,7 @@ Test ergänzen:
     }
 ```
 
-- [ ] **Step 2: Tests laufen lassen**
+- [x] **Step 2: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -113,7 +113,7 @@ cd src-tauri && cargo test config:: && cd ..
 
 Expected: 5 Tests grün (4 bestehende + 1 neuer).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src-tauri/src/config.rs
@@ -130,7 +130,7 @@ git commit -m "feat: track last-used customer/system selection in config"
 **Interfaces:**
 - Produces: `pub fn format_timestamp_for_display(utc: &str, tz_name: &str) -> Result<String, AppError>`
 
-- [ ] **Step 1: Funktion mit failing test ergänzen**
+- [x] **Step 1: Funktion mit failing test ergänzen**
 
 ```rust
 // src-tauri/src/time.rs — nach parse_temporal_input einfügen
@@ -163,7 +163,7 @@ Test (im bestehenden `#[cfg(test)] mod tests` ergänzen):
     }
 ```
 
-- [ ] **Step 2: Tests laufen lassen**
+- [x] **Step 2: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -172,7 +172,7 @@ cd src-tauri && cargo test time:: && cd ..
 
 Expected: 9 Tests grün (7 bestehende + 2 neue).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src-tauri/src/time.rs
@@ -196,7 +196,7 @@ git commit -m "feat: add human-readable timestamp display formatting"
   `pub fn quickcapture::open(app: &tauri::AppHandle) -> Result<(), AppError>`,
   Tauri-Event `"quick-capture-activated"` mit Payload `{ performed_at_utc, performed_at_tz }`
 
-- [ ] **Step 1: `window.rs` verallgemeinern**
+- [x] **Step 1: `window.rs` verallgemeinern**
 
 ```rust
 // src-tauri/src/window.rs — komplett ersetzen
@@ -233,7 +233,7 @@ pub fn install_hide_on_close(app: &AppHandle) {
 }
 ```
 
-- [ ] **Step 2: `quickcapture.rs` schreiben**
+- [x] **Step 2: `quickcapture.rs` schreiben**
 
 ```rust
 // src-tauri/src/quickcapture.rs
@@ -265,7 +265,7 @@ pub fn open(app: &AppHandle) -> Result<(), AppError> {
 }
 ```
 
-- [ ] **Step 3: Fenster in `lib.rs` beim Start erzeugen (versteckt)**
+- [x] **Step 3: Fenster in `lib.rs` beim Start erzeugen (versteckt)**
 
 ```rust
 // src-tauri/src/lib.rs — Modul-Deklaration ergänzen
@@ -288,7 +288,7 @@ pub mod quickcapture;
             window::install_hide_on_close_for(&quick_capture_window);
 ```
 
-- [ ] **Step 4: Tray-Menü um "Schnellerfassung" erweitern**
+- [x] **Step 4: Tray-Menü um "Schnellerfassung" erweitern**
 
 ```rust
 // src-tauri/src/tray.rs — build_tray() anpassen
@@ -336,7 +336,7 @@ pub fn build_tray(app: &AppHandle) -> Result<(), AppError> {
 }
 ```
 
-- [ ] **Step 5: Build verifizieren**
+- [x] **Step 5: Build verifizieren**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -351,7 +351,7 @@ diesen Pfad zur Laufzeit (`devUrl`/`frontendDist`), nicht zur Compile-Zeit, dahe
 kompiliert `cargo build` bereits jetzt; ein echter Start würde erst ab Task 5 die Datei
 tatsächlich laden.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/window.rs src-tauri/src/quickcapture.rs src-tauri/src/tray.rs src-tauri/src/lib.rs
@@ -373,7 +373,7 @@ git commit -m "feat: create hidden quick-capture window, activate via tray menu"
 - Produces: `#[tauri::command] get_last_selection`, `#[tauri::command] format_timestamp_for_display`;
   `create_entry` merkt sich nach erfolgreichem Speichern `last_customer_id`/`last_system_id`
 
-- [ ] **Step 1: `commands/quickcapture.rs` schreiben**
+- [x] **Step 1: `commands/quickcapture.rs` schreiben**
 
 ```rust
 // src-tauri/src/commands/quickcapture.rs
@@ -401,7 +401,7 @@ pub fn get_last_selection(state: State<AppState>) -> Result<LastSelection, AppEr
 }
 ```
 
-- [ ] **Step 2: `format_timestamp_for_display`-Command in `commands/entries.rs` ergänzen**
+- [x] **Step 2: `format_timestamp_for_display`-Command in `commands/entries.rs` ergänzen**
 
 ```rust
 // src-tauri/src/commands/entries.rs — ergänzen
@@ -411,7 +411,7 @@ pub fn format_timestamp_for_display(utc: String, tz: String) -> Result<String, A
 }
 ```
 
-- [ ] **Step 3: `create_entry` merkt sich die letzte Auswahl**
+- [x] **Step 3: `create_entry` merkt sich die letzte Auswahl**
 
 ```rust
 // src-tauri/src/commands/entries.rs — create_entry ersetzen
@@ -434,7 +434,7 @@ pub fn create_entry(state: State<AppState>, input: NewEntry) -> Result<Entry, Ap
 }
 ```
 
-- [ ] **Step 4: Modul einhängen, Commands registrieren**
+- [x] **Step 4: Modul einhängen, Commands registrieren**
 
 ```rust
 // src-tauri/src/commands/mod.rs — Zeile ergänzen
@@ -447,7 +447,7 @@ pub mod quickcapture;
             commands::quickcapture::get_last_selection,
 ```
 
-- [ ] **Step 5: Bauen und testen**
+- [x] **Step 5: Bauen und testen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -456,7 +456,7 @@ cd src-tauri && cargo build --bin wartungsdoku && cargo test && cd ..
 
 Expected: Build grün, alle 58 Rust-Tests grün.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/commands/quickcapture.rs src-tauri/src/commands/entries.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs
@@ -478,7 +478,7 @@ git commit -m "feat: add last-selection and timestamp-display commands, remember
   `parse_temporal_input`, `format_timestamp_for_display`, `create_entry` (alle bereits vorhanden)
 - Produces: eine per `npm run build` mitgebaute zweite Seite `quick-capture.html`
 
-- [ ] **Step 1: Vite auf Multi-Page umstellen**
+- [x] **Step 1: Vite auf Multi-Page umstellen**
 
 ```typescript
 // vite.config.ts — komplett ersetzen
@@ -507,7 +507,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 2: `quick-capture.html` anlegen**
+- [x] **Step 2: `quick-capture.html` anlegen**
 
 ```html
 <!-- quick-capture.html -->
@@ -525,7 +525,7 @@ export default defineConfig({
 </html>
 ```
 
-- [ ] **Step 3: `main.tsx` für das Fenster**
+- [x] **Step 3: `main.tsx` für das Fenster**
 
 ```tsx
 // src/quick-capture/main.tsx
@@ -540,7 +540,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 );
 ```
 
-- [ ] **Step 4: `QuickCapture.tsx` schreiben**
+- [x] **Step 4: `QuickCapture.tsx` schreiben**
 
 ```tsx
 // src/quick-capture/QuickCapture.tsx
@@ -818,7 +818,7 @@ export default function QuickCapture() {
 }
 ```
 
-- [ ] **Step 5: Frontend bauen**
+- [x] **Step 5: Frontend bauen**
 
 ```bash
 npm run build
@@ -827,7 +827,7 @@ npm run build
 Expected: `dist/index.html` und `dist/quick-capture.html` (samt zugehörigem JS-Bundle)
 werden erzeugt, kein TypeScript-Fehler.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add vite.config.ts quick-capture.html src/quick-capture
@@ -838,7 +838,7 @@ git commit -m "feat: add quick-capture window frontend"
 
 ## Task 6: End-to-End-Verifikation
 
-- [ ] **Step 1: App real starten, Boot-Log prüfen**
+- [x] **Step 1: App real starten, Boot-Log prüfen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -859,13 +859,13 @@ fügt einen Screenshot ein, `Strg+S`/`Esc` schließen korrekt) muss der Nutzer e
 manuell prüfen — hier wird nur verifiziert, dass alles kompiliert, baut und die
 Anwendung ohne Absturz hochfährt.
 
-- [ ] **Step 2: Aufräumen**
+- [x] **Step 2: Aufräumen**
 
 ```bash
 rm -rf .smoke-test-data smoke-test.log
 ```
 
-- [ ] **Step 3: Plan-Datei committen**
+- [x] **Step 3: Plan-Datei committen**
 
 ```bash
 git add docs/superpowers/plans/2026-09-07-wartungsdoku-plan-phase3b2.md
@@ -873,6 +873,18 @@ git commit -m "docs: mark Phase 3b-2 plan tasks complete"
 ```
 
 ---
+
+## Ausführungsnotizen
+
+- **Task 5**: `vite.config.ts` brauchte `@types/node` (nicht im Plan erwähnt) für
+  `node:path`/`__dirname` — nachinstalliert. `__dirname` außerdem durch
+  `import.meta.dirname` ersetzt (Vite meldete es als in einer künftigen Major-Version
+  entfernt).
+- **Task 5**: Die geplante Pseudocode-Fassung des `"quick-capture-activated"`-Listeners
+  prüfte `title === "" && bodyMd === ""` direkt in einem mit `[]` registrierten Effekt —
+  das hätte wegen React-Closures immer die anfänglichen (leeren) Werte gesehen, nie den
+  aktuellen Entwurfsstand. Behoben über eine per separatem Effekt aktuell gehaltene
+  `draftIsEmptyRef`, die der Listener stattdessen abfragt.
 
 ## Self-Review (durchgeführt vor Ausführung)
 
