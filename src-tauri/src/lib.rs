@@ -3,6 +3,7 @@ pub mod commands;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod quickcapture;
 pub mod time;
 pub mod tray;
 pub mod window;
@@ -48,6 +49,19 @@ pub fn run() {
             if let Err(e) = tray::build_tray(app.handle()) {
                 eprintln!("Tray konnte nicht eingerichtet werden: {e}");
             }
+
+            let quick_capture_window = tauri::WebviewWindowBuilder::new(
+                app,
+                "quick-capture",
+                tauri::WebviewUrl::App("quick-capture.html".into()),
+            )
+            .title("Schnellerfassung")
+            .inner_size(560.0, 420.0)
+            .center()
+            .resizable(false)
+            .visible(false)
+            .build()?;
+            window::install_hide_on_close_for(&quick_capture_window);
 
             let state = app.state::<AppState>();
             let autostart_enabled = state.config.lock().expect("Config-Mutex vergiftet").autostart_enabled;
