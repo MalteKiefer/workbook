@@ -32,6 +32,51 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
+/// Eine Datei, die tatsächlich im Content-Addressed-Store auf der Platte liegt.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredFile {
+    pub sha256: String,
+    pub absolute_path: std::path::PathBuf,
+    pub size_bytes: u64,
+}
+
+/// Listet alle Dateien unter `data_dir/attachments/`, unabhängig davon, ob sie
+/// noch von einer `attachments`-DB-Zeile referenziert werden. Grundlage für die
+/// explizite, niemals automatische Orphan-Bereinigung (`cleanup_orphans`).
+///
+/// Der Hash wird aus dem Dateinamen (Stem) gelesen statt neu berechnet, da der
+/// Speicherort per `relative_path_for` deterministisch danach benannt ist. Ein
+/// Dateiname, der nicht wie ein Hash aussieht, wird bewusst nicht herausgefiltert:
+/// der `attachments/`-Ordner gehört exklusiv dieser App, und ein Fremdkörper darin
+/// soll konservativ als "nicht referenziert" gelten.
+pub fn list_all_stored_files(data_dir: &Path) -> Result<Vec<StoredFile>, AppError> {
+    let attachments_dir = data_dir.join("attachments");
+    if !attachments_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut result = Vec::new();
+    for prefix_entry in std::fs::read_dir(&attachments_dir)? {
+        let prefix_entry = prefix_entry?;
+        if !prefix_entry.file_type()?.is_dir() {
+            continue;
+        }
+        for file_entry in std::fs::read_dir(prefix_entry.path())? {
+            let file_entry = file_entry?;
+            let path = file_entry.path();
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let metadata = file_entry.metadata()?;
+            result.push(StoredFile {
+                sha256: stem.to_string(),
+                absolute_path: path,
+                size_bytes: metadata.len(),
+            });
+        }
+    }
+    Ok(result)
+}
+
 pub fn save_content_addressed(data_dir: &Path, bytes: &[u8], original_filename: &str) -> Result<SavedFile, AppError> {
     let sha256 = sha256_hex(bytes);
     let relative_path = relative_path_for(&sha256, original_filename);
@@ -113,6 +158,36 @@ mod tests {
         let dir = tempdir().unwrap();
         let saved = save_content_addressed(dir.path(), b"no extension", "README").unwrap();
         assert_eq!(saved.relative_path.matches('.').count(), 0);
+    }
+
+    #[test]
+    fn list_all_stored_files_returns_empty_vec_when_directory_missing() {
+        let dir = tempdir().unwrap();
+        assert!(list_all_stored_files(dir.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_all_stored_files_finds_referenced_and_unreferenced_files() {
+        let dir = tempdir().unwrap();
+        let conn = crate::db::test_support::migrated_connection();
+        let tz: Tz = "Europe/Berlin".parse().unwrap();
+        let entry_id = seed_entry(&conn, dir.path(), &tz);
+
+        // Referenced: goes through the full attach flow, has a DB row.
+        let referenced =
+            attach_bytes_to_entry(&conn, dir.path(), entry_id, b"referenced bytes", "a.png", "image/png", &tz).unwrap();
+
+        // Unreferenced: written directly to the store, no DB row.
+        let unreferenced = save_content_addressed(dir.path(), b"orphan bytes", "b.png").unwrap();
+
+        let found = list_all_stored_files(dir.path()).unwrap();
+        assert_eq!(found.len(), 2);
+
+        let referenced_entry = found.iter().find(|f| f.sha256 == referenced.sha256).unwrap();
+        assert_eq!(referenced_entry.size_bytes, b"referenced bytes".len() as u64);
+
+        let unreferenced_entry = found.iter().find(|f| f.sha256 == unreferenced.sha256).unwrap();
+        assert_eq!(unreferenced_entry.size_bytes, b"orphan bytes".len() as u64);
     }
 
     use crate::db::customers::{self, NewCustomer};
