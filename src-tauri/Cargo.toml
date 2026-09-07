@@ -1,0 +1,25 @@
+[package]
+name = "wartungsdoku"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "wartungsdoku_lib"
+path = "src/lib.rs"
+
+[dependencies]
+chrono = { version = "0.4.45", features = ["serde"] }
+chrono-tz = "0.10.4"
+dirs = "7.0.0"
+iana-time-zone = "0.1.65"
+r2d2 = "0.8.10"
+r2d2_sqlite = "0.35.0"
+regex = "1.13.1"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.20"
+toml = "1.1.5"
+
+[dev-dependencies]
+serde_json = "1.0.151"
+tempfile = "3.27.0"
