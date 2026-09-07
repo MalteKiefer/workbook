@@ -8,11 +8,13 @@ name = "wartungsdoku_lib"
 path = "src/lib.rs"
 
 [dependencies]
+arboard = "3.6.1"
 base64 = "0.23.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
 dirs = "7.0.0"
 iana-time-zone = "0.1.65"
+image = "0.25.10"
 r2d2 = "0.8.10"
 r2d2_sqlite = "0.35.0"
 regex = "1.13.1"

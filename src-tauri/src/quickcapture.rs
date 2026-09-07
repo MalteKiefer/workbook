@@ -39,3 +39,25 @@ pub fn open(app: &AppHandle) -> Result<(), AppError> {
     window::show_and_focus(&window);
     Ok(())
 }
+
+#[derive(Clone, serde::Serialize)]
+pub struct ClipboardPasteImage {
+    pub bytes_base64: String,
+    pub mime_type: String,
+}
+
+pub fn open_with_clipboard_screenshot(app: &AppHandle) -> Result<(), AppError> {
+    open(app)?;
+    match crate::clipboard::read_image_as_png_base64() {
+        Ok((bytes_base64, mime_type)) => {
+            let window = app
+                .get_webview_window("quick-capture")
+                .ok_or_else(|| AppError::Config("Schnellerfassungsfenster nicht gefunden".to_string()))?;
+            window
+                .emit("quick-capture-paste-image", ClipboardPasteImage { bytes_base64, mime_type })
+                .map_err(|e| AppError::Config(format!("Ereignis konnte nicht gesendet werden: {e}")))?;
+        }
+        Err(e) => eprintln!("Kein Bild in der Zwischenablage: {e}"),
+    }
+    Ok(())
+}

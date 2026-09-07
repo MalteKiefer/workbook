@@ -120,6 +120,19 @@ export default function QuickCapture() {
   }, [refreshPreview]);
 
   useEffect(() => {
+    const unlisten = listen<{ bytes_base64: string; mime_type: string }>("quick-capture-paste-image", (event) => {
+      const { bytes_base64, mime_type } = event.payload;
+      const token = `pending:${crypto.randomUUID()}`;
+      const markdown = `![Screenshot](${token})`;
+      setBodyMd((prev) => (prev ? `${prev}\n${markdown}` : markdown));
+      setPendingAttachments((prev) => [...prev, { token, bytesBase64: bytes_base64, filename: "Screenshot.png", mimeType: mime_type }]);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
+  useEffect(() => {
     const currentWindow = getCurrentWindow();
     const unlisten = currentWindow.onFocusChanged(({ payload: focused }) => {
       if (focused) titleRef.current?.focus();

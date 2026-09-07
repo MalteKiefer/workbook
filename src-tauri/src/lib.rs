@@ -1,4 +1,5 @@
 pub mod attachments;
+pub mod clipboard;
 pub mod commands;
 pub mod config;
 pub mod context_capture;
