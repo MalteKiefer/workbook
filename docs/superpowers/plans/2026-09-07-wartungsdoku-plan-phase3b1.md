@@ -46,14 +46,14 @@ before returning the saved `Entry`.
   `pub fn relative_path_for(sha256: &str, original_filename: &str) -> String`,
   `pub fn save_content_addressed(data_dir: &Path, bytes: &[u8], original_filename: &str) -> Result<SavedFile, AppError>`
 
-- [ ] **Step 1: Abhängigkeit hinzufügen**
+- [x] **Step 1: Abhängigkeit hinzufügen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
 cd src-tauri && cargo add sha2 && cd ..
 ```
 
-- [ ] **Step 2: `store.rs` mit failing tests schreiben**
+- [x] **Step 2: `store.rs` mit failing tests schreiben**
 
 ```rust
 // src-tauri/src/attachments/store.rs
@@ -141,7 +141,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: `mod.rs` schreiben, in `lib.rs` einhängen**
+- [x] **Step 3: `mod.rs` schreiben, in `lib.rs` einhängen**
 
 ```rust
 // src-tauri/src/attachments/mod.rs
@@ -153,7 +153,7 @@ pub mod store;
 pub mod attachments;
 ```
 
-- [ ] **Step 4: Tests laufen lassen**
+- [x] **Step 4: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -162,7 +162,7 @@ cd src-tauri && cargo test attachments:: && cd ..
 
 Expected: 4 Tests grün.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/attachments src-tauri/src/lib.rs
@@ -182,7 +182,7 @@ git commit -m "feat: add content-addressed attachment file store"
   `pub fn create(conn, entry_id: i64, sha256: &str, original_filename: &str, mime_type: &str, size_bytes: i64, tz: &Tz) -> Result<Attachment, AppError>`,
   `pub fn list_for_entry(conn, entry_id: i64) -> Result<Vec<Attachment>, AppError>`
 
-- [ ] **Step 1: `attachments.rs` mit failing tests schreiben**
+- [x] **Step 1: `attachments.rs` mit failing tests schreiben**
 
 ```rust
 // src-tauri/src/db/attachments.rs
@@ -308,14 +308,14 @@ mod tests {
 `data_dir` und `pending_attachments`. Bis dahin bleibt sie unverändert, dieser Test läuft
 schon jetzt gegen den aktuellen Stand.
 
-- [ ] **Step 2: Modul einhängen**
+- [x] **Step 2: Modul einhängen**
 
 ```rust
 // src-tauri/src/db/mod.rs — Zeile ergänzen
 pub mod attachments;
 ```
 
-- [ ] **Step 3: Tests laufen lassen**
+- [x] **Step 3: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -324,7 +324,7 @@ cd src-tauri && cargo test db::attachments:: && cd ..
 
 Expected: 3 Tests grün.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/db/attachments.rs src-tauri/src/db/mod.rs
@@ -342,7 +342,7 @@ git commit -m "feat: add attachments repository"
 - Consumes: `save_content_addressed` (Task 1), `db::attachments::create` (Task 2)
 - Produces: `pub fn attach_bytes_to_entry(conn, data_dir: &Path, entry_id: i64, bytes: &[u8], original_filename: &str, mime_type: &str, tz: &Tz) -> Result<crate::db::attachments::Attachment, AppError>`
 
-- [ ] **Step 1: Funktion mit failing tests ergänzen**
+- [x] **Step 1: Funktion mit failing tests ergänzen**
 
 ```rust
 // src-tauri/src/attachments/store.rs — ans Dateiende anfügen
@@ -448,7 +448,7 @@ Tests (im selben `#[cfg(test)] mod tests` Block ergänzen):
     }
 ```
 
-- [ ] **Step 2: Tests laufen lassen**
+- [x] **Step 2: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -457,7 +457,7 @@ cd src-tauri && cargo test attachments::store:: && cd ..
 
 Expected: 7 Tests grün (4 aus Task 1 + 3 neue).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src-tauri/src/attachments/store.rs
@@ -479,7 +479,7 @@ git commit -m "feat: transactionally link attachment file and database row"
   neue Signatur `create(conn, data_dir: &Path, input: NewEntry, tz: &Tz)` und
   `update(conn, data_dir: &Path, id: i64, input: UpdateEntry, tz: &Tz)`
 
-- [ ] **Step 1: `PendingAttachment` + Feld auf `NewEntry`/`UpdateEntry` ergänzen**
+- [x] **Step 1: `PendingAttachment` + Feld auf `NewEntry`/`UpdateEntry` ergänzen**
 
 ```rust
 // src-tauri/src/db/entries.rs — nach der EntryFilter-Definition einfügen
@@ -499,7 +499,7 @@ pub struct PendingAttachment {
     pub pending_attachments: Vec<PendingAttachment>,
 ```
 
-- [ ] **Step 2: `create` und `update` um `data_dir` und Anhang-Auflösung erweitern**
+- [x] **Step 2: `create` und `update` um `data_dir` und Anhang-Auflösung erweitern**
 
 ```rust
 // src-tauri/src/db/entries.rs — create() ersetzen
@@ -580,14 +580,14 @@ fn resolve_pending_attachments(
 }
 ```
 
-- [ ] **Step 3: Abhängigkeit hinzufügen**
+- [x] **Step 3: Abhängigkeit hinzufügen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
 cd src-tauri && cargo add base64 && cd ..
 ```
 
-- [ ] **Step 4: Alle Aufrufstellen von `entries::create`/`update` auf die neue Signatur anpassen**
+- [x] **Step 4: Alle Aufrufstellen von `entries::create`/`update` auf die neue Signatur anpassen**
 
 Betroffene bestehende Aufrufe (Phase 2, Task 4 und Task 2 dieser Datei) bekommen ein
 zusätzliches `dir.path()`-Argument in ihren Tests:
@@ -637,7 +637,7 @@ pub fn update_entry(state: State<AppState>, id: i64, input: UpdateEntry) -> Resu
 }
 ```
 
-- [ ] **Step 5: Neuen Test für Anhang-Auflösung beim Anlegen ergänzen**
+- [x] **Step 5: Neuen Test für Anhang-Auflösung beim Anlegen ergänzen**
 
 ```rust
 // src-tauri/src/db/entries.rs — im #[cfg(test)] mod tests ergänzen
@@ -672,7 +672,7 @@ pub fn update_entry(state: State<AppState>, id: i64, input: UpdateEntry) -> Resu
 `sha2` muss dafür auch als reguläre (nicht nur transitive) Abhängigkeit sichtbar sein —
 ist sie bereits seit Task 1 (`cargo add sha2` lief ohne `--dev`).
 
-- [ ] **Step 6: Tests laufen lassen**
+- [x] **Step 6: Tests laufen lassen**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -690,14 +690,14 @@ cd src-tauri && cargo test && cd ..
 Expected: alle bisherigen Tests weiterhin grün, plus der neue
 `create_resolves_pending_attachment_placeholder_in_body`-Test.
 
-- [ ] **Step 7: Bin-Target bauen (Commands geändert)**
+- [x] **Step 7: Bin-Target bauen (Commands geändert)**
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
 cd src-tauri && cargo build --bin wartungsdoku && cd ..
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src-tauri/src/db/entries.rs src-tauri/src/db/attachments.rs src-tauri/src/attachments/store.rs src-tauri/src/commands/entries.rs src-tauri/Cargo.toml src-tauri/Cargo.lock
@@ -705,6 +705,16 @@ git commit -m "feat: resolve pending attachments into entry body on create/updat
 ```
 
 ---
+
+## Ausführungsnotizen
+
+- **Task 1**: `sha2` v0.11 (hybrid-array statt generic-array) implementiert `LowerHex`
+  nicht mehr auf dem Digest-Ausgabetyp — `format!("{:x}", Sha256::digest(bytes))` aus
+  dem Plan kompiliert nicht. Ersetzt durch eine manuelle `sha256_hex()`-Hilfsfunktion
+  (`digest.as_ref()` → `&[u8]` → Byte-für-Byte-Hex), zusätzlich öffentlich gemacht, damit
+  Task 4 sie in Tests wiederverwenden kann, statt die Hash-Logik zu duplizieren.
+- **Task 4**: `base64` 0.23 (statt der im Plan angenommenen 0.22-Beispielsyntax) — die
+  `base64::prelude::*` + `BASE64_STANDARD`-API war unverändert gültig, keine Anpassung nötig.
 
 ## Self-Review (durchgeführt vor Ausführung)
 
