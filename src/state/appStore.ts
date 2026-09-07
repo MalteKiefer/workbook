@@ -7,6 +7,7 @@ interface AppState {
   selectedCustomerId: number | null;
   selectedSystemId: number | null;
   formOpen: boolean;
+  editorTarget: "new" | number | null;
   goToCustomers: () => void;
   goToSystems: (customerId?: number) => void;
   goToJournal: () => void;
@@ -14,6 +15,8 @@ interface AppState {
   selectSystem: (id: number | null) => void;
   openForm: () => void;
   closeForm: () => void;
+  openEntryEditor: (target: "new" | number) => void;
+  closeEntryEditor: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -21,6 +24,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedCustomerId: null,
   selectedSystemId: null,
   formOpen: false,
+  editorTarget: null,
   goToCustomers: () => set({ view: "customers" }),
   goToSystems: (customerId) =>
     set((state) => ({
@@ -32,4 +36,6 @@ export const useAppStore = create<AppState>((set) => ({
   selectSystem: (id) => set({ selectedSystemId: id }),
   openForm: () => set({ formOpen: true }),
   closeForm: () => set({ formOpen: false }),
+  openEntryEditor: (target) => set({ editorTarget: target }),
+  closeEntryEditor: () => set({ editorTarget: null }),
 }));
