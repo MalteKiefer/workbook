@@ -1,3 +1,4 @@
+pub mod attachments;
 pub mod customers;
 pub mod entries;
 pub mod quickcapture;
