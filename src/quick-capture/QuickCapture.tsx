@@ -93,15 +93,18 @@ export default function QuickCapture() {
   }, [customerId]);
 
   useEffect(() => {
-    const unlisten = listen<{ performed_at_utc: string; performed_at_tz: string }>(
+    const unlisten = listen<{ performed_at_utc: string; performed_at_tz: string; context_note: string | null }>(
       "quick-capture-activated",
       async (event) => {
         if (draftIsEmptyRef.current) {
-          const { performed_at_utc, performed_at_tz } = event.payload;
+          const { performed_at_utc, performed_at_tz, context_note } = event.payload;
           setPerformedAtUtc(performed_at_utc);
           setPerformedAtTz(performed_at_tz);
           setPerformedAtInput("");
           await refreshPreview(performed_at_utc, performed_at_tz);
+          if (context_note) {
+            setBodyMd(`_Kontext: ${context_note}_\n\n`);
+          }
 
           const last = await invoke<{ customer: Customer | null; system: System | null }>("get_last_selection");
           if (last.customer) setCustomerId(last.customer.id);
@@ -193,7 +196,7 @@ export default function QuickCapture() {
         },
       });
       resetDraft();
-      await getCurrentWindow().hide();
+      await invoke("quick_capture_close");
     } catch (e) {
       setError(String(e));
     }
@@ -201,7 +204,7 @@ export default function QuickCapture() {
 
   const discard = useCallback(async () => {
     resetDraft();
-    await getCurrentWindow().hide();
+    await invoke("quick_capture_close");
   }, [resetDraft]);
 
   useEffect(() => {

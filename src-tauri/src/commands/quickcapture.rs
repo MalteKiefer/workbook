@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::db::{customers, systems};
 use crate::{AppError, AppState};
@@ -19,4 +19,16 @@ pub fn get_last_selection(state: State<AppState>) -> Result<LastSelection, AppEr
     let customer = last_customer_id.and_then(|id| customers::get(&conn, id).ok());
     let system = last_system_id.and_then(|id| systems::get(&conn, id).ok());
     Ok(LastSelection { customer, system })
+}
+
+#[tauri::command]
+pub fn quick_capture_close(app: AppHandle, state: State<AppState>) -> Result<(), AppError> {
+    if let Some(window) = app.get_webview_window("quick-capture") {
+        let _ = window.hide();
+    }
+    let previous = state.previous_foreground.lock().expect("Foreground-Mutex vergiftet").take();
+    if let Some(handle) = previous {
+        crate::context_capture::restore_foreground(&handle);
+    }
+    Ok(())
 }

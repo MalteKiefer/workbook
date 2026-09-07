@@ -21,6 +21,7 @@ use crate::db::pool::{build_pool, DbPool};
 pub struct AppState {
     pub pool: DbPool,
     pub config: Mutex<Config>,
+    pub previous_foreground: Mutex<Option<context_capture::ForegroundHandle>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -44,7 +45,7 @@ pub fn run() {
             window::show_and_focus_main(app);
         }))
         .plugin(tauri_plugin_autostart::Builder::new().build())
-        .manage(AppState { pool, config: Mutex::new(app_config) })
+        .manage(AppState { pool, config: Mutex::new(app_config), previous_foreground: Mutex::new(None) })
         .setup(|app| {
             window::install_hide_on_close(app.handle());
             if let Err(e) = tray::build_tray(app.handle()) {
@@ -92,6 +93,7 @@ pub fn run() {
             commands::entries::parse_temporal_input,
             commands::entries::format_timestamp_for_display,
             commands::quickcapture::get_last_selection,
+            commands::quickcapture::quick_capture_close,
             commands::search::search_entries,
             commands::search::search_directory,
         ])
