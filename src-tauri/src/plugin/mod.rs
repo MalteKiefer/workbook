@@ -70,4 +70,6 @@ pub trait Plugin {
 }
 
 pub mod dummy;
+pub mod level;
+pub mod ninja;
 pub mod secrets;

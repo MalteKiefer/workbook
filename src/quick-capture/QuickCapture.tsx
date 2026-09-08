@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -14,6 +15,7 @@ interface System {
   id: number;
   customer_id: number;
   name: string;
+  hostname: string;
 }
 
 interface PendingAttachment {
@@ -38,6 +40,20 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+// System typeahead: a filterable dropdown over the already-fetched systems
+// list (filtering by name AND hostname, case-insensitive) instead of a plain
+// <select>, since a customer can have many systems and hostname is the
+// user-recognizable key in practice. A synthetic "clear" row is always first
+// so the field can always be reset back to "Kein System" from the keyboard
+// or a click, same as the old <select>'s empty option. Copied from
+// EntryEditor.tsx's own copy of the same pattern — not shared, same
+// convention as CATEGORIES above.
+type SystemRow = { kind: "clear" } | { kind: "system"; system: System };
+
+function systemLabel(system: System): string {
+  return system.hostname ? `${system.name} — ${system.hostname}` : system.name;
+}
+
 export default function QuickCapture() {
   const titleRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<MarkdownEditorHandle>(null);
@@ -47,6 +63,9 @@ export default function QuickCapture() {
   const [systems, setSystems] = useState<System[]>([]);
   const [customerId, setCustomerId] = useState<number | "">("");
   const [systemId, setSystemId] = useState<number | "">("");
+  const [systemQuery, setSystemQuery] = useState("");
+  const [systemSuggestionsOpen, setSystemSuggestionsOpen] = useState(false);
+  const [systemHighlightIndex, setSystemHighlightIndex] = useState(0);
   const [title, setTitle] = useState("");
   const [bodyMd, setBodyMd] = useState("");
   const [category, setCategory] = useState("wartung");
@@ -81,17 +100,98 @@ export default function QuickCapture() {
     }
   }, []);
 
-  useEffect(() => {
-    invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
+  const loadCustomers = useCallback(async () => {
+    const list = await invoke<Customer[]>("list_customers", { includeArchived: false });
+    setCustomers(list);
+    return list;
   }, []);
 
-  useEffect(() => {
-    if (customerId === "") {
+  const loadSystems = useCallback(async (forCustomerId: number | "") => {
+    if (forCustomerId === "") {
       setSystems([]);
       return;
     }
-    invoke<System[]>("list_systems", { customerId, includeArchived: false }).then(setSystems);
-  }, [customerId]);
+    const list = await invoke<System[]>("list_systems", { customerId: forCustomerId, includeArchived: false });
+    setSystems(list);
+  }, []);
+
+  // Initial load — this window is created once at app startup and only
+  // shown/hidden afterward (never remounted), so this alone is NOT enough to
+  // stay current; the activation handler below re-loads on every show too.
+  useEffect(() => {
+    loadCustomers();
+  }, [loadCustomers]);
+
+  useEffect(() => {
+    loadSystems(customerId);
+  }, [customerId, loadSystems]);
+
+  // Filtered dropdown rows for the System typeahead — recomputed as the user
+  // types. The "clear" row is unfiltered/always present so "Kein System" stays
+  // reachable regardless of the current query text.
+  const filteredSystemRows = useMemo<SystemRow[]>(() => {
+    const q = systemQuery.trim().toLowerCase();
+    const matches =
+      q === ""
+        ? systems
+        : systems.filter((s) => s.name.toLowerCase().includes(q) || s.hostname.toLowerCase().includes(q));
+    return [{ kind: "clear" }, ...matches.map((system) => ({ kind: "system" as const, system }))];
+  }, [systems, systemQuery]);
+
+  // Keep the input's displayed text in sync with the committed systemId
+  // (activation seeding from last-used selection/override, or a customer
+  // change). Deliberately depends only on systemId/systems, NOT on
+  // systemSuggestionsOpen — closing the dropdown via Escape/blur must never
+  // re-run this and stomp text the user typed but didn't commit
+  // (Escape/click-outside are only supposed to close the list, never discard
+  // what's typed).
+  useEffect(() => {
+    if (systemId === "") {
+      setSystemQuery("");
+      return;
+    }
+    const match = systems.find((s) => s.id === systemId);
+    setSystemQuery(match ? systemLabel(match) : "");
+  }, [systemId, systems]);
+
+  useEffect(() => {
+    setSystemHighlightIndex(0);
+  }, [systemQuery, systemSuggestionsOpen]);
+
+  function selectSystemRow(row: SystemRow) {
+    if (row.kind === "clear") {
+      setSystemId("");
+      setSystemQuery("");
+    } else {
+      setSystemId(row.system.id);
+      setSystemQuery(systemLabel(row.system));
+    }
+    setSystemSuggestionsOpen(false);
+  }
+
+  function handleSystemKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSystemSuggestionsOpen(true);
+      setSystemHighlightIndex((i) => Math.min(i + 1, filteredSystemRows.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSystemSuggestionsOpen(true);
+      setSystemHighlightIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      if (systemSuggestionsOpen) {
+        e.preventDefault();
+        const row = filteredSystemRows[systemHighlightIndex];
+        if (row) selectSystemRow(row);
+      }
+    } else if (e.key === "Escape") {
+      if (systemSuggestionsOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        setSystemSuggestionsOpen(false);
+      }
+    }
+  }
 
   useEffect(() => {
     const unlisten = listen<{
@@ -103,6 +203,11 @@ export default function QuickCapture() {
     }>(
       "quick-capture-activated",
       async (event) => {
+        // Re-fetch on every activation, not just once at window creation —
+        // this window is shown/hidden, never remounted, so a customer/system
+        // created in the main window afterward would otherwise never appear.
+        await loadCustomers();
+
         if (draftIsEmptyRef.current) {
           const { performed_at_utc, performed_at_tz, context_note, override_customer_id, override_system_id } = event.payload;
           setPerformedAtUtc(performed_at_utc);
@@ -113,14 +218,28 @@ export default function QuickCapture() {
             setBodyMd(`_Kontext: ${context_note}_\n\n`);
           }
 
+          let resolvedCustomerId: number | "" = "";
+          let resolvedSystemId: number | "" = "";
+
           const last = await invoke<{ customer: Customer | null; system: System | null }>("get_last_selection");
-          if (last.customer) setCustomerId(last.customer.id);
-          if (last.system) setSystemId(last.system.id);
+          if (last.customer) resolvedCustomerId = last.customer.id;
+          if (last.system) resolvedSystemId = last.system.id;
 
           // Explicit navigation context (from the main window's Strg+N) takes
           // precedence over the last-used selection above.
-          if (override_customer_id !== null) setCustomerId(override_customer_id);
-          if (override_system_id !== null) setSystemId(override_system_id);
+          if (override_customer_id !== null) resolvedCustomerId = override_customer_id;
+          if (override_system_id !== null) resolvedSystemId = override_system_id;
+
+          setCustomerId(resolvedCustomerId);
+          setSystemId(resolvedSystemId);
+          setSystemSuggestionsOpen(false);
+          // The customerId-keyed effect above only re-fetches systems when
+          // customerId actually CHANGES — if it's the same customer as last
+          // time but a new system was added under them since, that effect
+          // alone would miss it. Force a fresh fetch here too.
+          if (resolvedCustomerId !== "") {
+            await loadSystems(resolvedCustomerId);
+          }
         }
         titleRef.current?.focus();
       },
@@ -129,7 +248,7 @@ export default function QuickCapture() {
       unlisten.then((f) => f());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshPreview]);
+  }, [refreshPreview, loadCustomers, loadSystems]);
 
   useEffect(() => {
     const unlisten = listen<{ bytes_base64: string; mime_type: string }>("quick-capture-paste-image", (event) => {
@@ -147,7 +266,16 @@ export default function QuickCapture() {
   useEffect(() => {
     const currentWindow = getCurrentWindow();
     const unlisten = currentWindow.onFocusChanged(({ payload: focused }) => {
-      if (focused) titleRef.current?.focus();
+      // Only steal focus to the title field on a genuinely fresh activation
+      // (nothing meaningfully focused yet — i.e. focus sits on <body> or is
+      // unset). WebView2 on Windows can fire focus-changed(true) spuriously
+      // while the window is already focused and the user is interacting with
+      // it (e.g. while typing in the Markdown editor), and unconditionally
+      // refocusing the title field here was yanking focus away mid-keystroke,
+      // making the editor appear to swallow all input.
+      if (focused && (document.activeElement === document.body || document.activeElement === null)) {
+        titleRef.current?.focus();
+      }
     });
     return () => {
       unlisten.then((f) => f());
@@ -239,53 +367,165 @@ export default function QuickCapture() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [save, discard]);
 
+  const fieldLabelStyle: CSSProperties = { fontSize: "0.78rem", color: "var(--text-secondary)", fontWeight: 500 };
+
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-      <input
-        ref={titleRef}
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Titel"
-        style={{ fontSize: "1rem", padding: "0.4rem" }}
-      />
-      <div style={{ display: "flex", gap: "0.5rem" }}>
-        <select value={customerId} onChange={(e) => setCustomerId(e.target.value === "" ? "" : Number(e.target.value))}>
-          <option value="">Kunde wählen…</option>
-          {customers.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} ({c.short_code})
-            </option>
-          ))}
-        </select>
-        <select value={systemId} onChange={(e) => setSystemId(e.target.value === "" ? "" : Number(e.target.value))}>
-          <option value="">Kein System</option>
-          {systems.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <select value={category} onChange={(e) => setCategory(e.target.value)}>
-          {CATEGORIES.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+    <main
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.55rem",
+        height: "100vh",
+        padding: "0.75rem",
+        background: "var(--bg-base)",
+      }}
+    >
+      <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+        <span style={fieldLabelStyle}>Titel</span>
         <input
-          value={performedAtInput}
-          onChange={(e) => setPerformedAtInput(e.target.value)}
-          onBlur={handlePerformedAtBlur}
-          placeholder="jetzt"
-          style={{ width: "10rem" }}
+          ref={titleRef}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Kurzer Titel des Eintrags"
+          style={{ fontSize: "0.95rem" }}
+          autoFocus
         />
-        <span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{performedAtPreview}</span>
+      </label>
+      <div style={{ display: "flex", gap: "0.4rem" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 2, minWidth: 0 }}>
+          <span style={fieldLabelStyle}>Kunde</span>
+          <select
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value === "" ? "" : Number(e.target.value))}
+          >
+            <option value="">Kunde wählen…</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.short_code})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 2, minWidth: 0, position: "relative" }}>
+          <span style={fieldLabelStyle}>System</span>
+          <input
+            value={systemQuery}
+            onChange={(e) => {
+              setSystemQuery(e.target.value);
+              setSystemSuggestionsOpen(true);
+            }}
+            onFocus={(e) => {
+              setSystemSuggestionsOpen(true);
+              e.target.select();
+            }}
+            onBlur={() => setSystemSuggestionsOpen(false)}
+            onKeyDown={handleSystemKeyDown}
+            placeholder="Kein System"
+            autoComplete="off"
+          />
+          {systemSuggestionsOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                marginTop: "0.15rem",
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                boxShadow: "var(--shadow-modal)",
+                maxHeight: "12rem",
+                overflowY: "auto",
+                zIndex: 10,
+              }}
+            >
+              {filteredSystemRows.map((row, idx) => (
+                <div
+                  key={row.kind === "clear" ? "clear" : `system-${row.system.id}`}
+                  onMouseEnter={() => setSystemHighlightIndex(idx)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    selectSystemRow(row);
+                  }}
+                  style={{
+                    padding: "0.35rem 0.5rem",
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                    background: idx === systemHighlightIndex ? "var(--bg-selected)" : "transparent",
+                    color: row.kind === "clear" ? "var(--text-muted)" : "var(--text-primary)",
+                  }}
+                >
+                  {row.kind === "clear" ? (
+                    "Kein System"
+                  ) : (
+                    <>
+                      {row.system.name}
+                      {row.system.hostname && (
+                        <span style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "0.85em" }}>
+                          {" "}— {row.system.hostname}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+              {filteredSystemRows.length === 1 && (
+                <div style={{ padding: "0.35rem 0.5rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>Keine Treffer</div>
+              )}
+            </div>
+          )}
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1, minWidth: 0 }}>
+          <span style={fieldLabelStyle}>Kategorie</span>
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {CATEGORIES.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
-      <MarkdownEditor ref={editorRef} value={bodyMd} onChange={setBodyMd} onPaste={handlePaste} placeholder="Markdown…" />
-      <input value={tagNames} onChange={(e) => setTagNames(e.target.value)} placeholder="Tags, durch Komma getrennt" />
-      {error && <p style={{ color: "crimson" }}>Fehler: {error}</p>}
+      <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+          <span style={fieldLabelStyle}>Zeitpunkt</span>
+          <input
+            value={performedAtInput}
+            onChange={(e) => setPerformedAtInput(e.target.value)}
+            onBlur={handlePerformedAtBlur}
+            placeholder="jetzt"
+            style={{ width: "9rem" }}
+          />
+        </label>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.78rem", color: "var(--text-secondary)", paddingBottom: "0.45rem" }}>
+          {performedAtPreview}
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1, minHeight: 0 }}>
+        <span style={fieldLabelStyle}>Beschreibung (Markdown)</span>
+        <MarkdownEditor
+          ref={editorRef}
+          value={bodyMd}
+          onChange={setBodyMd}
+          onPaste={handlePaste}
+          placeholder="Markdown…"
+          minHeight="4rem"
+        />
+      </div>
+      <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+        <span style={fieldLabelStyle}>Tags</span>
+        <input value={tagNames} onChange={(e) => setTagNames(e.target.value)} placeholder="Tags, durch Komma getrennt" />
+      </label>
+      {error && <p style={{ color: "var(--danger)", margin: 0, fontSize: "0.82rem" }}>Fehler: {error}</p>}
+      <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+        <button type="button" onClick={() => void discard()}>
+          Verwerfen (Esc)
+        </button>
+        <button type="button" className="btn-primary" onClick={() => void save()}>
+          Speichern (Strg+S)
+        </button>
+      </div>
     </main>
   );
 }

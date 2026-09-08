@@ -8,6 +8,13 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    watch: {
+      // Never watch the Rust build output -- cargo locks/rewrites files in
+      // here constantly, and Vite's fs watcher previously crashed the whole
+      // dev server with an EBUSY error the instant `cargo build` touched the
+      // binary while it was running.
+      ignored: ["**/src-tauri/target/**"],
+    },
   },
   envPrefix: ["VITE_", "TAURI_"],
   build: {

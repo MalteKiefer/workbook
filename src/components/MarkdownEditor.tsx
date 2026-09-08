@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { EditorState } from "@codemirror/state";
+import { EditorSelection, EditorState, Prec } from "@codemirror/state";
 import { EditorView, keymap, placeholder as placeholderExtension } from "@codemirror/view";
 import { defaultKeymap, historyKeymap, history } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
@@ -15,6 +15,7 @@ interface MarkdownEditorProps {
   onChange: (value: string) => void;
   onPaste?: (event: ClipboardEvent) => void;
   placeholder?: string;
+  minHeight?: string;
 }
 
 // Dark/dense/monospace theme matching the rest of the app's overlay components
@@ -24,32 +25,66 @@ interface MarkdownEditorProps {
 // visible.
 const editorTheme = EditorView.theme({
   "&": {
-    color: "#e2e8f0",
-    backgroundColor: "#1e1e1e",
+    color: "var(--text-primary)",
+    backgroundColor: "var(--bg-surface)",
     fontSize: "0.9rem",
   },
   ".cm-content": {
-    fontFamily: "monospace",
-    caretColor: "#e2e8f0",
+    fontFamily: "var(--font-mono)",
+    caretColor: "var(--text-primary)",
   },
   ".cm-gutters": {
-    backgroundColor: "#181818",
-    color: "#6b7280",
+    backgroundColor: "var(--bg-surface)",
+    color: "var(--text-muted)",
     border: "none",
   },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "var(--bg-selected)",
   },
   ".cm-activeLine": {
-    backgroundColor: "#232323",
+    backgroundColor: "var(--bg-hover)",
   },
   ".cm-placeholder": {
-    color: "#6b7280",
+    color: "var(--text-muted)",
   },
 });
 
+// Toggle a marker pair (e.g. "**" for bold, "_" for italic) around each
+// selection range. If the selection is already immediately wrapped by the
+// marker, the markers are removed (unwrap) instead of wrapping again. An
+// empty selection just inserts the marker pair with the cursor left between
+// them, ready to type.
+function toggleWrap(marker: string) {
+  return (view: EditorView): boolean => {
+    const { state } = view;
+    const changes = state.changeByRange((range) => {
+      const { from, to } = range;
+      const before = state.sliceDoc(Math.max(0, from - marker.length), from);
+      const after = state.sliceDoc(to, Math.min(state.doc.length, to + marker.length));
+      if (before === marker && after === marker) {
+        return {
+          changes: [
+            { from: from - marker.length, to: from, insert: "" },
+            { from: to, to: to + marker.length, insert: "" },
+          ],
+          range: EditorSelection.range(from - marker.length, to - marker.length),
+        };
+      }
+      return {
+        changes: [
+          { from, insert: marker },
+          { from: to, insert: marker },
+        ],
+        range: EditorSelection.range(from + marker.length, to + marker.length),
+      };
+    });
+    view.dispatch(state.update(changes, { scrollIntoView: true, userEvent: "input" }));
+    return true;
+  };
+}
+
 const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor(
-  { value, onChange, onPaste, placeholder },
+  { value, onChange, onPaste, placeholder, minHeight = "10rem" },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,7 +103,20 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
       extensions: [
         basicSetup,
         history(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        // Prec.highest is required here: basicSetup bundles its own copy of
+        // defaultKeymap (which already binds Mod-i to selectParentSyntax) in
+        // an earlier-positioned keymap.of extension, which would otherwise
+        // shadow our Mod-b/Mod-i bindings by array-order precedence alone —
+        // confirmed by testing that Mod-i silently ran selectParentSyntax
+        // instead of toggling italics before this was added.
+        Prec.highest(
+          keymap.of([
+            { key: "Mod-b", run: toggleWrap("**") },
+            { key: "Mod-i", run: toggleWrap("_") },
+            ...defaultKeymap,
+            ...historyKeymap,
+          ]),
+        ),
         markdown(),
         EditorView.lineWrapping,
         editorTheme,
@@ -128,9 +176,9 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
       ref={containerRef}
       style={{
         flex: 1,
-        minHeight: "10rem",
-        border: "1px solid #333",
-        borderRadius: "4px",
+        minHeight,
+        border: "1px solid var(--border, #333)",
+        borderRadius: "var(--radius-sm, 4px)",
         overflow: "auto",
       }}
     />

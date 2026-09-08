@@ -83,6 +83,17 @@ pub fn list_for_system(conn: &Connection, system_id: i64) -> Result<Vec<External
     Ok(result)
 }
 
+/// Löscht die Verknüpfung eines lokalen Systems zu einem Plugin (z. B. beim
+/// Aufheben einer Ninja-Verknüpfung). Kein Fehler, wenn keine solche Zeile
+/// existiert -- das Ergebnis (keine Verknüpfung mehr vorhanden) ist dasselbe.
+pub fn delete(conn: &Connection, system_id: i64, plugin_id: &str) -> Result<(), AppError> {
+    conn.execute(
+        "DELETE FROM external_refs WHERE system_id = ?1 AND plugin_id = ?2",
+        params![system_id, plugin_id],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +150,30 @@ mod tests {
         let conn = migrated_connection();
         let result = get(&conn, 999);
         assert!(matches!(result, Err(AppError::NotFound(_))));
+    }
+
+    #[test]
+    fn delete_removes_the_row_for_that_plugin_only() {
+        let conn = migrated_connection();
+        let system_id = seed_system(&conn);
+        upsert(&conn, system_id, "dummy", "dummy-1", "{}", &berlin()).unwrap();
+        upsert(&conn, system_id, "other-plugin", "ext-9", "{}", &berlin()).unwrap();
+
+        delete(&conn, system_id, "dummy").unwrap();
+
+        let refs = list_for_system(&conn, system_id).unwrap();
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].plugin_id, "other-plugin");
+    }
+
+    #[test]
+    fn delete_is_a_no_op_when_no_matching_row_exists() {
+        let conn = migrated_connection();
+        let system_id = seed_system(&conn);
+
+        let result = delete(&conn, system_id, "nonexistent-plugin");
+
+        assert!(result.is_ok());
+        assert!(list_for_system(&conn, system_id).unwrap().is_empty());
     }
 }

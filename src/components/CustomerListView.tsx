@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
-import CustomerForm from "./CustomerForm";
 
 interface Customer {
   id: number;
@@ -15,10 +14,11 @@ interface Customer {
 export default function CustomerListView() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [editing, setEditing] = useState<Customer | "new" | null>(null);
   const selectCustomer = useAppStore((s) => s.selectCustomer);
   const goToSystems = useAppStore((s) => s.goToSystems);
   const formOpen = useAppStore((s) => s.formOpen);
+  const customerEditorTarget = useAppStore((s) => s.customerEditorTarget);
+  const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
 
   const reload = useCallback(() => {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
@@ -27,6 +27,16 @@ export default function CustomerListView() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // CustomerForm is globally mounted and driven by the store, so this view
+  // doesn't get an onDone callback — reload whenever its editor closes instead.
+  const prevEditorTargetRef = useRef(customerEditorTarget);
+  useEffect(() => {
+    if (prevEditorTargetRef.current !== null && customerEditorTarget === null) {
+      reload();
+    }
+    prevEditorTargetRef.current = customerEditorTarget;
+  }, [customerEditorTarget, reload]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -48,13 +58,13 @@ export default function CustomerListView() {
         const customer = customers[selectedIndex];
         if (customer) {
           e.preventDefault();
-          setEditing(customer);
+          openCustomerEditor(customer.id);
         }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [customers, selectedIndex, formOpen, selectCustomer, goToSystems]);
+  }, [customers, selectedIndex, formOpen, selectCustomer, goToSystems, openCustomerEditor]);
 
   async function archive(id: number) {
     await invoke("archive_customer", { id });
@@ -63,40 +73,50 @@ export default function CustomerListView() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
         <h1 style={{ fontSize: "1.1rem" }}>Kunden</h1>
-        <button onClick={() => setEditing("new")}>+ Neuer Kunde</button>
+        <button className="btn-primary" onClick={() => openCustomerEditor("new")}>
+          + Neuer Kunde
+        </button>
       </div>
-      <ul style={{ listStyle: "none", padding: 0, fontFamily: "monospace" }}>
+      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {customers.map((c, i) => (
           <li
             key={c.id}
+            className="list-row"
             style={{
-              padding: "0.3rem 0.5rem",
-              background: i === selectedIndex ? "#2a2a2a" : "transparent",
+              padding: "0.5rem 0.6rem",
+              background: i === selectedIndex ? "var(--bg-selected)" : "transparent",
               display: "flex",
               justifyContent: "space-between",
+              alignItems: "center",
             }}
           >
-            <span>
-              {c.name} ({c.short_code})
+            <span
+              onClick={() => {
+                selectCustomer(c.id);
+                goToSystems(c.id);
+              }}
+              style={{ cursor: "pointer", flex: 1 }}
+              title="Systeme dieses Kunden öffnen"
+            >
+              {c.name} <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: "0.85em" }}>({c.short_code})</span>
             </span>
             <span style={{ display: "flex", gap: "0.4rem" }}>
-              <button onClick={() => setEditing(c)}>Bearbeiten</button>
+              <button
+                onClick={() => {
+                  selectCustomer(c.id);
+                  goToSystems(c.id);
+                }}
+              >
+                Systeme →
+              </button>
+              <button onClick={() => openCustomerEditor(c.id)}>Bearbeiten</button>
               <button onClick={() => archive(c.id)}>Archivieren</button>
             </span>
           </li>
         ))}
       </ul>
-      {editing !== null && (
-        <CustomerForm
-          customer={editing === "new" ? null : editing}
-          onDone={() => {
-            setEditing(null);
-            reload();
-          }}
-        />
-      )}
     </div>
   );
 }

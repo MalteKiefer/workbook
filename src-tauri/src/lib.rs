@@ -1,4 +1,5 @@
 pub mod attachments;
+pub mod backup;
 pub mod cli;
 pub mod clipboard;
 pub mod commands;
@@ -37,7 +38,11 @@ pub fn run() {
     app_config.data_dir = data_dir.clone();
     app_config.save(&config_path).expect("Konfiguration konnte nicht gespeichert werden");
 
-    let db_path = data_dir.join("wartungsdoku.db");
+    if let Err(e) = backup::apply_pending_restore_if_present(&data_dir) {
+        eprintln!("Ausstehende Wiederherstellung konnte nicht angewendet werden: {e}");
+    }
+
+    let db_path = data_dir.join(backup::DB_FILE_NAME);
     let pool = build_pool(&db_path).expect("Datenbank-Pool konnte nicht erstellt werden");
     {
         let system_tz = time::system_timezone().expect("Systemzeitzone konnte nicht ermittelt werden");
@@ -72,7 +77,7 @@ pub fn run() {
                 tauri::WebviewUrl::App("quick-capture.html".into()),
             )
             .title("Schnellerfassung")
-            .inner_size(560.0, 420.0)
+            .inner_size(520.0, 560.0)
             .center()
             .resizable(false)
             .visible(false)
@@ -127,6 +132,29 @@ pub fn run() {
             commands::attachments::open_attachment,
             commands::export::export_markdown,
             commands::export::export_pdf,
+            commands::backup::create_backup,
+            commands::backup::restore_backup,
+            commands::plugins::test_ninja_connection,
+            commands::plugins::list_ninja_connections,
+            commands::plugins::add_ninja_connection,
+            commands::plugins::remove_ninja_connection,
+            commands::plugins::list_ninja_organizations,
+            commands::plugins::map_ninja_organization,
+            commands::plugins::unmap_ninja_organization,
+            commands::plugins::sync_ninja_connection,
+            commands::plugins::get_cached_ninja_sync,
+            commands::plugins::link_system_to_ninja,
+            commands::plugins::unlink_system_from_ninja,
+            commands::plugins::get_ninja_system_details,
+            commands::level::test_level_connection,
+            commands::level::list_level_connections,
+            commands::level::add_level_connection,
+            commands::level::remove_level_connection,
+            commands::level::sync_level_connection,
+            commands::level::get_cached_level_sync,
+            commands::level::link_system_to_level,
+            commands::level::unlink_system_from_level,
+            commands::level::get_level_system_details,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

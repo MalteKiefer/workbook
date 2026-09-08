@@ -44,7 +44,8 @@ export default function Modal({ onClose, children }: ModalProps) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.4)",
+        background: "rgba(8, 9, 12, 0.55)",
+        backdropFilter: "blur(2px)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -54,7 +55,17 @@ export default function Modal({ onClose, children }: ModalProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div ref={containerRef} style={{ background: "#1e1e1e", color: "#e2e8f0", padding: "1rem", borderRadius: "6px" }}>
+      <div
+        ref={containerRef}
+        style={{
+          background: "var(--bg-elevated)",
+          color: "var(--text-primary)",
+          padding: "1.25rem",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--border)",
+          boxShadow: "var(--shadow-modal)",
+        }}
+      >
         {children}
       </div>
     </div>

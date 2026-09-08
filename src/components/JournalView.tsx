@@ -166,11 +166,13 @@ export default function JournalView() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
         <h1 style={{ fontSize: "1.1rem" }}>Journal</h1>
-        <button onClick={() => openEntryEditor("new")}>+ Neuer Eintrag</button>
+        <button className="btn-primary" onClick={() => openEntryEditor("new")}>
+          + Neuer Eintrag
+        </button>
       </div>
-      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
         <select value={customerId} onChange={(e) => setCustomerId(e.target.value === "" ? "" : Number(e.target.value))}>
           <option value="">Alle Kunden</option>
           {customers.map((c) => (
@@ -210,23 +212,24 @@ export default function JournalView() {
         </label>
       </div>
 
-      <ul style={{ listStyle: "none", padding: 0 }}>
+      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {entries.map((entry, i) => (
           <li
             key={entry.id}
+            className="list-row"
             style={{
-              padding: "0.4rem 0.5rem",
-              background: i === selectedIndex ? "#2a2a2a" : "transparent",
-              borderBottom: "1px solid #333",
+              padding: "0.5rem 0.6rem",
+              background: i === selectedIndex ? "var(--bg-selected)" : "transparent",
+              borderBottom: "1px solid var(--border-subtle)",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-              <span style={{ fontWeight: "bold" }}>{entry.title}</span>
-              <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>
+              <span style={{ fontWeight: 600 }}>{entry.title}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
                 {timestamps[entry.id] ?? ""}
               </span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#a0a0a0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--text-muted)" }}>
               <span>{CATEGORY_LABELS[entry.category] ?? entry.category}</span>
               <span>{entry.tags.join(", ")}</span>
             </div>
@@ -234,9 +237,11 @@ export default function JournalView() {
               <pre
                 style={{
                   whiteSpace: "pre-wrap",
-                  fontFamily: "monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: "0.85rem",
-                  background: "#181818",
+                  background: "var(--bg-surface)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "var(--radius-sm)",
                   padding: "0.5rem",
                   marginTop: "0.4rem",
                 }}
@@ -244,11 +249,13 @@ export default function JournalView() {
                 {entry.body_md}
               </pre>
             ) : (
-              <div style={{ fontSize: "0.85rem", color: "#c0c0c0" }}>{bodyPreview(entry.body_md)}</div>
+              <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{bodyPreview(entry.body_md)}</div>
             )}
           </li>
         ))}
-        {entries.length === 0 && <li style={{ padding: "0.5rem", color: "#a0a0a0" }}>Keine Einträge gefunden.</li>}
+        {entries.length === 0 && (
+          <li style={{ padding: "0.5rem", color: "var(--text-muted)" }}>Keine Einträge gefunden.</li>
+        )}
       </ul>
     </div>
   );

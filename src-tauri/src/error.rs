@@ -16,6 +16,10 @@ pub enum AppError {
     Io(String),
     #[error("Nicht gefunden: {0}")]
     NotFound(String),
+    #[error("Backup-Fehler: {0}")]
+    Backup(String),
+    #[error("Plugin-Fehler: {0}")]
+    Plugin(String),
 }
 
 impl AppError {
@@ -28,7 +32,15 @@ impl AppError {
             AppError::Timezone(_) => "timezone",
             AppError::Io(_) => "io",
             AppError::NotFound(_) => "not_found",
+            AppError::Backup(_) => "backup",
+            AppError::Plugin(_) => "plugin",
         }
+    }
+}
+
+impl From<crate::plugin::PluginError> for AppError {
+    fn from(e: crate::plugin::PluginError) -> Self {
+        AppError::Plugin(e.to_string())
     }
 }
 
@@ -41,6 +53,12 @@ impl From<rusqlite::Error> for AppError {
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
         AppError::Io(e.to_string())
+    }
+}
+
+impl From<zip::result::ZipError> for AppError {
+    fn from(e: zip::result::ZipError) -> Self {
+        AppError::Backup(e.to_string())
     }
 }
 
@@ -89,5 +107,13 @@ mod tests {
     fn not_found_has_not_found_code() {
         let err = AppError::NotFound("Kunde 42".to_string());
         assert_eq!(err.code(), "not_found");
+    }
+
+    #[test]
+    fn plugin_error_converts_from_plugin_error_type() {
+        let plugin_err = crate::plugin::PluginError::Unreachable("Ninja-API antwortete mit Status 500".to_string());
+        let app_err: AppError = plugin_err.into();
+        assert_eq!(app_err.code(), "plugin");
+        assert!(app_err.to_string().contains("Status 500"));
     }
 }

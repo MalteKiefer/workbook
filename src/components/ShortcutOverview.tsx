@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Modal from "./Modal";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
+import { useAppStore } from "../state/appStore";
 
 interface ShortcutRow {
   keys: string;
@@ -27,17 +28,20 @@ const SHORTCUTS: ShortcutRow[] = [
 ];
 
 export default function ShortcutOverview() {
-  const [open, setOpen] = useState(false);
+  const open = useAppStore((s) => s.shortcutOverviewOpen);
+  const openOverview = useAppStore((s) => s.openShortcutOverview);
+  const closeOverview = useAppStore((s) => s.closeShortcutOverview);
 
   // Self-contained listener, same style as the quick-capture window and the
   // parallel Command Palette work — owns its own "?"/Esc handling rather
-  // than being wired into useGlobalHotkeys.ts.
+  // than being wired into useGlobalHotkeys.ts. The open flag itself lives in
+  // the store so Command Palette can also open this dialog.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (open) {
         if (e.key === "Escape") {
           e.preventDefault();
-          setOpen(false);
+          closeOverview();
         }
         return;
       }
@@ -45,33 +49,34 @@ export default function ShortcutOverview() {
       if (isTypingTarget(document.activeElement)) return;
       if (e.key === "?") {
         e.preventDefault();
-        setOpen(true);
+        openOverview();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [open, openOverview, closeOverview]);
 
   if (!open) return null;
 
   return (
-    <Modal onClose={() => setOpen(false)}>
-      <h2 style={{ fontSize: "1rem", marginTop: 0 }}>Tastaturbelegung</h2>
+    <Modal onClose={closeOverview}>
+      <h2 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>Tastaturbelegung</h2>
       <table style={{ borderCollapse: "collapse" }}>
         <tbody>
           {SHORTCUTS.map((row) => (
             <tr key={row.keys}>
               <td
                 style={{
-                  fontFamily: "monospace",
-                  padding: "0.25rem 0.75rem 0.25rem 0",
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--text-primary)",
+                  padding: "0.3rem 0.75rem 0.3rem 0",
                   whiteSpace: "nowrap",
                   verticalAlign: "top",
                 }}
               >
                 {row.keys}
               </td>
-              <td style={{ padding: "0.25rem 0" }}>{row.description}</td>
+              <td style={{ padding: "0.3rem 0", color: "var(--text-secondary)" }}>{row.description}</td>
             </tr>
           ))}
         </tbody>

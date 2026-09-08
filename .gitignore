@@ -16,3 +16,4 @@ src-tauri/gen/
 *.db.bak-*
 .smoke-test-data/
 smoke-test.log
+*.log

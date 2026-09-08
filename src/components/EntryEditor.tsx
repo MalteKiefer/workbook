@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
@@ -17,6 +17,7 @@ interface System {
   id: number;
   customer_id: number;
   name: string;
+  hostname: string;
 }
 
 interface Entry {
@@ -73,6 +74,18 @@ const CATEGORIES: { value: string; label: string }[] = [
   { value: "sonstiges", label: "Sonstiges" },
 ];
 
+// System typeahead: a filterable dropdown over the already-fetched systems
+// list (filtering by name AND hostname, case-insensitive) instead of a plain
+// <select>, since a customer can have many systems and hostname is the
+// user-recognizable key in practice. A synthetic "clear" row is always first
+// so the field can always be reset back to "Kein System" from the keyboard
+// or a click, same as the old <select>'s empty option.
+type SystemRow = { kind: "clear" } | { kind: "system"; system: System };
+
+function systemLabel(system: System): string {
+  return system.hostname ? `${system.name} — ${system.hostname}` : system.name;
+}
+
 export default function EntryEditor() {
   const editorTarget = useAppStore((s) => s.editorTarget);
   const selectedCustomerId = useAppStore((s) => s.selectedCustomerId);
@@ -86,6 +99,9 @@ export default function EntryEditor() {
   const [systems, setSystems] = useState<System[]>([]);
   const [customerId, setCustomerId] = useState<number | "">("");
   const [systemId, setSystemId] = useState<number | "">("");
+  const [systemQuery, setSystemQuery] = useState("");
+  const [systemSuggestionsOpen, setSystemSuggestionsOpen] = useState(false);
+  const [systemHighlightIndex, setSystemHighlightIndex] = useState(0);
   const [title, setTitle] = useState("");
   const [bodyMd, setBodyMd] = useState("");
   const [category, setCategory] = useState("wartung");
@@ -123,6 +139,73 @@ export default function EntryEditor() {
     invoke<System[]>("list_systems", { customerId, includeArchived: false }).then(setSystems);
   }, [customerId]);
 
+  // Filtered dropdown rows for the System typeahead — recomputed as the user
+  // types. The "clear" row is unfiltered/always present so "Kein System" stays
+  // reachable regardless of the current query text.
+  const filteredSystemRows = useMemo<SystemRow[]>(() => {
+    const q = systemQuery.trim().toLowerCase();
+    const matches =
+      q === ""
+        ? systems
+        : systems.filter((s) => s.name.toLowerCase().includes(q) || s.hostname.toLowerCase().includes(q));
+    return [{ kind: "clear" }, ...matches.map((system) => ({ kind: "system" as const, system }))];
+  }, [systems, systemQuery]);
+
+  // Keep the input's displayed text in sync with the committed systemId
+  // (initial load, edit-mode load, customer-change reset, or a fresh "new"
+  // entry seeded from the current selection). Deliberately depends only on
+  // systemId/systems, NOT on systemSuggestionsOpen — closing the dropdown via
+  // Escape/blur must never re-run this and stomp text the user typed but
+  // didn't commit (Escape/click-outside are only supposed to close the list,
+  // never discard what's typed).
+  useEffect(() => {
+    if (systemId === "") {
+      setSystemQuery("");
+      return;
+    }
+    const match = systems.find((s) => s.id === systemId);
+    setSystemQuery(match ? systemLabel(match) : "");
+  }, [systemId, systems]);
+
+  useEffect(() => {
+    setSystemHighlightIndex(0);
+  }, [systemQuery, systemSuggestionsOpen]);
+
+  function selectSystemRow(row: SystemRow) {
+    if (row.kind === "clear") {
+      setSystemId("");
+      setSystemQuery("");
+    } else {
+      setSystemId(row.system.id);
+      setSystemQuery(systemLabel(row.system));
+    }
+    setSystemSuggestionsOpen(false);
+  }
+
+  function handleSystemKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSystemSuggestionsOpen(true);
+      setSystemHighlightIndex((i) => Math.min(i + 1, filteredSystemRows.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSystemSuggestionsOpen(true);
+      setSystemHighlightIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      if (systemSuggestionsOpen) {
+        e.preventDefault();
+        const row = filteredSystemRows[systemHighlightIndex];
+        if (row) selectSystemRow(row);
+      }
+    } else if (e.key === "Escape") {
+      if (systemSuggestionsOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        setSystemSuggestionsOpen(false);
+      }
+    }
+  }
+
   const refreshPreview = useCallback(async (utc: string, tz: string) => {
     try {
       const preview = await invoke<string>("format_timestamp_for_display", { utc, tz });
@@ -145,6 +228,7 @@ export default function EntryEditor() {
       setTagsInput("");
       setCustomerId(selectedCustomerId ?? "");
       setSystemId(selectedSystemId ?? "");
+      setSystemSuggestionsOpen(false);
       setPerformedAtInput("");
       setAttachments([]);
       setPendingAttachments([]);
@@ -172,6 +256,7 @@ export default function EntryEditor() {
         setTagsInput(entry.tags.join(", "));
         setCustomerId(entry.customer_id);
         setSystemId(entry.system_id ?? "");
+        setSystemSuggestionsOpen(false);
         setPerformedAtInput("");
         setPerformedAtUtc(entry.performed_at_utc);
         setPerformedAtTz(entry.performed_at_tz);
@@ -427,16 +512,75 @@ export default function EntryEditor() {
               ))}
             </select>
           </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1, position: "relative" }}>
             System
-            <select value={systemId} onChange={(e) => setSystemId(e.target.value === "" ? "" : Number(e.target.value))}>
-              <option value="">Kein System</option>
-              {systems.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            <input
+              value={systemQuery}
+              onChange={(e) => {
+                setSystemQuery(e.target.value);
+                setSystemSuggestionsOpen(true);
+              }}
+              onFocus={(e) => {
+                setSystemSuggestionsOpen(true);
+                e.target.select();
+              }}
+              onBlur={() => setSystemSuggestionsOpen(false)}
+              onKeyDown={handleSystemKeyDown}
+              placeholder="Kein System"
+              autoComplete="off"
+            />
+            {systemSuggestionsOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: 0,
+                  right: 0,
+                  marginTop: "0.15rem",
+                  background: "var(--bg-elevated)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  boxShadow: "var(--shadow-modal)",
+                  maxHeight: "12rem",
+                  overflowY: "auto",
+                  zIndex: 10,
+                }}
+              >
+                {filteredSystemRows.map((row, idx) => (
+                  <div
+                    key={row.kind === "clear" ? "clear" : `system-${row.system.id}`}
+                    onMouseEnter={() => setSystemHighlightIndex(idx)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectSystemRow(row);
+                    }}
+                    style={{
+                      padding: "0.35rem 0.5rem",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      background: idx === systemHighlightIndex ? "var(--bg-selected)" : "transparent",
+                      color: row.kind === "clear" ? "var(--text-muted)" : "var(--text-primary)",
+                    }}
+                  >
+                    {row.kind === "clear" ? (
+                      "Kein System"
+                    ) : (
+                      <>
+                        {row.system.name}
+                        {row.system.hostname && (
+                          <span style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "0.85em" }}>
+                            {" "}— {row.system.hostname}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+                {filteredSystemRows.length === 1 && (
+                  <div style={{ padding: "0.35rem 0.5rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>Keine Treffer</div>
+                )}
+              </div>
+            )}
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1 }}>
             Kategorie
@@ -461,11 +605,15 @@ export default function EntryEditor() {
               style={{ width: "16rem" }}
             />
           </label>
-          <span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{performedAtPreview}</span>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+            {performedAtPreview}
+          </span>
         </div>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1 }}>
-          Beschreibung (Markdown)
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1 }}>
+          <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)", fontWeight: 500 }}>
+            Beschreibung (Markdown)
+          </span>
           <AttachmentDropzone onFilesAdded={handleFilesAdded}>
             <MarkdownEditor
               ref={editorRef}
@@ -475,7 +623,7 @@ export default function EntryEditor() {
               placeholder="Markdown…"
             />
           </AttachmentDropzone>
-        </label>
+        </div>
 
         {isEditMode && (
           <AttachmentList
@@ -488,7 +636,7 @@ export default function EntryEditor() {
         )}
 
         {pendingAttachments.length > 0 && (
-          <p style={{ fontSize: "0.8rem", color: "#a0a0a0" }}>
+          <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
             {pendingAttachments.length} Anhang/Anhänge werden beim Speichern hinzugefügt.
           </p>
         )}
@@ -498,9 +646,9 @@ export default function EntryEditor() {
           <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags, durch Komma getrennt" />
         </label>
 
-        {error && <p style={{ color: "crimson" }}>Fehler: {error}</p>}
+        {error && <p style={{ color: "var(--danger)", fontSize: "0.82rem", margin: 0 }}>Fehler: {error}</p>}
 
-        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.25rem" }}>
           <button type="button" onClick={cancel}>
             Abbrechen
           </button>

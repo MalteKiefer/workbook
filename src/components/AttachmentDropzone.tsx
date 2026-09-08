@@ -84,10 +84,10 @@ export default function AttachmentDropzone({ onFilesAdded, children }: Attachmen
         void handleFiles(e.dataTransfer.files);
       }}
       style={{
-        border: isDragOver ? "2px dashed #6ea8fe" : "2px dashed #333",
-        borderRadius: "4px",
+        border: isDragOver ? "2px dashed var(--accent)" : "2px dashed var(--border)",
+        borderRadius: "var(--radius-sm)",
         padding: "0.6rem",
-        background: isDragOver ? "rgba(110, 168, 254, 0.08)" : "transparent",
+        background: isDragOver ? "rgba(109, 139, 250, 0.08)" : "transparent",
         display: "flex",
         flexDirection: "column",
         gap: "0.5rem",
@@ -99,7 +99,7 @@ export default function AttachmentDropzone({ onFilesAdded, children }: Attachmen
         <button type="button" onClick={() => inputRef.current?.click()}>
           Datei auswählen…
         </button>
-        <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+        <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
           {isDragOver ? "Dateien hier ablegen" : "oder Dateien hierher ziehen"}
         </span>
       </div>

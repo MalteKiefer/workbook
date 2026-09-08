@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
+use crate::plugin::level::LevelConnectionMeta;
+use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -31,6 +33,32 @@ pub struct Config {
     pub hotkeys: HotkeyConfig,
     pub last_customer_id: Option<i64>,
     pub last_system_id: Option<i64>,
+    /// Nicht-geheime Metadaten je konfigurierter Ninja-Verbindung (ein Satz
+    /// OAuth2-Zugangsdaten für genau einen Ninja-Mandanten; ein Nutzer kann
+    /// beliebig viele Verbindungen anlegen). Eine Verbindung ist NICHT an
+    /// genau einen lokalen Kunden gebunden -- siehe `ninja_org_mappings`.
+    /// Zugehörige Client-ID/-Secret liegen ausschließlich im
+    /// OS-Schlüsselspeicher, siehe `plugin::secrets`.
+    pub ninja_connections: Vec<NinjaConnectionMeta>,
+    /// Zuordnung einzelner Ninja-"Organizations" (innerhalb einer Verbindung)
+    /// zu lokalen Kunden. Ein einzelner Ninja-Mandant (eine Verbindung) kann
+    /// mehrere Organisationen sehen -- z. B. weil der Nutzer selbst ein MSP
+    /// ist, der seinerseits mehrere eigene Kunden als getrennte
+    /// Organisationen in Ninja führt --, deshalb diese separate, granulare
+    /// Zuordnungstabelle statt eines `customer_id`-Felds direkt an der
+    /// Verbindung. `#[serde(default)]`-kompatibel mit Konfigurationen von vor
+    /// dieser Änderung, die dieses Feld noch nicht kennen (siehe
+    /// `ninja_connections` oben für dasselbe Muster).
+    pub ninja_org_mappings: Vec<NinjaOrgMapping>,
+    /// Nicht-geheime Metadaten je konfigurierter Level.io-Verbindung. Anders
+    /// als eine Ninja-Verbindung ist eine Level-Verbindung direkt an genau
+    /// einen lokalen Kunden gebunden (`LevelConnectionMeta.customer_id`) --
+    /// Level kennt kein Organisationskonzept, siehe `plugin::level`. Der
+    /// zugehörige API-Key liegt ausschließlich im OS-Schlüsselspeicher, siehe
+    /// `plugin::secrets`. `#[serde(default)]`-kompatibel mit
+    /// Konfigurationen von vor dieser Änderung, analog zu
+    /// `ninja_connections` oben.
+    pub level_connections: Vec<LevelConnectionMeta>,
 }
 
 impl Default for Config {
@@ -43,6 +71,9 @@ impl Default for Config {
             hotkeys: HotkeyConfig::default(),
             last_customer_id: None,
             last_system_id: None,
+            ninja_connections: Vec::new(),
+            ninja_org_mappings: Vec::new(),
+            level_connections: Vec::new(),
         }
     }
 }
@@ -136,6 +167,115 @@ mod tests {
 
         assert_eq!(loaded.last_customer_id, Some(7));
         assert_eq!(loaded.last_system_id, Some(3));
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_ninja_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.ninja_connections.push(NinjaConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Ninja".to_string(),
+            base_url: "https://eu.ninjarmm.com".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.ninja_connections.len(), 1);
+        assert_eq!(loaded.ninja_connections[0].base_url, "https://eu.ninjarmm.com");
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_ninja_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simuliert eine config.toml von vor Einführung der Ninja-Integration --
+        // das Feld fehlt komplett und muss dank `#[serde(default)]` klaglos auf
+        // eine leere Liste zurückfallen statt das Laden scheitern zu lassen.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.ninja_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_ninja_org_mappings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.ninja_connections.push(NinjaConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Ninja".to_string(),
+            base_url: "https://eu.ninjarmm.com".to_string(),
+        });
+        config.ninja_org_mappings.push(NinjaOrgMapping {
+            connection_id: "acme-1700000000000".to_string(),
+            organization_id: "1".to_string(),
+            organization_name: "ACME Hauptsitz".to_string(),
+            customer_id: 7,
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.ninja_org_mappings.len(), 1);
+        assert_eq!(loaded.ninja_org_mappings[0].organization_id, "1");
+        assert_eq!(loaded.ninja_org_mappings[0].customer_id, 7);
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_ninja_org_mappings_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simuliert eine config.toml von vor Einführung der Organisations-
+        // Zuordnung -- das Feld fehlt komplett und muss dank
+        // `#[serde(default)]` klaglos auf eine leere Liste zurückfallen statt
+        // das Laden scheitern zu lassen.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.ninja_org_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_level_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.level_connections.push(LevelConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            customer_id: 7,
+            label: "ACME Level".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.level_connections.len(), 1);
+        assert_eq!(loaded.level_connections[0].customer_id, 7);
+        assert_eq!(loaded.level_connections[0].label, "ACME Level");
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_level_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simuliert eine config.toml von vor Einführung der Level.io-Integration
+        // -- das Feld fehlt komplett und muss dank `#[serde(default)]` klaglos
+        // auf eine leere Liste zurückfallen statt das Laden scheitern zu
+        // lassen.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.level_connections.is_empty());
     }
 
     #[test]

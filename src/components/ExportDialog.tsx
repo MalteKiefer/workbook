@@ -207,10 +207,10 @@ export default function ExportDialog() {
           </label>
         </div>
 
-        {status && <p style={{ color: "#4ade80" }}>{status}</p>}
-        {error && <p style={{ color: "crimson" }}>Fehler: {error}</p>}
+        {status && <p style={{ color: "var(--success)", fontSize: "0.85rem", margin: 0 }}>{status}</p>}
+        {error && <p style={{ color: "var(--danger)", fontSize: "0.82rem", margin: 0 }}>Fehler: {error}</p>}
 
-        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.25rem" }}>
           <button type="button" onClick={cancel}>
             Abbrechen
           </button>

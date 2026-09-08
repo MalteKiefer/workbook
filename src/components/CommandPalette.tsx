@@ -59,13 +59,18 @@ export default function CommandPalette() {
   const requestIdRef = useRef(0);
 
   const selectedCustomerId = useAppStore((s) => s.selectedCustomerId);
+  const selectedSystemId = useAppStore((s) => s.selectedSystemId);
   const goToCustomers = useAppStore((s) => s.goToCustomers);
   const goToSystems = useAppStore((s) => s.goToSystems);
   const goToJournal = useAppStore((s) => s.goToJournal);
+  const goToSettings = useAppStore((s) => s.goToSettings);
   const selectCustomer = useAppStore((s) => s.selectCustomer);
   const selectSystem = useAppStore((s) => s.selectSystem);
   const openEntryEditor = useAppStore((s) => s.openEntryEditor);
   const openExportDialog = useAppStore((s) => s.openExportDialog);
+  const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
+  const openSystemEditor = useAppStore((s) => s.openSystemEditor);
+  const openShortcutOverview = useAppStore((s) => s.openShortcutOverview);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -98,14 +103,45 @@ export default function CommandPalette() {
   // Static, always-available commands (context-dependent per current view/selection).
   const staticCommands = useMemo<StaticCommand[]>(() => {
     const cmds: StaticCommand[] = [
-      { id: "new-entry", label: "Neuer Eintrag", shortcut: "Strg+N", run: () => openEntryEditor("new") },
+      {
+        id: "quick-capture",
+        label: "Schnellerfassung öffnen",
+        shortcut: "Strg+N",
+        run: () => {
+          void invoke("open_quick_capture_with_context", {
+            customerId: selectedCustomerId,
+            systemId: selectedSystemId,
+          });
+        },
+      },
+      { id: "new-entry", label: "Neuer Eintrag (im Hauptfenster)", shortcut: "", run: () => openEntryEditor("new") },
+      { id: "new-customer", label: "Neuer Kunde", shortcut: "", run: () => openCustomerEditor("new") },
       { id: "goto-customers", label: "Zu Kundenliste", shortcut: "g c", run: goToCustomers },
+      {
+        id: "new-system",
+        label: "Neues System",
+        shortcut: "",
+        // Always listed (not just once a customer is already selected) — a
+        // system always belongs to a customer, so without one selected this
+        // just tells the user to pick one first instead of silently vanishing.
+        keepOpen: selectedCustomerId === null,
+        run: () => {
+          if (selectedCustomerId === null) {
+            setNotice("Bitte zuerst einen Kunden auswählen (Kundenliste oder Suche oben).");
+            return;
+          }
+          openSystemEditor("new", selectedCustomerId);
+        },
+      },
     ];
     if (selectedCustomerId !== null) {
       cmds.push({ id: "goto-systems", label: "Zu Systemliste", shortcut: "g s", run: () => goToSystems() });
       cmds.push({ id: "export-customer", label: "Kunde exportieren", shortcut: "", run: () => openExportDialog() });
     }
     cmds.push({ id: "goto-journal", label: "Zum Journal", shortcut: "g j", run: goToJournal });
+    cmds.push({ id: "goto-backup", label: "Zu Einstellungen → Backup", shortcut: "", run: () => goToSettings("backup") });
+    cmds.push({ id: "goto-plugins", label: "Zu Einstellungen → Plugins", shortcut: "", run: () => goToSettings("plugins") });
+    cmds.push({ id: "shortcuts", label: "Tastaturkürzel anzeigen", shortcut: "?", run: openShortcutOverview });
     cmds.push({
       id: "cleanup-orphans",
       label: "Anhänge bereinigen",
@@ -122,7 +158,19 @@ export default function CommandPalette() {
       },
     });
     return cmds;
-  }, [selectedCustomerId, goToCustomers, goToSystems, goToJournal, openEntryEditor, openExportDialog]);
+  }, [
+    selectedCustomerId,
+    selectedSystemId,
+    goToCustomers,
+    goToSystems,
+    goToJournal,
+    goToSettings,
+    openEntryEditor,
+    openExportDialog,
+    openCustomerEditor,
+    openSystemEditor,
+    openShortcutOverview,
+  ]);
 
   const filteredCommands = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -216,10 +264,10 @@ export default function CommandPalette() {
         section: "entries",
         render: () => (
           <div>
-            <div style={{ color: "#e2e8f0" }}>{hit.title}</div>
+            <div style={{ color: "var(--text-primary)" }}>{hit.title}</div>
             <div
               className="cp-snippet"
-              style={{ fontSize: "0.8em", opacity: 0.75, marginTop: "0.15rem" }}
+              style={{ fontSize: "0.8em", color: "var(--text-secondary)", marginTop: "0.15rem" }}
               // Own local SQLite full-text data, not untrusted web content — safe to render.
               dangerouslySetInnerHTML={{ __html: hit.snippet }}
             />
@@ -302,7 +350,8 @@ export default function CommandPalette() {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.4)",
+        background: "rgba(8, 9, 12, 0.55)",
+        backdropFilter: "blur(2px)",
         display: "flex",
         alignItems: "flex-start",
         justifyContent: "center",
@@ -313,18 +362,19 @@ export default function CommandPalette() {
         if (e.target === e.currentTarget) close();
       }}
     >
-      <style>{".cp-snippet mark { background: #7c6f00; color: inherit; border-radius: 2px; padding: 0 2px; }"}</style>
+      <style>{".cp-snippet mark { background: var(--accent); color: var(--accent-text); border-radius: 2px; padding: 0 2px; }"}</style>
       <div
         style={{
-          background: "#1e1e1e",
-          color: "#e2e8f0",
-          borderRadius: "8px",
+          background: "var(--bg-elevated)",
+          color: "var(--text-primary)",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--border)",
           width: "36rem",
           maxWidth: "90vw",
           maxHeight: "70vh",
           display: "flex",
           flexDirection: "column",
-          boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
+          boxShadow: "var(--shadow-modal)",
           overflow: "hidden",
         }}
       >
@@ -338,18 +388,28 @@ export default function CommandPalette() {
             fontSize: "1rem",
             background: "transparent",
             border: "none",
-            borderBottom: "1px solid #333",
+            borderRadius: 0,
+            borderBottom: "1px solid var(--border)",
             color: "inherit",
             outline: "none",
           }}
         />
         {notice && (
-          <div style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem", color: "#a0a0a0", borderBottom: "1px solid #333" }}>
+          <div
+            style={{
+              padding: "0.5rem 0.75rem",
+              fontSize: "0.85rem",
+              color: "var(--text-secondary)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
             {notice}
           </div>
         )}
         <div style={{ overflowY: "auto", padding: "0.25rem 0" }}>
-          {items.length === 0 && <div style={{ padding: "0.75rem", opacity: 0.6 }}>Keine Treffer</div>}
+          {items.length === 0 && (
+            <div style={{ padding: "0.75rem", color: "var(--text-muted)" }}>Keine Treffer</div>
+          )}
           {items.map((item, idx) => {
             const showHeader = idx === 0 || items[idx - 1].section !== item.section;
             return (
@@ -363,7 +423,7 @@ export default function CommandPalette() {
                   style={{
                     padding: "0.4rem 0.75rem",
                     cursor: "pointer",
-                    background: idx === selectedIndex ? "#2a2a2a" : "transparent",
+                    background: idx === selectedIndex ? "var(--bg-selected)" : "transparent",
                   }}
                 >
                   {item.render()}
@@ -381,7 +441,7 @@ function Row({ label, hint }: { label: string; hint: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem" }}>
       <span>{label}</span>
-      <span style={{ opacity: 0.5, fontSize: "0.85em", fontFamily: "monospace" }}>{hint}</span>
+      <span style={{ color: "var(--text-muted)", fontSize: "0.85em", fontFamily: "var(--font-mono)" }}>{hint}</span>
     </div>
   );
 }
@@ -393,8 +453,9 @@ function SectionLabel({ text }: { text: string }) {
         padding: "0.3rem 0.75rem",
         fontSize: "0.7rem",
         textTransform: "uppercase",
-        opacity: 0.5,
+        color: "var(--text-muted)",
         letterSpacing: "0.05em",
+        fontWeight: 600,
       }}
     >
       {text}

@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
-import SystemForm from "./SystemForm";
 
 interface System {
   id: number;
@@ -24,10 +23,11 @@ export default function SystemListView() {
   const selectedCustomerId = useAppStore((s) => s.selectedCustomerId);
   const goToCustomers = useAppStore((s) => s.goToCustomers);
   const formOpen = useAppStore((s) => s.formOpen);
+  const systemEditorTarget = useAppStore((s) => s.systemEditorTarget);
+  const openSystemEditor = useAppStore((s) => s.openSystemEditor);
 
   const [systems, setSystems] = useState<System[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [editing, setEditing] = useState<System | "new" | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
 
   const reload = useCallback(() => {
@@ -38,6 +38,16 @@ export default function SystemListView() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // SystemForm is globally mounted and driven by the store, so this view
+  // doesn't get an onDone callback — reload whenever its editor closes instead.
+  const prevEditorTargetRef = useRef(systemEditorTarget);
+  useEffect(() => {
+    if (prevEditorTargetRef.current !== null && systemEditorTarget === null) {
+      reload();
+    }
+    prevEditorTargetRef.current = systemEditorTarget;
+  }, [systemEditorTarget, reload]);
 
   useEffect(() => {
     if (selectedCustomerId === null) {
@@ -61,15 +71,15 @@ export default function SystemListView() {
         setSelectedIndex((i) => Math.max(i - 1, 0));
       } else if (e.key === "e") {
         const system = systems[selectedIndex];
-        if (system) {
+        if (system && selectedCustomerId !== null) {
           e.preventDefault();
-          setEditing(system);
+          openSystemEditor(system.id, selectedCustomerId);
         }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [systems, selectedIndex, formOpen]);
+  }, [systems, selectedIndex, formOpen, selectedCustomerId, openSystemEditor]);
 
   async function archive(id: number) {
     await invoke("archive_system", { id });
@@ -87,50 +97,51 @@ export default function SystemListView() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
         <div>
-          <button onClick={goToCustomers} style={{ marginBottom: "0.4rem" }}>
+          <button onClick={goToCustomers} style={{ marginBottom: "0.5rem" }}>
             ← Zurück zu Kunden
           </button>
-          <h1 style={{ fontSize: "1.1rem", margin: 0 }}>
+          <h1 style={{ fontSize: "1.1rem" }}>
             Systeme von {customerName ?? `Kunde #${selectedCustomerId}`}
           </h1>
         </div>
-        <button onClick={() => setEditing("new")}>+ Neues System</button>
+        <button className="btn-primary" onClick={() => openSystemEditor("new", selectedCustomerId)}>
+          + Neues System
+        </button>
       </div>
-      <ul style={{ listStyle: "none", padding: 0 }}>
+      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {systems.map((s, i) => (
           <li
             key={s.id}
+            className="list-row"
             style={{
-              padding: "0.3rem 0.5rem",
-              background: i === selectedIndex ? "#2a2a2a" : "transparent",
+              padding: "0.5rem 0.6rem",
+              background: i === selectedIndex ? "var(--bg-selected)" : "transparent",
               display: "flex",
               justifyContent: "space-between",
+              alignItems: "center",
             }}
           >
             <span>
-              {s.name} ({s.system_type}){" "}
-              <span style={{ fontFamily: "monospace" }}>{s.hostname}</span>
-              {s.ip_address && <span style={{ fontFamily: "monospace" }}> — {s.ip_address}</span>}
+              {s.name} <span style={{ color: "var(--text-muted)" }}>({s.system_type})</span>{" "}
+              <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                {s.hostname}
+              </span>
+              {s.ip_address && (
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                  {" "}
+                  — {s.ip_address}
+                </span>
+              )}
             </span>
             <span style={{ display: "flex", gap: "0.4rem" }}>
-              <button onClick={() => setEditing(s)}>Bearbeiten</button>
+              <button onClick={() => openSystemEditor(s.id, selectedCustomerId)}>Bearbeiten</button>
               <button onClick={() => archive(s.id)}>Archivieren</button>
             </span>
           </li>
         ))}
       </ul>
-      {editing !== null && (
-        <SystemForm
-          system={editing === "new" ? null : editing}
-          customerId={selectedCustomerId}
-          onDone={() => {
-            setEditing(null);
-            reload();
-          }}
-        />
-      )}
     </div>
   );
 }
