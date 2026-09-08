@@ -1574,19 +1574,17 @@ export default function SnipeitPluginSection() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "52rem" }}>
       <section style={cardStyle}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", flexWrap: "wrap" }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: "1rem" }}>Snipe-IT-Verbindungen</h2>
-            <p style={{ margin: "0.2rem 0 0", color: "var(--text-secondary)", fontSize: "0.85rem" }}>
-              Liest ausschließlich Assets aus Snipe-IT (IT-Asset-Verwaltung) — es werden nie Daten dorthin
-              zurückgeschrieben. Eine Verbindung kann mehrere Firmen sehen; jede Firma wird einzeln einem Kunden
-              zugeordnet.
-            </p>
-          </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0, fontSize: "1rem" }}>Snipe-IT-Verbindungen</h2>
           <button type="button" onClick={() => setAddFormOpen(true)}>
             + Neue Verbindung
           </button>
         </div>
+        <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+          Liest ausschließlich Assets aus Snipe-IT (IT-Asset-Verwaltung) — es werden nie Daten dorthin
+          zurückgeschrieben. Eine Verbindung kann mehrere Firmen sehen; jede Firma wird einzeln einem Kunden
+          zugeordnet.
+        </p>
         {connectionsError && <ErrorText>{connectionsError}</ErrorText>}
         {connections.length === 0 && (
           <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.85rem" }}>Noch keine Verbindung eingerichtet.</p>

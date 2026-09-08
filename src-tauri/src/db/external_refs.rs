@@ -83,6 +83,30 @@ pub fn list_for_system(conn: &Connection, system_id: i64) -> Result<Vec<External
     Ok(result)
 }
 
+/// Alle Verknüpfungen für ein Plugin (z. B. `"ninja:<connection_id>"`),
+/// UNABHÄNGIG davon, welchem Kunden das jeweils verknüpfte lokale System
+/// gerade zugeordnet ist. Für `commands::plugins::sync_ninja_connection`, das
+/// den "bereits verknüpft"-Status jedes externen Geräts berichten muss --
+/// auch dann korrekt, wenn die Ninja-Organisation NACH dem Verknüpfen einem
+/// anderen lokalen Kunden zugeordnet wurde als dem, unter dem das verknüpfte
+/// System tatsächlich liegt (Organisations-Zuordnungen lassen sich jederzeit
+/// ändern/korrigieren, siehe `NinjaOrgMapping`; laut
+/// `unmap_ninja_organization`s eigener Dokumentation ist das Entzuordnen
+/// einer Organisation bewusst KEINE automatische Entverknüpfung ihrer
+/// bereits verknüpften Geräte -- Verknüpfungen bleiben über
+/// Zuordnungsänderungen hinweg bestehen, müssen also unabhängig von der
+/// aktuellen `customer_id` auffindbar sein statt nur innerhalb der Systeme
+/// EINES Kunden gesucht zu werden).
+pub fn list_for_plugin(conn: &Connection, plugin_id: &str) -> Result<Vec<ExternalRef>, AppError> {
+    let mut stmt = conn.prepare("SELECT * FROM external_refs WHERE plugin_id = ?1 ORDER BY external_id")?;
+    let rows = stmt.query_map(params![plugin_id], row_to_external_ref)?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
 /// Löscht die Verknüpfung eines lokalen Systems zu einem Plugin (z. B. beim
 /// Aufheben einer Ninja-Verknüpfung). Kein Fehler, wenn keine solche Zeile
 /// existiert -- das Ergebnis (keine Verknüpfung mehr vorhanden) ist dasselbe.
@@ -175,5 +199,52 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(list_for_system(&conn, system_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_for_plugin_only_returns_rows_for_that_plugin() {
+        let conn = migrated_connection();
+        let system_id = seed_system(&conn);
+        upsert(&conn, system_id, "ninja:conn-1", "10", "{}", &berlin()).unwrap();
+        upsert(&conn, system_id, "other-plugin", "ext-9", "{}", &berlin()).unwrap();
+
+        let refs = list_for_plugin(&conn, "ninja:conn-1").unwrap();
+
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].external_id, "10");
+        assert_eq!(refs[0].system_id, system_id);
+    }
+
+    // Regression coverage for the exact bug this function fixes: a Ninja
+    // organization gets mapped to customer A, a device gets linked to a
+    // system created under customer A, and the organization is LATER
+    // remapped to a different customer B (correcting an earlier mistake).
+    // The link itself is untouched by remapping (see this function's own
+    // doc comment) -- `list_for_plugin` must still find it by plugin_id
+    // alone, without being scoped to either customer's systems, since the
+    // caller (`sync_ninja_connection`) no longer knows in advance which
+    // customer the linked system lives under.
+    #[test]
+    fn list_for_plugin_finds_link_regardless_of_the_linked_systems_current_customer() {
+        let conn = migrated_connection();
+        let customer_a = customers::create(&conn, NewCustomer { name: "Falscher Kunde".into(), short_code: "FALSCH".into(), notes: "".into() }, &berlin()).unwrap().id;
+        let customer_b = customers::create(&conn, NewCustomer { name: "Richtiger Kunde".into(), short_code: "RICHTIG".into(), notes: "".into() }, &berlin()).unwrap().id;
+        let system_under_a = systems::create(
+            &conn,
+            NewSystem { customer_id: customer_a, name: "SRV-01".into(), system_type: "".into(), hostname: "".into(), ip_address: "".into(), notes: "".into() },
+            &berlin(),
+        )
+        .unwrap()
+        .id;
+        upsert(&conn, system_under_a, "ninja:conn-1", "10", "{}", &berlin()).unwrap();
+
+        // Nothing was ever created under customer_b -- the point is that the
+        // link is still found even though it doesn't belong to customer_b at
+        // all (customer_b stands in for the org's freshly-corrected mapping).
+        let _ = customer_b;
+
+        let refs = list_for_plugin(&conn, "ninja:conn-1").unwrap();
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].system_id, system_under_a);
     }
 }

@@ -446,22 +446,27 @@ pub fn sync_ninja_connection(state: State<AppState>, connection_id: String) -> R
     let tz = time::system_timezone()?;
     let plugin_id = plugin.id().to_string();
 
+    // Umkehr-Index externe-ID -> lokale system_id, aus ALLEN external_refs
+    // dieses Plugins aufgebaut -- EINMAL für die ganze Verbindung, nicht neu
+    // je Gruppe und nicht auf die Systeme des Gruppen-`customer_id`
+    // beschränkt. Vorher wurde hier je Gruppe nur innerhalb
+    // `list_by_customer(group.customer_id)` gesucht; das ließ ein tatsächlich
+    // verknüpftes Gerät fälschlich als "nicht verknüpft" (linked_system_id:
+    // None) erscheinen, sobald seine Organisation NACH dem Verknüpfen einem
+    // ANDEREN Kunden zugeordnet wurde (z. B. weil die ursprüngliche Zuordnung
+    // ein Versehen war und korrigiert wurde) -- das verknüpfte System liegt
+    // dann unter dem alten Kunden, nicht unter `group.customer_id`, wurde
+    // also nie gefunden. `db::external_refs::list_for_plugin` sucht bewusst
+    // kundenunabhängig (siehe deren Doc-Kommentar), passend dazu, dass
+    // `unmap_ninja_organization` Verknüpfungen ausdrücklich NICHT antastet,
+    // wenn sich nur die Zuordnung ändert.
+    let linked_by_external_id: HashMap<String, i64> = db::external_refs::list_for_plugin(&conn, &plugin_id)?
+        .into_iter()
+        .map(|reference| (reference.external_id, reference.system_id))
+        .collect();
+
     let mut result = Vec::with_capacity(groups.len());
     for group in groups {
-        // Umkehr-Index externe-ID -> lokale system_id, nur für zugeordnete
-        // Organisationen aufgebaut -- ohne `customer_id` gibt es keine
-        // sinnvolle Menge lokaler Systeme, gegen die man querverweisen könnte.
-        let mut linked_by_external_id: HashMap<String, i64> = HashMap::new();
-        if let Some(customer_id) = group.customer_id {
-            for system in db::systems::list_by_customer(&conn, customer_id, true)? {
-                for reference in db::external_refs::list_for_system(&conn, system.id)? {
-                    if reference.plugin_id == plugin_id {
-                        linked_by_external_id.insert(reference.external_id, system.id);
-                    }
-                }
-            }
-        }
-
         let mut device_dtos = Vec::with_capacity(group.devices.len());
         for device in group.devices {
             let linked_system_id = linked_by_external_id.get(&device.external_id).copied();
