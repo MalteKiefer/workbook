@@ -85,6 +85,7 @@ export default function JournalView() {
   const openEntryDetail = useAppStore((s) => s.openEntryDetail);
   const openExportDialog = useAppStore((s) => s.openExportDialog);
   const selectCustomer = useAppStore((s) => s.selectCustomer);
+  const selectSystem = useAppStore((s) => s.selectSystem);
 
   useEffect(() => {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
@@ -172,12 +173,20 @@ export default function JournalView() {
         <span style={{ display: "flex", gap: "0.5rem" }}>
           <button
             onClick={() => {
-              // ExportDialog seeds its Kunde field from the global
-              // selectedCustomerId, not from this view's own local `customerId`
-              // filter — sync it first so the Export button actually exports
-              // whatever the user is currently looking at here, rather than
-              // whatever customer happened to be globally selected last.
+              // ExportDialog seeds both its Kunde and System fields from the
+              // global selectedCustomerId/selectedSystemId, not from this
+              // view's own local `customerId`/`systemId` filters — sync both
+              // first so the Export button actually exports whatever the
+              // user is currently looking at here, rather than whatever
+              // customer/system happened to be globally selected last (e.g.
+              // a system left over from an unrelated earlier Command-Palette
+              // jump). Bug: this used to sync only the customer, so a stale
+              // selectedSystemId could silently scope the export to a
+              // system the user was no longer even looking at, filtering out
+              // every entry that isn't assigned to that system — including
+              // ones with no system at all.
               if (customerId !== "") selectCustomer(customerId);
+              selectSystem(systemId === "" ? null : systemId);
               openExportDialog();
             }}
           >

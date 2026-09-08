@@ -136,7 +136,23 @@ export default function CommandPalette() {
     ];
     if (selectedCustomerId !== null) {
       cmds.push({ id: "goto-systems", label: "Zu Systemliste", shortcut: "g s", run: () => goToSystems() });
-      cmds.push({ id: "export-customer", label: "Kunde exportieren", shortcut: "", run: () => openExportDialog() });
+      cmds.push({
+        id: "export-customer",
+        label: "Kunde exportieren",
+        shortcut: "",
+        // This command has no filtered view of its own to sync from (unlike
+        // JournalView's "Exportieren" button) — "Kunde exportieren" means
+        // exporting the whole customer, unrestricted. ExportDialog seeds its
+        // System field from the global selectedSystemId though, so without
+        // clearing it here a system merely left selected from an earlier,
+        // unrelated palette action (e.g. jumping to a specific system) would
+        // silently scope the export to that system, dropping every entry
+        // not assigned to it.
+        run: () => {
+          selectSystem(null);
+          openExportDialog();
+        },
+      });
     }
     cmds.push({ id: "goto-journal", label: "Zum Journal", shortcut: "g j", run: goToJournal });
     cmds.push({ id: "goto-backup", label: "Zu Einstellungen → Backup", shortcut: "", run: () => goToSettings("backup") });
@@ -170,6 +186,7 @@ export default function CommandPalette() {
     openCustomerEditor,
     openSystemEditor,
     openShortcutOverview,
+    selectSystem,
   ]);
 
   const filteredCommands = useMemo(() => {
