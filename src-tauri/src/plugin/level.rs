@@ -131,7 +131,10 @@ impl LevelPlugin {
     /// `ip_address`-Feld dort). Holt zusätzlich die Gruppenliste
     /// (`GET /v2/groups`) und löst `group_id` je Gerät serverseitig in einen
     /// Klartextnamen auf (siehe Moduldokumentation, Abschnitt "Gruppen").
-    pub fn list_devices(&self, credentials: &PluginCredentials) -> Result<Vec<LevelDevice>, PluginError> {
+    pub fn list_devices(
+        &self,
+        credentials: &PluginCredentials,
+    ) -> Result<Vec<LevelDevice>, PluginError> {
         let agent = build_agent();
         let raw_groups = fetch_all_groups(&agent, &credentials.secret)?;
         let group_lookup = build_group_lookup(&raw_groups);
@@ -156,15 +159,26 @@ impl Plugin for LevelPlugin {
         self.id.as_str()
     }
 
-    fn list_systems(&self, credentials: &PluginCredentials) -> Result<Vec<ExternalSystem>, PluginError> {
+    fn list_systems(
+        &self,
+        credentials: &PluginCredentials,
+    ) -> Result<Vec<ExternalSystem>, PluginError> {
         let devices = self.list_devices(credentials)?;
         Ok(devices
             .into_iter()
-            .map(|d| ExternalSystem { external_id: d.external_id, name: d.name, hostname: d.hostname })
+            .map(|d| ExternalSystem {
+                external_id: d.external_id,
+                name: d.name,
+                hostname: d.hostname,
+            })
             .collect())
     }
 
-    fn get_system_details(&self, credentials: &PluginCredentials, external_id: &str) -> Result<serde_json::Value, PluginError> {
+    fn get_system_details(
+        &self,
+        credentials: &PluginCredentials,
+        external_id: &str,
+    ) -> Result<serde_json::Value, PluginError> {
         let agent = build_agent();
         fetch_device_json(&agent, &credentials.secret, external_id)
     }
@@ -197,7 +211,10 @@ fn fetch_all_devices(agent: &Agent, api_key: &str) -> Result<Vec<serde_json::Val
     for _ in 0..MAX_PAGES {
         let page_json = fetch_devices_page(agent, api_key, cursor.as_deref(), PAGE_LIMIT)?;
         let (data, has_more) = parse_devices_page(&page_json)?;
-        let next_cursor = data.last().and_then(|d| d["id"].as_str()).map(str::to_string);
+        let next_cursor = data
+            .last()
+            .and_then(|d| d["id"].as_str())
+            .map(str::to_string);
         all.extend(data);
         if !has_more {
             break;
@@ -210,7 +227,12 @@ fn fetch_all_devices(agent: &Agent, api_key: &str) -> Result<Vec<serde_json::Val
     Ok(all)
 }
 
-fn fetch_devices_page(agent: &Agent, api_key: &str, starting_after: Option<&str>, limit: u32) -> Result<serde_json::Value, PluginError> {
+fn fetch_devices_page(
+    agent: &Agent,
+    api_key: &str,
+    starting_after: Option<&str>,
+    limit: u32,
+) -> Result<serde_json::Value, PluginError> {
     let url = format!("{BASE_URL}/devices");
     let mut request = agent
         .get(&url)
@@ -221,7 +243,10 @@ fn fetch_devices_page(agent: &Agent, api_key: &str, starting_after: Option<&str>
         request = request.query("starting_after", after);
     }
     let mut response = request.call().map_err(map_ureq_error)?;
-    response.body_mut().read_json::<serde_json::Value>().map_err(map_ureq_error)
+    response
+        .body_mut()
+        .read_json::<serde_json::Value>()
+        .map_err(map_ureq_error)
 }
 
 /// Ruft alle Seiten von `GET /v2/groups` ab, exakt nach demselben Muster wie
@@ -234,7 +259,10 @@ fn fetch_all_groups(agent: &Agent, api_key: &str) -> Result<Vec<serde_json::Valu
     for _ in 0..MAX_PAGES {
         let page_json = fetch_groups_page(agent, api_key, cursor.as_deref(), PAGE_LIMIT)?;
         let (data, has_more) = parse_groups_page(&page_json)?;
-        let next_cursor = data.last().and_then(|g| g["id"].as_str()).map(str::to_string);
+        let next_cursor = data
+            .last()
+            .and_then(|g| g["id"].as_str())
+            .map(str::to_string);
         all.extend(data);
         if !has_more {
             break;
@@ -247,17 +275,32 @@ fn fetch_all_groups(agent: &Agent, api_key: &str) -> Result<Vec<serde_json::Valu
     Ok(all)
 }
 
-fn fetch_groups_page(agent: &Agent, api_key: &str, starting_after: Option<&str>, limit: u32) -> Result<serde_json::Value, PluginError> {
+fn fetch_groups_page(
+    agent: &Agent,
+    api_key: &str,
+    starting_after: Option<&str>,
+    limit: u32,
+) -> Result<serde_json::Value, PluginError> {
     let url = format!("{BASE_URL}/groups");
-    let mut request = agent.get(&url).header("Authorization", api_key).query("limit", limit.to_string());
+    let mut request = agent
+        .get(&url)
+        .header("Authorization", api_key)
+        .query("limit", limit.to_string());
     if let Some(after) = starting_after {
         request = request.query("starting_after", after);
     }
     let mut response = request.call().map_err(map_ureq_error)?;
-    response.body_mut().read_json::<serde_json::Value>().map_err(map_ureq_error)
+    response
+        .body_mut()
+        .read_json::<serde_json::Value>()
+        .map_err(map_ureq_error)
 }
 
-fn fetch_device_json(agent: &Agent, api_key: &str, external_id: &str) -> Result<serde_json::Value, PluginError> {
+fn fetch_device_json(
+    agent: &Agent,
+    api_key: &str,
+    external_id: &str,
+) -> Result<serde_json::Value, PluginError> {
     let url = format!("{BASE_URL}/devices/{external_id}");
     let mut response = agent
         .get(&url)
@@ -265,7 +308,10 @@ fn fetch_device_json(agent: &Agent, api_key: &str, external_id: &str) -> Result<
         .query("include_network_interfaces", "true")
         .call()
         .map_err(map_ureq_error)?;
-    response.body_mut().read_json::<serde_json::Value>().map_err(map_ureq_error)
+    response
+        .body_mut()
+        .read_json::<serde_json::Value>()
+        .map_err(map_ureq_error)
 }
 
 fn map_ureq_error(e: ureq::Error) -> PluginError {
@@ -273,8 +319,12 @@ fn map_ureq_error(e: ureq::Error) -> PluginError {
         ureq::Error::StatusCode(code) if code == 401 || code == 403 => {
             PluginError::Authentication(format!("Level-API antwortete mit Status {code}"))
         }
-        ureq::Error::StatusCode(code) => PluginError::Unreachable(format!("Level-API antwortete mit Status {code}")),
-        ureq::Error::Json(err) => PluginError::UnexpectedResponse(format!("Ungültige JSON-Antwort: {err}")),
+        ureq::Error::StatusCode(code) => {
+            PluginError::Unreachable(format!("Level-API antwortete mit Status {code}"))
+        }
+        ureq::Error::Json(err) => {
+            PluginError::UnexpectedResponse(format!("Ungültige JSON-Antwort: {err}"))
+        }
         other => PluginError::Unreachable(other.to_string()),
     }
 }
@@ -283,10 +333,12 @@ fn map_ureq_error(e: ureq::Error) -> PluginError {
 /// Level-Seiten-Antwort (`GET /v2/devices`: `{"data": [...], "has_more":
 /// bool}`, verifiziert über Levels eigene Referenzseite). Reine Funktion,
 /// mit hartkodiertem JSON testbar, kein echter Netzwerkzugriff nötig.
-fn parse_devices_page(json: &serde_json::Value) -> Result<(Vec<serde_json::Value>, bool), PluginError> {
-    let data = json["data"]
-        .as_array()
-        .ok_or_else(|| PluginError::UnexpectedResponse("Erwartete 'data'-Liste in Level-Antwort".to_string()))?;
+fn parse_devices_page(
+    json: &serde_json::Value,
+) -> Result<(Vec<serde_json::Value>, bool), PluginError> {
+    let data = json["data"].as_array().ok_or_else(|| {
+        PluginError::UnexpectedResponse("Erwartete 'data'-Liste in Level-Antwort".to_string())
+    })?;
     let has_more = json["has_more"].as_bool().unwrap_or(false);
     Ok((data.clone(), has_more))
 }
@@ -296,10 +348,14 @@ fn parse_devices_page(json: &serde_json::Value) -> Result<(Vec<serde_json::Value
 /// bool}`, verifiziert über Levels eigene Referenzseite -- identischer
 /// Seiten-Umschlag wie `/v2/devices`). Reine Funktion, mit hartkodiertem
 /// JSON testbar, analog zu `parse_devices_page`.
-fn parse_groups_page(json: &serde_json::Value) -> Result<(Vec<serde_json::Value>, bool), PluginError> {
-    let data = json["data"]
-        .as_array()
-        .ok_or_else(|| PluginError::UnexpectedResponse("Erwartete 'data'-Liste in Level-Gruppen-Antwort".to_string()))?;
+fn parse_groups_page(
+    json: &serde_json::Value,
+) -> Result<(Vec<serde_json::Value>, bool), PluginError> {
+    let data = json["data"].as_array().ok_or_else(|| {
+        PluginError::UnexpectedResponse(
+            "Erwartete 'data'-Liste in Level-Gruppen-Antwort".to_string(),
+        )
+    })?;
     let has_more = json["has_more"].as_bool().unwrap_or(false);
     Ok((data.clone(), has_more))
 }
@@ -327,8 +383,14 @@ fn build_group_lookup(groups: &[serde_json::Value]) -> HashMap<String, String> {
 /// Endpunkte liefern Geräteobjekte in exakt derselben Form. `group_lookup`
 /// (siehe `build_group_lookup`) löst das rohe `group_id`-Feld je Gerät in
 /// einen Klartextnamen auf.
-fn map_level_devices(devices: &[serde_json::Value], group_lookup: &HashMap<String, String>) -> Vec<LevelDevice> {
-    devices.iter().filter_map(|d| map_level_device(d, group_lookup)).collect()
+fn map_level_devices(
+    devices: &[serde_json::Value],
+    group_lookup: &HashMap<String, String>,
+) -> Vec<LevelDevice> {
+    devices
+        .iter()
+        .filter_map(|d| map_level_device(d, group_lookup))
+        .collect()
 }
 
 /// Ein einzelnes Geräteobjekt aus Levels Antwort. Level hat -- anders als
@@ -341,15 +403,29 @@ fn map_level_devices(devices: &[serde_json::Value], group_lookup: &HashMap<Strin
 /// machen (analog zu `plugin::ninja::map_device`). `group_id` ist nullable
 /// (`null`/fehlend bedeutet "ungrouped", kein Fehlerfall); `group_lookup`
 /// löst es -- falls gesetzt und bekannt -- in `group_name` auf.
-fn map_level_device(value: &serde_json::Value, group_lookup: &HashMap<String, String>) -> Option<LevelDevice> {
+fn map_level_device(
+    value: &serde_json::Value,
+    group_lookup: &HashMap<String, String>,
+) -> Option<LevelDevice> {
     let external_id = value["id"].as_str()?.to_string();
     let hostname = value["hostname"].as_str().map(str::to_string);
     let nickname = value["nickname"].as_str().map(str::to_string);
-    let name = nickname.or_else(|| hostname.clone()).unwrap_or_else(|| external_id.clone());
+    let name = nickname
+        .or_else(|| hostname.clone())
+        .unwrap_or_else(|| external_id.clone());
     let ip_address = extract_ip_address(value);
     let group_id = value["group_id"].as_str().map(str::to_string);
-    let group_name = group_id.as_ref().and_then(|id| group_lookup.get(id).cloned());
-    Some(LevelDevice { external_id, name, hostname, ip_address, group_id, group_name })
+    let group_name = group_id
+        .as_ref()
+        .and_then(|id| group_lookup.get(id).cloned());
+    Some(LevelDevice {
+        external_id,
+        name,
+        hostname,
+        ip_address,
+        group_id,
+        group_name,
+    })
 }
 
 /// Sucht die erste nicht-leere IP-Adresse im (nur bei
@@ -413,7 +489,10 @@ mod tests {
         assert_eq!(devices.len(), 2);
         assert_eq!(devices[0].external_id, "dev-1");
         assert_eq!(devices[0].name, "Server 01");
-        assert_eq!(devices[0].hostname.as_deref(), Some("srv-01.customer.local"));
+        assert_eq!(
+            devices[0].hostname.as_deref(),
+            Some("srv-01.customer.local")
+        );
         assert_eq!(devices[0].group_id, None);
         assert_eq!(devices[0].group_name, None);
         assert_eq!(devices[1].external_id, "dev-2");

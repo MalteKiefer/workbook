@@ -1,5 +1,7 @@
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW, SetForegroundWindow};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetWindowTextW, SetForegroundWindow,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ForegroundHandle(isize);

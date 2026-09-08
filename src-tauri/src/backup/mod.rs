@@ -58,9 +58,9 @@ pub fn create_backup(conn: &Connection, data_dir: &Path, dest_path: &Path) -> Re
     // leftover snapshot from a previous run that crashed before cleanup.
     let _ = std::fs::remove_file(&snapshot_path);
 
-    let snapshot_path_str = snapshot_path
-        .to_str()
-        .ok_or_else(|| AppError::Backup("Datenverzeichnis-Pfad enthält ungültige Zeichen".to_string()))?;
+    let snapshot_path_str = snapshot_path.to_str().ok_or_else(|| {
+        AppError::Backup("Datenverzeichnis-Pfad enthält ungültige Zeichen".to_string())
+    })?;
 
     let result = conn
         .execute("VACUUM INTO ?1", [snapshot_path_str])
@@ -71,7 +71,11 @@ pub fn create_backup(conn: &Connection, data_dir: &Path, dest_path: &Path) -> Re
     result
 }
 
-fn write_backup_zip(snapshot_path: &Path, data_dir: &Path, dest_path: &Path) -> Result<(), AppError> {
+fn write_backup_zip(
+    snapshot_path: &Path,
+    data_dir: &Path,
+    dest_path: &Path,
+) -> Result<(), AppError> {
     let file = File::create(dest_path)?;
     let mut zip = zip::ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -112,9 +116,11 @@ fn add_directory_to_zip<W: Write + std::io::Seek>(
         return Ok(());
     }
     for entry_path in walk_files(&dir)? {
-        let relative = entry_path
-            .strip_prefix(data_dir)
-            .map_err(|_| AppError::Backup(format!("Pfad in '{dir_name}' liegt außerhalb des Datenverzeichnisses")))?;
+        let relative = entry_path.strip_prefix(data_dir).map_err(|_| {
+            AppError::Backup(format!(
+                "Pfad in '{dir_name}' liegt außerhalb des Datenverzeichnisses"
+            ))
+        })?;
         let zip_entry_name = relative.to_string_lossy().replace('\\', "/");
         zip.start_file(zip_entry_name, options)?;
         copy_file_into(&entry_path, zip)?;
@@ -122,7 +128,10 @@ fn add_directory_to_zip<W: Write + std::io::Seek>(
     Ok(())
 }
 
-fn copy_file_into<W: Write + std::io::Seek>(path: &Path, zip: &mut zip::ZipWriter<W>) -> Result<(), AppError> {
+fn copy_file_into<W: Write + std::io::Seek>(
+    path: &Path,
+    zip: &mut zip::ZipWriter<W>,
+) -> Result<(), AppError> {
     let mut buf = Vec::new();
     File::open(path)?.read_to_end(&mut buf)?;
     zip.write_all(&buf)?;
@@ -195,14 +204,23 @@ pub fn stage_restore(data_dir: &Path, source_path: &Path) -> Result<(), AppError
 /// usable SQLite database -- the main user-facing validation point for "picked
 /// the wrong file" or a corrupted backup.
 fn validate_sqlite_file(path: &Path) -> Result<(), AppError> {
-    let conn = Connection::open(path).map_err(|e| AppError::Backup(format!("Datenbank im Backup ist ungültig: {e}")))?;
-    conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))
+    let conn = Connection::open(path)
         .map_err(|e| AppError::Backup(format!("Datenbank im Backup ist ungültig: {e}")))?;
+    conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .map_err(|e| AppError::Backup(format!("Datenbank im Backup ist ungültig: {e}")))?;
     let integrity: String = conn
         .query_row("PRAGMA integrity_check", [], |row| row.get(0))
-        .map_err(|e| AppError::Backup(format!("Integritätsprüfung der Backup-Datenbank fehlgeschlagen: {e}")))?;
+        .map_err(|e| {
+            AppError::Backup(format!(
+                "Integritätsprüfung der Backup-Datenbank fehlgeschlagen: {e}"
+            ))
+        })?;
     if integrity != "ok" {
-        return Err(AppError::Backup(format!("Datenbank im Backup ist beschädigt: {integrity}")));
+        return Err(AppError::Backup(format!(
+            "Datenbank im Backup ist beschädigt: {integrity}"
+        )));
     }
     Ok(())
 }
@@ -216,7 +234,9 @@ fn extract_zip(source_path: &Path, target_dir: &Path) -> Result<(), AppError> {
     let mut archive = zip::ZipArchive::new(file)?;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
-        let Some(relative) = entry.enclosed_name() else { continue };
+        let Some(relative) = entry.enclosed_name() else {
+            continue;
+        };
         let out_path = target_dir.join(relative);
         if entry.is_dir() {
             std::fs::create_dir_all(&out_path)?;
@@ -274,7 +294,10 @@ pub fn apply_pending_restore_if_present(data_dir: &Path) -> Result<(), AppError>
         return Ok(());
     }
 
-    eprintln!("Ausstehende Wiederherstellung gefunden, wende sie an: {}", staging_dir.display());
+    eprintln!(
+        "Ausstehende Wiederherstellung gefunden, wende sie an: {}",
+        staging_dir.display()
+    );
     let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
     let bak_suffix = format!(".bak-{timestamp}");
 
@@ -343,7 +366,11 @@ mod tests {
         let tz: chrono_tz::Tz = "Europe/Berlin".parse().unwrap();
         let customer_id = crate::db::customers::create(
             &conn,
-            crate::db::customers::NewCustomer { name: "ACME".into(), short_code: "ACME".into(), notes: "".into() },
+            crate::db::customers::NewCustomer {
+                name: "ACME".into(),
+                short_code: "ACME".into(),
+                notes: "".into(),
+            },
             &tz,
         )
         .unwrap()
@@ -368,7 +395,12 @@ mod tests {
 
         // A real attachment file under data_dir/attachments/.. , mirroring
         // attachments::store's content-addressed layout.
-        let saved = crate::attachments::store::save_content_addressed(data_dir, b"attachment bytes", "shot.png").unwrap();
+        let saved = crate::attachments::store::save_content_addressed(
+            data_dir,
+            b"attachment bytes",
+            "shot.png",
+        )
+        .unwrap();
         assert!(data_dir.join(&saved.relative_path).exists());
 
         conn
@@ -392,7 +424,11 @@ mod tests {
     fn seed_plugin_cache(data_dir: &Path) {
         let dir = data_dir.join(PLUGIN_CACHE_DIR_NAME);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("ninja-acme-1.json"), br#"{"synced_at_utc":"2026-09-07T12:00:00.000Z","groups":[]}"#).unwrap();
+        std::fs::write(
+            dir.join("ninja-acme-1.json"),
+            br#"{"synced_at_utc":"2026-09-07T12:00:00.000Z","groups":[]}"#,
+        )
+        .unwrap();
     }
 
     fn read_zip_entry_names(zip_path: &Path) -> Vec<String> {
@@ -414,7 +450,9 @@ mod tests {
         assert!(dest_zip.exists());
         let names = read_zip_entry_names(&dest_zip);
         assert!(names.contains(&DB_FILE_NAME.to_string()));
-        assert!(names.iter().any(|n| n.starts_with("attachments/") && n.ends_with(".png")));
+        assert!(names
+            .iter()
+            .any(|n| n.starts_with("attachments/") && n.ends_with(".png")));
 
         // Scratch snapshot cleaned up, no leftovers.
         let scratch_dir = dir.path().join(SCRATCH_DIR_NAME);
@@ -435,7 +473,9 @@ mod tests {
 
         let names = read_zip_entry_names(&dest_zip);
         assert!(names.contains(&CONFIG_FILE_NAME.to_string()));
-        assert!(names.iter().any(|n| n.starts_with("plugin-cache/") && n.ends_with(".json")));
+        assert!(names
+            .iter()
+            .any(|n| n.starts_with("plugin-cache/") && n.ends_with(".json")));
     }
 
     #[test]
@@ -462,7 +502,9 @@ mod tests {
         let extract_dir = tempdir().unwrap();
         extract_zip(&dest_zip, extract_dir.path()).unwrap();
         let restored_conn = Connection::open(extract_dir.path().join(DB_FILE_NAME)).unwrap();
-        let count: i64 = restored_conn.query_row("SELECT count(*) FROM entries", [], |r| r.get(0)).unwrap();
+        let count: i64 = restored_conn
+            .query_row("SELECT count(*) FROM entries", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 1);
     }
 
@@ -472,7 +514,8 @@ mod tests {
         let zip_path = dir.path().join("bad.zip");
         let file = File::create(&zip_path).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        zip.start_file("not-a-db.txt", SimpleFileOptions::default()).unwrap();
+        zip.start_file("not-a-db.txt", SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(b"oops").unwrap();
         zip.finish().unwrap();
 
@@ -487,7 +530,8 @@ mod tests {
         let zip_path = dir.path().join("corrupt.zip");
         let file = File::create(&zip_path).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        zip.start_file(DB_FILE_NAME, SimpleFileOptions::default()).unwrap();
+        zip.start_file(DB_FILE_NAME, SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(b"this is not a sqlite file").unwrap();
         zip.finish().unwrap();
 
@@ -509,7 +553,10 @@ mod tests {
 
         let staging_dir = dir.path().join(PENDING_RESTORE_DIR_NAME);
         assert!(staging_dir.join(CONFIG_FILE_NAME).exists());
-        assert!(staging_dir.join(PLUGIN_CACHE_DIR_NAME).join("ninja-acme-1.json").exists());
+        assert!(staging_dir
+            .join(PLUGIN_CACHE_DIR_NAME)
+            .join("ninja-acme-1.json")
+            .exists());
     }
 
     #[test]
@@ -544,7 +591,11 @@ mod tests {
         std::fs::write(with_suffix(&live_db_path, "-wal"), b"old wal bytes").unwrap();
 
         stage_restore(dir.path(), &backup_zip).unwrap();
-        assert!(dir.path().join(PENDING_RESTORE_DIR_NAME).join(DB_FILE_NAME).exists());
+        assert!(dir
+            .path()
+            .join(PENDING_RESTORE_DIR_NAME)
+            .join(DB_FILE_NAME)
+            .exists());
 
         apply_pending_restore_if_present(dir.path()).unwrap();
 
@@ -552,20 +603,30 @@ mod tests {
         assert!(!dir.path().join(PENDING_RESTORE_DIR_NAME).exists());
         assert!(live_db_path.exists());
         let restored_conn = Connection::open(&live_db_path).unwrap();
-        let count: i64 = restored_conn.query_row("SELECT count(*) FROM entries", [], |r| r.get(0)).unwrap();
+        let count: i64 = restored_conn
+            .query_row("SELECT count(*) FROM entries", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 1);
 
         // Previous live db and its WAL sidecar were backed up aside, not deleted.
         let bak_db = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok())
-            .find(|e| e.file_name().to_string_lossy().starts_with("wartungsdoku.db.bak-"));
-        assert!(bak_db.is_some(), "vorherige Live-DB hätte als .bak-<timestamp> gesichert werden müssen");
+            .find(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("wartungsdoku.db.bak-")
+            });
+        assert!(
+            bak_db.is_some(),
+            "vorherige Live-DB hätte als .bak-<timestamp> gesichert werden müssen"
+        );
 
         // Restored attachment present at the live attachments path.
-        let restored_attachment_present = walk_files(&dir.path().join("attachments")).unwrap().iter().any(|p| {
-            p.extension().and_then(|e| e.to_str()) == Some("png")
-        });
+        let restored_attachment_present = walk_files(&dir.path().join("attachments"))
+            .unwrap()
+            .iter()
+            .any(|p| p.extension().and_then(|e| e.to_str()) == Some("png"));
         assert!(restored_attachment_present);
     }
 
@@ -593,7 +654,8 @@ mod tests {
         stage_restore(dir.path(), &backup_zip).unwrap();
         apply_pending_restore_if_present(dir.path()).unwrap();
 
-        let restored_config = crate::config::Config::load_or_default(&dir.path().join(CONFIG_FILE_NAME)).unwrap();
+        let restored_config =
+            crate::config::Config::load_or_default(&dir.path().join(CONFIG_FILE_NAME)).unwrap();
         // data_dir must reflect THIS machine's real, live data dir (the
         // tempdir this test runs in), never the bogus one recorded inside
         // the backup.
@@ -620,8 +682,15 @@ mod tests {
         let bak_config = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok())
-            .find(|e| e.file_name().to_string_lossy().starts_with("config.toml.bak-"));
-        assert!(bak_config.is_some(), "vorheriges Live-config.toml hätte als .bak-<timestamp> gesichert werden müssen");
+            .find(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("config.toml.bak-")
+            });
+        assert!(
+            bak_config.is_some(),
+            "vorheriges Live-config.toml hätte als .bak-<timestamp> gesichert werden müssen"
+        );
     }
 
     #[test]
@@ -636,20 +705,37 @@ mod tests {
         // made (e.g. a plugin synced again).
         std::fs::remove_dir_all(dir.path().join(PLUGIN_CACHE_DIR_NAME)).unwrap();
         std::fs::create_dir_all(dir.path().join(PLUGIN_CACHE_DIR_NAME)).unwrap();
-        std::fs::write(dir.path().join(PLUGIN_CACHE_DIR_NAME).join("ninja-other.json"), b"{}").unwrap();
+        std::fs::write(
+            dir.path()
+                .join(PLUGIN_CACHE_DIR_NAME)
+                .join("ninja-other.json"),
+            b"{}",
+        )
+        .unwrap();
 
         stage_restore(dir.path(), &backup_zip).unwrap();
         apply_pending_restore_if_present(dir.path()).unwrap();
 
         // Restored plugin-cache file present at the live path.
-        assert!(dir.path().join(PLUGIN_CACHE_DIR_NAME).join("ninja-acme-1.json").exists());
+        assert!(dir
+            .path()
+            .join(PLUGIN_CACHE_DIR_NAME)
+            .join("ninja-acme-1.json")
+            .exists());
 
         // Previous live plugin-cache dir was backed up aside, not deleted.
         let bak_plugin_cache = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok())
-            .find(|e| e.file_name().to_string_lossy().starts_with("plugin-cache.bak-"));
-        assert!(bak_plugin_cache.is_some(), "vorheriges Live-plugin-cache hätte als .bak-<timestamp> gesichert werden müssen");
+            .find(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("plugin-cache.bak-")
+            });
+        assert!(
+            bak_plugin_cache.is_some(),
+            "vorheriges Live-plugin-cache hätte als .bak-<timestamp> gesichert werden müssen"
+        );
     }
 
     #[test]

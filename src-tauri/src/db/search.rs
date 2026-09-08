@@ -13,7 +13,11 @@ pub struct EntryHit {
     pub performed_at_tz: String,
 }
 
-pub fn search_entries(conn: &Connection, query: &str, limit: i64) -> Result<Vec<EntryHit>, AppError> {
+pub fn search_entries(
+    conn: &Connection,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<EntryHit>, AppError> {
     let mut stmt = conn.prepare(
         "SELECT e.id, e.customer_id, e.system_id, e.title, e.performed_at_utc, e.performed_at_tz,
                 snippet(entries_fts, 1, '<mark>', '</mark>', '…', 12) AS snippet
@@ -56,7 +60,11 @@ pub struct DirectoryHit {
     pub label: String,
 }
 
-pub fn search_directory(conn: &Connection, query: &str, limit: i64) -> Result<Vec<DirectoryHit>, AppError> {
+pub fn search_directory(
+    conn: &Connection,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<DirectoryHit>, AppError> {
     let sanitized: String = query.chars().filter(|c| *c != '%' && *c != '_').collect();
     let like = format!("%{sanitized}%");
     let mut stmt = conn.prepare(
@@ -72,7 +80,11 @@ pub fn search_directory(conn: &Connection, query: &str, limit: i64) -> Result<Ve
     let rows = stmt.query_map(params![like, limit], |row| {
         let kind_str: String = row.get(0)?;
         Ok(DirectoryHit {
-            kind: if kind_str == "customer" { DirectoryKind::Customer } else { DirectoryKind::System },
+            kind: if kind_str == "customer" {
+                DirectoryKind::Customer
+            } else {
+                DirectoryKind::System
+            },
             id: row.get(1)?,
             customer_id: row.get(2)?,
             label: row.get(3)?,
@@ -142,8 +154,12 @@ mod tests {
         // "ACME" steckt sowohl im Kundennamen/-kürzel als auch im Hostname (fs01.acme.local) — beide sind korrekte Treffer.
         let hits = search_directory(&conn, "ACME", 10).unwrap();
         assert_eq!(hits.len(), 2);
-        assert!(hits.iter().any(|h| h.kind == DirectoryKind::Customer && h.id == 1));
-        assert!(hits.iter().any(|h| h.kind == DirectoryKind::System && h.id == 1));
+        assert!(hits
+            .iter()
+            .any(|h| h.kind == DirectoryKind::Customer && h.id == 1));
+        assert!(hits
+            .iter()
+            .any(|h| h.kind == DirectoryKind::System && h.id == 1));
     }
 
     #[test]

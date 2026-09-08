@@ -69,7 +69,11 @@ pub struct CachedLevelSyncDto {
 }
 
 fn to_dto(meta: &LevelConnectionMeta) -> LevelConnectionDto {
-    LevelConnectionDto { id: meta.id.clone(), customer_id: meta.customer_id, label: meta.label.clone() }
+    LevelConnectionDto {
+        id: meta.id.clone(),
+        customer_id: meta.customer_id,
+        label: meta.label.clone(),
+    }
 }
 
 /// Der vollqualifizierte `plugin_id`-Wert für eine Level-Verbindung -- sowohl
@@ -118,7 +122,9 @@ fn find_connection(config: &Config, connection_id: &str) -> Result<LevelConnecti
         .iter()
         .find(|c| c.id == connection_id)
         .cloned()
-        .ok_or_else(|| AppError::NotFound(format!("Level-Verbindung {connection_id} nicht gefunden")))
+        .ok_or_else(|| {
+            AppError::NotFound(format!("Level-Verbindung {connection_id} nicht gefunden"))
+        })
 }
 
 /// Baut aus einer Verbindungs-Metadatenzeile das lauffähige Plugin-Objekt
@@ -161,10 +167,18 @@ fn level_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
 
 /// Schreibt eine Momentaufnahme des Sync-Ergebnisses als JSON-Datei, analog
 /// zu `commands::plugins::write_ninja_cache`.
-fn write_level_cache(data_dir: &Path, connection_id: &str, synced_at_utc: &str, devices: &[ExternalSystemDto]) -> Result<(), AppError> {
+fn write_level_cache(
+    data_dir: &Path,
+    connection_id: &str,
+    synced_at_utc: &str,
+    devices: &[ExternalSystemDto],
+) -> Result<(), AppError> {
     let dir = plugin_cache_dir(data_dir);
     std::fs::create_dir_all(&dir)?;
-    let cache = CachedLevelSyncDto { synced_at_utc: synced_at_utc.to_string(), devices: devices.to_vec() };
+    let cache = CachedLevelSyncDto {
+        synced_at_utc: synced_at_utc.to_string(),
+        devices: devices.to_vec(),
+    };
     let json = serde_json::to_string_pretty(&cache)
         .map_err(|e| AppError::Plugin(format!("Level-Cache konnte nicht kodiert werden: {e}")))?;
     std::fs::write(level_cache_path(data_dir, connection_id), json)?;
@@ -175,14 +189,17 @@ fn write_level_cache(data_dir: &Path, connection_id: &str, synced_at_utc: &str, 
 /// zurück. `Ok(None)`, wenn für diese Verbindung noch nie synchronisiert
 /// wurde -- kein Fehlerfall, analog zu
 /// `commands::plugins::read_ninja_cache`.
-fn read_level_cache(data_dir: &Path, connection_id: &str) -> Result<Option<CachedLevelSyncDto>, AppError> {
+fn read_level_cache(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedLevelSyncDto>, AppError> {
     let path = level_cache_path(data_dir, connection_id);
     if !path.exists() {
         return Ok(None);
     }
     let text = std::fs::read_to_string(&path)?;
-    let cached: CachedLevelSyncDto =
-        serde_json::from_str(&text).map_err(|e| AppError::Plugin(format!("Level-Cache-Datei ungültig: {e}")))?;
+    let cached: CachedLevelSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Level-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
@@ -211,13 +228,22 @@ pub fn list_level_connections(state: State<AppState>) -> Result<Vec<LevelConnect
 }
 
 #[tauri::command]
-pub fn add_level_connection(state: State<AppState>, customer_id: i64, label: String, api_key: String) -> Result<LevelConnectionDto, AppError> {
+pub fn add_level_connection(
+    state: State<AppState>,
+    customer_id: i64,
+    label: String,
+    api_key: String,
+) -> Result<LevelConnectionDto, AppError> {
     let id = generate_connection_id(&label);
     let plugin_id = plugin_id_for(&id);
 
     plugin::secrets::store_secret(&plugin_id, &api_key)?;
 
-    let meta = LevelConnectionMeta { id, customer_id, label };
+    let meta = LevelConnectionMeta {
+        id,
+        customer_id,
+        label,
+    };
 
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
     config.level_connections.push(meta.clone());
@@ -233,7 +259,9 @@ pub fn remove_level_connection(state: State<AppState>, id: String) -> Result<(),
     let before = config.level_connections.len();
     config.level_connections.retain(|c| c.id != id);
     if config.level_connections.len() == before {
-        return Err(AppError::NotFound(format!("Level-Verbindung {id} nicht gefunden")));
+        return Err(AppError::NotFound(format!(
+            "Level-Verbindung {id} nicht gefunden"
+        )));
     }
     let data_dir = config.data_dir.clone();
     let config_path = config.data_dir.join("config.toml");
@@ -248,24 +276,38 @@ pub fn remove_level_connection(state: State<AppState>, id: String) -> Result<(),
     let cache_path = level_cache_path(&data_dir, &id);
     if cache_path.exists() {
         if let Err(e) = std::fs::remove_file(&cache_path) {
-            eprintln!("Level-Cache-Datei {} konnte nicht entfernt werden (ignoriert): {e}", cache_path.display());
+            eprintln!(
+                "Level-Cache-Datei {} konnte nicht entfernt werden (ignoriert): {e}",
+                cache_path.display()
+            );
         }
     }
     Ok(())
 }
 
 #[tauri::command]
-pub fn sync_level_connection(state: State<AppState>, connection_id: String) -> Result<Vec<ExternalSystemDto>, AppError> {
+pub fn sync_level_connection(
+    state: State<AppState>,
+    connection_id: String,
+) -> Result<Vec<ExternalSystemDto>, AppError> {
     let (customer_id, plugin, credentials, data_dir) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
         let (plugin, credentials) = build_plugin(&meta)?;
-        (meta.customer_id, plugin, credentials, config.data_dir.clone())
+        (
+            meta.customer_id,
+            plugin,
+            credentials,
+            config.data_dir.clone(),
+        )
     };
 
     let devices = plugin.list_devices(&credentials)?;
 
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
     let plugin_id = plugin.id().to_string();
 
@@ -287,7 +329,14 @@ pub fn sync_level_connection(state: State<AppState>, connection_id: String) -> R
         let linked_system_id = linked_by_external_id.get(&device.external_id).copied();
         if let Some(system_id) = linked_system_id {
             let payload = plugin.get_system_details(&credentials, &device.external_id)?;
-            db::external_refs::upsert(&conn, system_id, &plugin_id, &device.external_id, &payload.to_string(), &tz)?;
+            db::external_refs::upsert(
+                &conn,
+                system_id,
+                &plugin_id,
+                &device.external_id,
+                &payload.to_string(),
+                &tz,
+            )?;
         }
         result.push(to_external_system_dto(device, linked_system_id));
     }
@@ -299,13 +348,26 @@ pub fn sync_level_connection(state: State<AppState>, connection_id: String) -> R
 }
 
 #[tauri::command]
-pub fn get_cached_level_sync(state: State<AppState>, connection_id: String) -> Result<Option<CachedLevelSyncDto>, AppError> {
-    let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
+pub fn get_cached_level_sync(
+    state: State<AppState>,
+    connection_id: String,
+) -> Result<Option<CachedLevelSyncDto>, AppError> {
+    let data_dir = state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .data_dir
+        .clone();
     read_level_cache(&data_dir, &connection_id)
 }
 
 #[tauri::command]
-pub fn link_system_to_level(state: State<AppState>, system_id: i64, connection_id: String, external_id: String) -> Result<(), AppError> {
+pub fn link_system_to_level(
+    state: State<AppState>,
+    system_id: i64,
+    connection_id: String,
+    external_id: String,
+) -> Result<(), AppError> {
     let (plugin, credentials) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
@@ -315,20 +377,41 @@ pub fn link_system_to_level(state: State<AppState>, system_id: i64, connection_i
     let payload = plugin.get_system_details(&credentials, &external_id)?;
     plugin.link_system(system_id, &external_id)?;
 
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
-    db::external_refs::upsert(&conn, system_id, plugin.id(), &external_id, &payload.to_string(), &tz)?;
+    db::external_refs::upsert(
+        &conn,
+        system_id,
+        plugin.id(),
+        &external_id,
+        &payload.to_string(),
+        &tz,
+    )?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn unlink_system_from_level(state: State<AppState>, system_id: i64, connection_id: String) -> Result<(), AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+pub fn unlink_system_from_level(
+    state: State<AppState>,
+    system_id: i64,
+    connection_id: String,
+) -> Result<(), AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     db::external_refs::delete(&conn, system_id, &plugin_id_for(&connection_id))
 }
 
 #[tauri::command]
-pub fn get_level_system_details(state: State<AppState>, connection_id: String, external_id: String) -> Result<serde_json::Value, AppError> {
+pub fn get_level_system_details(
+    state: State<AppState>,
+    connection_id: String,
+    external_id: String,
+) -> Result<serde_json::Value, AppError> {
     let (plugin, credentials) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
@@ -453,7 +536,13 @@ mod tests {
     fn level_cache_overwrites_previous_snapshot_for_the_same_connection() {
         let dir = tempdir().unwrap();
         write_level_cache(dir.path(), "conn-1", "2026-09-07T10:00:00.000Z", &[]).unwrap();
-        write_level_cache(dir.path(), "conn-1", "2026-09-07T12:00:00.000Z", &[sample_device("dev-1")]).unwrap();
+        write_level_cache(
+            dir.path(),
+            "conn-1",
+            "2026-09-07T12:00:00.000Z",
+            &[sample_device("dev-1")],
+        )
+        .unwrap();
 
         let loaded = read_level_cache(dir.path(), "conn-1").unwrap().unwrap();
 

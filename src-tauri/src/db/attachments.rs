@@ -45,12 +45,17 @@ pub fn create(
         params![entry_id, sha256, original_filename, mime_type, size_bytes, now_utc, now_tz],
     )?;
     let id = conn.last_insert_rowid();
-    conn.query_row("SELECT * FROM attachments WHERE id = ?1", params![id], row_to_attachment)
-        .map_err(Into::into)
+    conn.query_row(
+        "SELECT * FROM attachments WHERE id = ?1",
+        params![id],
+        row_to_attachment,
+    )
+    .map_err(Into::into)
 }
 
 pub fn list_for_entry(conn: &Connection, entry_id: i64) -> Result<Vec<Attachment>, AppError> {
-    let mut stmt = conn.prepare("SELECT * FROM attachments WHERE entry_id = ?1 ORDER BY created_at_utc ASC")?;
+    let mut stmt =
+        conn.prepare("SELECT * FROM attachments WHERE entry_id = ?1 ORDER BY created_at_utc ASC")?;
     let rows = stmt.query_map(params![entry_id], row_to_attachment)?;
     let mut result = Vec::new();
     for row in rows {
@@ -60,9 +65,13 @@ pub fn list_for_entry(conn: &Connection, entry_id: i64) -> Result<Vec<Attachment
 }
 
 pub fn get(conn: &Connection, id: i64) -> Result<Attachment, AppError> {
-    conn.query_row("SELECT * FROM attachments WHERE id = ?1", params![id], row_to_attachment)
-        .optional()?
-        .ok_or_else(|| AppError::NotFound(format!("Anhang {id} nicht gefunden")))
+    conn.query_row(
+        "SELECT * FROM attachments WHERE id = ?1",
+        params![id],
+        row_to_attachment,
+    )
+    .optional()?
+    .ok_or_else(|| AppError::NotFound(format!("Anhang {id} nicht gefunden")))
 }
 
 /// Löscht nur die Datenbank-Zeile. Die zugehörige Datei im Content-Addressed-Store
@@ -80,7 +89,9 @@ pub fn delete(conn: &Connection, id: i64) -> Result<(), AppError> {
 
 /// Alle im Moment referenzierten Content-Hashes, als Grundlage für die
 /// Orphan-Erkennung im Attachment-Store.
-pub fn all_referenced_hashes(conn: &Connection) -> Result<std::collections::HashSet<String>, AppError> {
+pub fn all_referenced_hashes(
+    conn: &Connection,
+) -> Result<std::collections::HashSet<String>, AppError> {
     let mut stmt = conn.prepare("SELECT DISTINCT sha256 FROM attachments")?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
     let mut result = std::collections::HashSet::new();
@@ -102,7 +113,17 @@ mod tests {
     }
 
     fn seed_entry(conn: &Connection, data_dir: &std::path::Path) -> i64 {
-        let customer_id = customers::create(conn, NewCustomer { name: "ACME".into(), short_code: "ACME".into(), notes: "".into() }, &berlin()).unwrap().id;
+        let customer_id = customers::create(
+            conn,
+            NewCustomer {
+                name: "ACME".into(),
+                short_code: "ACME".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap()
+        .id;
         entries::create(
             conn,
             data_dir,
@@ -128,7 +149,16 @@ mod tests {
         let conn = migrated_connection();
         let dir = tempfile::tempdir().unwrap();
         let entry_id = seed_entry(&conn, dir.path());
-        let created = create(&conn, entry_id, "abc123", "screenshot.png", "image/png", 42, &berlin()).unwrap();
+        let created = create(
+            &conn,
+            entry_id,
+            "abc123",
+            "screenshot.png",
+            "image/png",
+            42,
+            &berlin(),
+        )
+        .unwrap();
         assert_eq!(created.entry_id, entry_id);
         assert_eq!(list_for_entry(&conn, entry_id).unwrap(), vec![created]);
     }
@@ -153,7 +183,16 @@ mod tests {
         let conn = migrated_connection();
         let dir = tempfile::tempdir().unwrap();
         let entry_id = seed_entry(&conn, dir.path());
-        let created = create(&conn, entry_id, "abc123", "screenshot.png", "image/png", 42, &berlin()).unwrap();
+        let created = create(
+            &conn,
+            entry_id,
+            "abc123",
+            "screenshot.png",
+            "image/png",
+            42,
+            &berlin(),
+        )
+        .unwrap();
         assert_eq!(get(&conn, created.id).unwrap(), created);
     }
 
@@ -169,7 +208,16 @@ mod tests {
         let conn = migrated_connection();
         let dir = tempfile::tempdir().unwrap();
         let entry_id = seed_entry(&conn, dir.path());
-        let created = create(&conn, entry_id, "abc123", "screenshot.png", "image/png", 42, &berlin()).unwrap();
+        let created = create(
+            &conn,
+            entry_id,
+            "abc123",
+            "screenshot.png",
+            "image/png",
+            42,
+            &berlin(),
+        )
+        .unwrap();
         delete(&conn, created.id).unwrap();
         assert!(matches!(get(&conn, created.id), Err(AppError::NotFound(_))));
     }
@@ -196,12 +244,16 @@ mod tests {
             &berlin(),
         )
         .unwrap();
-        let relative_path = crate::attachments::store::relative_path_for(&attachment.sha256, "shot.png");
+        let relative_path =
+            crate::attachments::store::relative_path_for(&attachment.sha256, "shot.png");
         assert!(dir.path().join(&relative_path).exists());
 
         delete(&conn, attachment.id).unwrap();
 
-        assert!(dir.path().join(&relative_path).exists(), "delete darf die Datei im Store nicht anfassen");
+        assert!(
+            dir.path().join(&relative_path).exists(),
+            "delete darf die Datei im Store nicht anfassen"
+        );
     }
 
     #[test]
@@ -209,9 +261,36 @@ mod tests {
         let conn = migrated_connection();
         let dir = tempfile::tempdir().unwrap();
         let entry_id = seed_entry(&conn, dir.path());
-        create(&conn, entry_id, "hash-a", "a.png", "image/png", 1, &berlin()).unwrap();
-        create(&conn, entry_id, "hash-a", "a2.png", "image/png", 1, &berlin()).unwrap();
-        create(&conn, entry_id, "hash-b", "b.png", "image/png", 1, &berlin()).unwrap();
+        create(
+            &conn,
+            entry_id,
+            "hash-a",
+            "a.png",
+            "image/png",
+            1,
+            &berlin(),
+        )
+        .unwrap();
+        create(
+            &conn,
+            entry_id,
+            "hash-a",
+            "a2.png",
+            "image/png",
+            1,
+            &berlin(),
+        )
+        .unwrap();
+        create(
+            &conn,
+            entry_id,
+            "hash-b",
+            "b.png",
+            "image/png",
+            1,
+            &berlin(),
+        )
+        .unwrap();
 
         let hashes = all_referenced_hashes(&conn).unwrap();
 

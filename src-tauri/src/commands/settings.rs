@@ -9,11 +9,19 @@ use crate::{AppError, AppState};
 
 #[tauri::command]
 pub fn get_theme_preference(state: State<AppState>) -> ThemePreference {
-    state.config.lock().expect("Config-Mutex vergiftet").theme_preference
+    state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .theme_preference
 }
 
 #[tauri::command]
-pub fn set_theme_preference(state: State<AppState>, app: AppHandle, preference: ThemePreference) -> Result<(), AppError> {
+pub fn set_theme_preference(
+    state: State<AppState>,
+    app: AppHandle,
+    preference: ThemePreference,
+) -> Result<(), AppError> {
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
     config.theme_preference = preference;
     let config_path = config.data_dir.join("config.toml");

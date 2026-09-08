@@ -11,21 +11,35 @@ pub struct TemporalPreview {
 
 #[tauri::command]
 pub fn list_entries(state: State<AppState>, filter: EntryFilter) -> Result<Vec<Entry>, AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     entries::list(&conn, &filter)
 }
 
 #[tauri::command]
 pub fn get_entry(state: State<AppState>, id: i64) -> Result<Entry, AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     entries::get(&conn, id)
 }
 
 #[tauri::command]
 pub fn create_entry(state: State<AppState>, input: NewEntry) -> Result<Entry, AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
-    let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
+    let data_dir = state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .data_dir
+        .clone();
     let entry = entries::create(&conn, &data_dir, input, &tz)?;
 
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
@@ -45,10 +59,22 @@ pub fn format_timestamp_for_display(utc: String, tz: String) -> Result<String, A
 }
 
 #[tauri::command]
-pub fn update_entry(state: State<AppState>, id: i64, input: UpdateEntry) -> Result<Entry, AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+pub fn update_entry(
+    state: State<AppState>,
+    id: i64,
+    input: UpdateEntry,
+) -> Result<Entry, AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
-    let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
+    let data_dir = state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .data_dir
+        .clone();
     entries::update(&conn, &data_dir, id, input, &tz)
 }
 

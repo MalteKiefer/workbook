@@ -23,8 +23,8 @@ use tauri::State;
 
 use crate::config::Config;
 use crate::plugin::snipeit::{
-    test_credentials, SnipeitCompany, SnipeitCompanyMapping, SnipeitConnectionMeta, SnipeitDevice, SnipeitPlugin,
-    UNASSIGNED_COMPANY_ID,
+    test_credentials, SnipeitCompany, SnipeitCompanyMapping, SnipeitConnectionMeta, SnipeitDevice,
+    SnipeitPlugin, UNASSIGNED_COMPANY_ID,
 };
 use crate::plugin::{self, Plugin, PluginCredentials};
 use crate::{db, time, AppError, AppState};
@@ -98,7 +98,11 @@ pub struct CachedSnipeitSyncDto {
 }
 
 fn to_dto(meta: &SnipeitConnectionMeta) -> SnipeitConnectionDto {
-    SnipeitConnectionDto { id: meta.id.clone(), label: meta.label.clone(), base_url: meta.base_url.clone() }
+    SnipeitConnectionDto {
+        id: meta.id.clone(),
+        label: meta.label.clone(),
+        base_url: meta.base_url.clone(),
+    }
 }
 
 /// Der vollqualifizierte `plugin_id`-Wert für eine Snipe-IT-Verbindung --
@@ -140,13 +144,20 @@ fn slugify(label: &str) -> String {
     slug
 }
 
-fn find_connection(config: &Config, connection_id: &str) -> Result<SnipeitConnectionMeta, AppError> {
+fn find_connection(
+    config: &Config,
+    connection_id: &str,
+) -> Result<SnipeitConnectionMeta, AppError> {
     config
         .snipeit_connections
         .iter()
         .find(|c| c.id == connection_id)
         .cloned()
-        .ok_or_else(|| AppError::NotFound(format!("Snipe-IT-Verbindung {connection_id} nicht gefunden")))
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "Snipe-IT-Verbindung {connection_id} nicht gefunden"
+            ))
+        })
 }
 
 /// Baut aus einer Verbindungs-Metadatenzeile das lauffähige Plugin-Objekt
@@ -154,7 +165,9 @@ fn find_connection(config: &Config, connection_id: &str) -> Result<SnipeitConnec
 /// Schlüsselspeicher. Anders als bei Ninja ist der Snipe-IT-Token bereits der
 /// vollständige Secret-String -- keine JSON-Kodierung nötig, da Snipe-IT nur
 /// einen einzigen Geheimwert braucht (wie Level.io).
-fn build_plugin(meta: &SnipeitConnectionMeta) -> Result<(SnipeitPlugin, PluginCredentials), AppError> {
+fn build_plugin(
+    meta: &SnipeitConnectionMeta,
+) -> Result<(SnipeitPlugin, PluginCredentials), AppError> {
     let plugin_id = plugin_id_for(&meta.id);
     let secret = plugin::secrets::load_secret(&plugin_id)?.ok_or_else(|| {
         AppError::Plugin(format!(
@@ -162,7 +175,10 @@ fn build_plugin(meta: &SnipeitConnectionMeta) -> Result<(SnipeitPlugin, PluginCr
             meta.id
         ))
     })?;
-    Ok((SnipeitPlugin::new(plugin_id, meta.base_url.clone()), PluginCredentials { secret }))
+    Ok((
+        SnipeitPlugin::new(plugin_id, meta.base_url.clone()),
+        PluginCredentials { secret },
+    ))
 }
 
 /// Bestes Bemühen, analog zu
@@ -197,9 +213,13 @@ fn write_snipeit_cache(
 ) -> Result<(), AppError> {
     let dir = plugin_cache_dir(data_dir);
     std::fs::create_dir_all(&dir)?;
-    let cache = CachedSnipeitSyncDto { synced_at_utc: synced_at_utc.to_string(), groups: groups.to_vec() };
-    let json = serde_json::to_string_pretty(&cache)
-        .map_err(|e| AppError::Plugin(format!("Snipe-IT-Cache konnte nicht kodiert werden: {e}")))?;
+    let cache = CachedSnipeitSyncDto {
+        synced_at_utc: synced_at_utc.to_string(),
+        groups: groups.to_vec(),
+    };
+    let json = serde_json::to_string_pretty(&cache).map_err(|e| {
+        AppError::Plugin(format!("Snipe-IT-Cache konnte nicht kodiert werden: {e}"))
+    })?;
     std::fs::write(snipeit_cache_path(data_dir, connection_id), json)?;
     Ok(())
 }
@@ -207,14 +227,17 @@ fn write_snipeit_cache(
 /// Liest eine zuvor über `write_snipeit_cache` geschriebene Momentaufnahme
 /// zurück. `Ok(None)`, wenn für diese Verbindung noch nie synchronisiert
 /// wurde -- kein Fehlerfall, analog zu `commands::plugins::read_ninja_cache`.
-fn read_snipeit_cache(data_dir: &Path, connection_id: &str) -> Result<Option<CachedSnipeitSyncDto>, AppError> {
+fn read_snipeit_cache(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedSnipeitSyncDto>, AppError> {
     let path = snipeit_cache_path(data_dir, connection_id);
     if !path.exists() {
         return Ok(None);
     }
     let text = std::fs::read_to_string(&path)?;
-    let cached: CachedSnipeitSyncDto =
-        serde_json::from_str(&text).map_err(|e| AppError::Plugin(format!("Snipe-IT-Cache-Datei ungültig: {e}")))?;
+    let cached: CachedSnipeitSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Snipe-IT-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
@@ -222,7 +245,11 @@ fn snipeit_device_url(base_url: &str, external_id: &str) -> String {
     format!("{}/hardware/{external_id}", base_url.trim_end_matches('/'))
 }
 
-fn to_external_system_dto(base_url: &str, device: SnipeitDevice, linked_system_id: Option<i64>) -> ExternalSystemDto {
+fn to_external_system_dto(
+    base_url: &str,
+    device: SnipeitDevice,
+    linked_system_id: Option<i64>,
+) -> ExternalSystemDto {
     ExternalSystemDto {
         snipeit_url: snipeit_device_url(base_url, &device.external_id),
         external_id: device.external_id,
@@ -264,12 +291,18 @@ fn group_devices_by_company(
     connection_id: &str,
 ) -> Vec<CompanyGroup> {
     let mapped_customer_id = |company_id: &str| -> Option<i64> {
-        mappings.iter().find(|m| m.connection_id == connection_id && m.company_id == company_id).map(|m| m.customer_id)
+        mappings
+            .iter()
+            .find(|m| m.connection_id == connection_id && m.company_id == company_id)
+            .map(|m| m.customer_id)
     };
 
     let mut devices_by_company: HashMap<String, Vec<SnipeitDevice>> = HashMap::new();
     for device in devices {
-        devices_by_company.entry(device.company_id.clone()).or_default().push(device.clone());
+        devices_by_company
+            .entry(device.company_id.clone())
+            .or_default()
+            .push(device.clone());
     }
 
     let mut groups = Vec::with_capacity(companies.len());
@@ -311,19 +344,30 @@ pub fn test_snipeit_connection(base_url: String, token: String) -> Result<(), Ap
 }
 
 #[tauri::command]
-pub fn list_snipeit_connections(state: State<AppState>) -> Result<Vec<SnipeitConnectionDto>, AppError> {
+pub fn list_snipeit_connections(
+    state: State<AppState>,
+) -> Result<Vec<SnipeitConnectionDto>, AppError> {
     let config = state.config.lock().expect("Config-Mutex vergiftet");
     Ok(config.snipeit_connections.iter().map(to_dto).collect())
 }
 
 #[tauri::command]
-pub fn add_snipeit_connection(state: State<AppState>, label: String, base_url: String, token: String) -> Result<SnipeitConnectionDto, AppError> {
+pub fn add_snipeit_connection(
+    state: State<AppState>,
+    label: String,
+    base_url: String,
+    token: String,
+) -> Result<SnipeitConnectionDto, AppError> {
     let id = generate_connection_id(&label);
     let plugin_id = plugin_id_for(&id);
 
     plugin::secrets::store_secret(&plugin_id, &token)?;
 
-    let meta = SnipeitConnectionMeta { id, label, base_url };
+    let meta = SnipeitConnectionMeta {
+        id,
+        label,
+        base_url,
+    };
 
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
     config.snipeit_connections.push(meta.clone());
@@ -339,11 +383,15 @@ pub fn remove_snipeit_connection(state: State<AppState>, id: String) -> Result<(
     let before = config.snipeit_connections.len();
     config.snipeit_connections.retain(|c| c.id != id);
     if config.snipeit_connections.len() == before {
-        return Err(AppError::NotFound(format!("Snipe-IT-Verbindung {id} nicht gefunden")));
+        return Err(AppError::NotFound(format!(
+            "Snipe-IT-Verbindung {id} nicht gefunden"
+        )));
     }
     // Aufräumen: Firmen-Zuordnungen dieser Verbindung sind ohne die
     // Verbindung bedeutungslos und würden sonst als Datenleiche liegen bleiben.
-    config.snipeit_company_mappings.retain(|m| m.connection_id != id);
+    config
+        .snipeit_company_mappings
+        .retain(|m| m.connection_id != id);
     let data_dir = config.data_dir.clone();
     let config_path = config.data_dir.join("config.toml");
     config.save(&config_path)?;
@@ -357,7 +405,10 @@ pub fn remove_snipeit_connection(state: State<AppState>, id: String) -> Result<(
     let cache_path = snipeit_cache_path(&data_dir, &id);
     if cache_path.exists() {
         if let Err(e) = std::fs::remove_file(&cache_path) {
-            eprintln!("Snipe-IT-Cache-Datei {} konnte nicht entfernt werden (ignoriert): {e}", cache_path.display());
+            eprintln!(
+                "Snipe-IT-Cache-Datei {} konnte nicht entfernt werden (ignoriert): {e}",
+                cache_path.display()
+            );
         }
     }
     Ok(())
@@ -369,13 +420,20 @@ pub fn remove_snipeit_connection(state: State<AppState>, id: String) -> Result<(
 /// des Frontends braucht diesen Befehl nicht (Cache-first, siehe
 /// `get_cached_snipeit_sync`/`sync_snipeit_connection`).
 #[tauri::command]
-pub fn list_snipeit_companies(state: State<AppState>, connection_id: String) -> Result<Vec<SnipeitCompanyDto>, AppError> {
+pub fn list_snipeit_companies(
+    state: State<AppState>,
+    connection_id: String,
+) -> Result<Vec<SnipeitCompanyDto>, AppError> {
     let (plugin, credentials, mappings) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
         let (plugin, credentials) = build_plugin(&meta)?;
-        let mappings: Vec<SnipeitCompanyMapping> =
-            config.snipeit_company_mappings.iter().filter(|m| m.connection_id == connection_id).cloned().collect();
+        let mappings: Vec<SnipeitCompanyMapping> = config
+            .snipeit_company_mappings
+            .iter()
+            .filter(|m| m.connection_id == connection_id)
+            .cloned()
+            .collect();
         (plugin, credentials, mappings)
     };
 
@@ -383,8 +441,15 @@ pub fn list_snipeit_companies(state: State<AppState>, connection_id: String) -> 
     Ok(companies
         .into_iter()
         .map(|company| {
-            let mapped_customer_id = mappings.iter().find(|m| m.company_id == company.id).map(|m| m.customer_id);
-            SnipeitCompanyDto { id: company.id, name: company.name, mapped_customer_id }
+            let mapped_customer_id = mappings
+                .iter()
+                .find(|m| m.company_id == company.id)
+                .map(|m| m.customer_id);
+            SnipeitCompanyDto {
+                id: company.id,
+                name: company.name,
+                mapped_customer_id,
+            }
         })
         .collect())
 }
@@ -402,13 +467,22 @@ pub fn map_snipeit_company(
     config
         .snipeit_company_mappings
         .retain(|m| !(m.connection_id == connection_id && m.company_id == company_id));
-    config.snipeit_company_mappings.push(SnipeitCompanyMapping { connection_id, company_id, company_name, customer_id });
+    config.snipeit_company_mappings.push(SnipeitCompanyMapping {
+        connection_id,
+        company_id,
+        company_name,
+        customer_id,
+    });
     let config_path = config.data_dir.join("config.toml");
     config.save(&config_path)
 }
 
 #[tauri::command]
-pub fn unmap_snipeit_company(state: State<AppState>, connection_id: String, company_id: String) -> Result<(), AppError> {
+pub fn unmap_snipeit_company(
+    state: State<AppState>,
+    connection_id: String,
+    company_id: String,
+) -> Result<(), AppError> {
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
     // Kein Fehler, wenn keine passende Zuordnung existiert -- das Ergebnis
     // (keine Zuordnung mehr vorhanden) ist dasselbe, analog zu
@@ -423,21 +497,37 @@ pub fn unmap_snipeit_company(state: State<AppState>, connection_id: String, comp
 }
 
 #[tauri::command]
-pub fn sync_snipeit_connection(state: State<AppState>, connection_id: String) -> Result<Vec<SnipeitCompanyDeviceGroupDto>, AppError> {
+pub fn sync_snipeit_connection(
+    state: State<AppState>,
+    connection_id: String,
+) -> Result<Vec<SnipeitCompanyDeviceGroupDto>, AppError> {
     let (base_url, plugin, credentials, mappings, data_dir) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
         let (plugin, credentials) = build_plugin(&meta)?;
-        let mappings: Vec<SnipeitCompanyMapping> =
-            config.snipeit_company_mappings.iter().filter(|m| m.connection_id == connection_id).cloned().collect();
-        (meta.base_url, plugin, credentials, mappings, config.data_dir.clone())
+        let mappings: Vec<SnipeitCompanyMapping> = config
+            .snipeit_company_mappings
+            .iter()
+            .filter(|m| m.connection_id == connection_id)
+            .cloned()
+            .collect();
+        (
+            meta.base_url,
+            plugin,
+            credentials,
+            mappings,
+            config.data_dir.clone(),
+        )
     };
 
     let companies = plugin.list_companies(&credentials)?;
     let devices = plugin.list_devices(&credentials)?;
     let groups = group_devices_by_company(&companies, &devices, &mappings, &connection_id);
 
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
     let plugin_id = plugin.id().to_string();
 
@@ -462,7 +552,14 @@ pub fn sync_snipeit_connection(state: State<AppState>, connection_id: String) ->
             let linked_system_id = linked_by_external_id.get(&device.external_id).copied();
             if let Some(system_id) = linked_system_id {
                 let payload = plugin.get_system_details(&credentials, &device.external_id)?;
-                db::external_refs::upsert(&conn, system_id, &plugin_id, &device.external_id, &payload.to_string(), &tz)?;
+                db::external_refs::upsert(
+                    &conn,
+                    system_id,
+                    &plugin_id,
+                    &device.external_id,
+                    &payload.to_string(),
+                    &tz,
+                )?;
             }
             device_dtos.push(to_external_system_dto(&base_url, device, linked_system_id));
         }
@@ -482,11 +579,18 @@ pub fn sync_snipeit_connection(state: State<AppState>, connection_id: String) ->
 }
 
 #[tauri::command]
-pub fn get_cached_snipeit_sync(state: State<AppState>, connection_id: String) -> Result<Option<CachedSnipeitSyncDto>, AppError> {
+pub fn get_cached_snipeit_sync(
+    state: State<AppState>,
+    connection_id: String,
+) -> Result<Option<CachedSnipeitSyncDto>, AppError> {
     let (data_dir, mappings) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
-        let mappings: Vec<SnipeitCompanyMapping> =
-            config.snipeit_company_mappings.iter().filter(|m| m.connection_id == connection_id).cloned().collect();
+        let mappings: Vec<SnipeitCompanyMapping> = config
+            .snipeit_company_mappings
+            .iter()
+            .filter(|m| m.connection_id == connection_id)
+            .cloned()
+            .collect();
         (config.data_dir.clone(), mappings)
     };
     let mut cached = read_snipeit_cache(&data_dir, &connection_id)?;
@@ -499,14 +603,22 @@ pub fn get_cached_snipeit_sync(state: State<AppState>, connection_id: String) ->
     // `commands::plugins::get_cached_ninja_sync`).
     if let Some(cache) = cached.as_mut() {
         for group in &mut cache.groups {
-            group.customer_id = mappings.iter().find(|m| m.company_id == group.company_id).map(|m| m.customer_id);
+            group.customer_id = mappings
+                .iter()
+                .find(|m| m.company_id == group.company_id)
+                .map(|m| m.customer_id);
         }
     }
     Ok(cached)
 }
 
 #[tauri::command]
-pub fn link_system_to_snipeit(state: State<AppState>, system_id: i64, connection_id: String, external_id: String) -> Result<(), AppError> {
+pub fn link_system_to_snipeit(
+    state: State<AppState>,
+    system_id: i64,
+    connection_id: String,
+    external_id: String,
+) -> Result<(), AppError> {
     let (plugin, credentials) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
@@ -516,20 +628,41 @@ pub fn link_system_to_snipeit(state: State<AppState>, system_id: i64, connection
     let payload = plugin.get_system_details(&credentials, &external_id)?;
     plugin.link_system(system_id, &external_id)?;
 
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
-    db::external_refs::upsert(&conn, system_id, plugin.id(), &external_id, &payload.to_string(), &tz)?;
+    db::external_refs::upsert(
+        &conn,
+        system_id,
+        plugin.id(),
+        &external_id,
+        &payload.to_string(),
+        &tz,
+    )?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn unlink_system_from_snipeit(state: State<AppState>, system_id: i64, connection_id: String) -> Result<(), AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+pub fn unlink_system_from_snipeit(
+    state: State<AppState>,
+    system_id: i64,
+    connection_id: String,
+) -> Result<(), AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     db::external_refs::delete(&conn, system_id, &plugin_id_for(&connection_id))
 }
 
 #[tauri::command]
-pub fn get_snipeit_system_details(state: State<AppState>, connection_id: String, external_id: String) -> Result<serde_json::Value, AppError> {
+pub fn get_snipeit_system_details(
+    state: State<AppState>,
+    connection_id: String,
+    external_id: String,
+) -> Result<serde_json::Value, AppError> {
     let (plugin, credentials) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
@@ -590,7 +723,10 @@ mod tests {
     }
 
     fn sample_company(id: &str, name: &str) -> SnipeitCompany {
-        SnipeitCompany { id: id.to_string(), name: name.to_string() }
+        SnipeitCompany {
+            id: id.to_string(),
+            name: name.to_string(),
+        }
     }
 
     fn sample_device(id: &str, company_id: &str) -> SnipeitDevice {
@@ -607,8 +743,15 @@ mod tests {
 
     #[test]
     fn groups_devices_under_their_company() {
-        let companies = vec![sample_company("1", "ACME Hauptsitz"), sample_company("2", "ACME Zweigstelle")];
-        let devices = vec![sample_device("101", "1"), sample_device("102", "1"), sample_device("201", "2")];
+        let companies = vec![
+            sample_company("1", "ACME Hauptsitz"),
+            sample_company("2", "ACME Zweigstelle"),
+        ];
+        let devices = vec![
+            sample_device("101", "1"),
+            sample_device("102", "1"),
+            sample_device("201", "2"),
+        ];
 
         let groups = group_devices_by_company(&companies, &devices, &[], "conn-1");
 
@@ -673,7 +816,10 @@ mod tests {
         let groups = group_devices_by_company(&companies, &devices, &[], "conn-1");
 
         assert_eq!(groups.len(), 2);
-        let leftover = groups.iter().find(|g| g.company_id == "orphan-company").unwrap();
+        let leftover = groups
+            .iter()
+            .find(|g| g.company_id == "orphan-company")
+            .unwrap();
         assert_eq!(leftover.devices.len(), 1);
         assert_eq!(leftover.company_name, "orphan-company");
     }
@@ -685,7 +831,10 @@ mod tests {
 
         let groups = group_devices_by_company(&companies, &devices, &[], "conn-1");
 
-        let leftover = groups.iter().find(|g| g.company_id == UNASSIGNED_COMPANY_ID).unwrap();
+        let leftover = groups
+            .iter()
+            .find(|g| g.company_id == UNASSIGNED_COMPANY_ID)
+            .unwrap();
         assert_eq!(leftover.devices.len(), 1);
         assert_eq!(leftover.company_name, "Ohne Firma (Snipe-IT)");
     }
@@ -720,7 +869,10 @@ mod tests {
         assert_eq!(loaded.groups.len(), 1);
         assert_eq!(loaded.groups[0].company_id, "1");
         assert_eq!(loaded.groups[0].devices[0].external_id, "101");
-        assert_eq!(loaded.groups[0].devices[0].asset_tag.as_deref(), Some("AT-101"));
+        assert_eq!(
+            loaded.groups[0].devices[0].asset_tag.as_deref(),
+            Some("AT-101")
+        );
     }
 
     #[test]
@@ -734,7 +886,13 @@ mod tests {
     fn snipeit_cache_overwrites_previous_snapshot_for_the_same_connection() {
         let dir = tempdir().unwrap();
         write_snipeit_cache(dir.path(), "conn-1", "2026-09-07T10:00:00.000Z", &[]).unwrap();
-        write_snipeit_cache(dir.path(), "conn-1", "2026-09-07T12:00:00.000Z", &[sample_group()]).unwrap();
+        write_snipeit_cache(
+            dir.path(),
+            "conn-1",
+            "2026-09-07T12:00:00.000Z",
+            &[sample_group()],
+        )
+        .unwrap();
 
         let loaded = read_snipeit_cache(dir.path(), "conn-1").unwrap().unwrap();
 

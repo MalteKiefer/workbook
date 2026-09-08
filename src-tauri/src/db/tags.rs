@@ -3,13 +3,25 @@ use rusqlite::{params, Connection};
 use crate::error::AppError;
 
 pub fn find_or_create(conn: &Connection, name: &str) -> Result<i64, AppError> {
-    conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?1)", params![name])?;
-    conn.query_row("SELECT id FROM tags WHERE name = ?1", params![name], |r| r.get(0))
-        .map_err(Into::into)
+    conn.execute(
+        "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
+        params![name],
+    )?;
+    conn.query_row("SELECT id FROM tags WHERE name = ?1", params![name], |r| {
+        r.get(0)
+    })
+    .map_err(Into::into)
 }
 
-pub fn set_tags_for_entry(conn: &Connection, entry_id: i64, tag_names: &[String]) -> Result<(), AppError> {
-    conn.execute("DELETE FROM entry_tags WHERE entry_id = ?1", params![entry_id])?;
+pub fn set_tags_for_entry(
+    conn: &Connection,
+    entry_id: i64,
+    tag_names: &[String],
+) -> Result<(), AppError> {
+    conn.execute(
+        "DELETE FROM entry_tags WHERE entry_id = ?1",
+        params![entry_id],
+    )?;
     for name in tag_names {
         let trimmed = name.trim();
         if trimmed.is_empty() {
@@ -82,10 +94,16 @@ mod tests {
         let entry_id = seed_entry(&conn);
 
         set_tags_for_entry(&conn, entry_id, &["update".into(), "exchange".into()]).unwrap();
-        assert_eq!(tags_for_entry(&conn, entry_id).unwrap(), vec!["exchange".to_string(), "update".to_string()]);
+        assert_eq!(
+            tags_for_entry(&conn, entry_id).unwrap(),
+            vec!["exchange".to_string(), "update".to_string()]
+        );
 
         set_tags_for_entry(&conn, entry_id, &["firewall".into()]).unwrap();
-        assert_eq!(tags_for_entry(&conn, entry_id).unwrap(), vec!["firewall".to_string()]);
+        assert_eq!(
+            tags_for_entry(&conn, entry_id).unwrap(),
+            vec!["firewall".to_string()]
+        );
     }
 
     #[test]
@@ -93,6 +111,9 @@ mod tests {
         let conn = migrated_connection();
         let entry_id = seed_entry(&conn);
         set_tags_for_entry(&conn, entry_id, &["  ".into(), "real".into()]).unwrap();
-        assert_eq!(tags_for_entry(&conn, entry_id).unwrap(), vec!["real".to_string()]);
+        assert_eq!(
+            tags_for_entry(&conn, entry_id).unwrap(),
+            vec!["real".to_string()]
+        );
     }
 }

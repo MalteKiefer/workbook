@@ -26,7 +26,8 @@ use tauri::State;
 
 use crate::config::Config;
 use crate::plugin::ninja::{
-    test_credentials, NinjaConnectionMeta, NinjaCredentials, NinjaDevice, NinjaOrgMapping, NinjaOrganization, NinjaPlugin,
+    test_credentials, NinjaConnectionMeta, NinjaCredentials, NinjaDevice, NinjaOrgMapping,
+    NinjaOrganization, NinjaPlugin,
 };
 use crate::plugin::{self, Plugin, PluginCredentials};
 use crate::{db, time, AppError, AppState};
@@ -92,7 +93,11 @@ pub struct CachedNinjaSyncDto {
 }
 
 fn to_dto(meta: &NinjaConnectionMeta) -> NinjaConnectionDto {
-    NinjaConnectionDto { id: meta.id.clone(), label: meta.label.clone(), base_url: meta.base_url.clone() }
+    NinjaConnectionDto {
+        id: meta.id.clone(),
+        label: meta.label.clone(),
+        base_url: meta.base_url.clone(),
+    }
 }
 
 /// Der vollqualifizierte `plugin_id`-Wert für eine Ninja-Verbindung -- sowohl
@@ -142,7 +147,9 @@ fn find_connection(config: &Config, connection_id: &str) -> Result<NinjaConnecti
         .iter()
         .find(|c| c.id == connection_id)
         .cloned()
-        .ok_or_else(|| AppError::NotFound(format!("Ninja-Verbindung {connection_id} nicht gefunden")))
+        .ok_or_else(|| {
+            AppError::NotFound(format!("Ninja-Verbindung {connection_id} nicht gefunden"))
+        })
 }
 
 /// Baut aus einer Verbindungs-Metadatenzeile das lauffähige Plugin-Objekt
@@ -155,7 +162,10 @@ fn build_plugin(meta: &NinjaConnectionMeta) -> Result<(NinjaPlugin, PluginCreden
             meta.id
         ))
     })?;
-    Ok((NinjaPlugin::new(plugin_id, meta.base_url.clone()), PluginCredentials { secret }))
+    Ok((
+        NinjaPlugin::new(plugin_id, meta.base_url.clone()),
+        PluginCredentials { secret },
+    ))
 }
 
 /// `plugin::secrets` bietet bewusst nur `store_secret`/`load_secret` (siehe
@@ -192,10 +202,18 @@ fn ninja_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
 /// Verbindung. Als eigene Funktion herausgezogen (statt Inline-Code in
 /// `sync_ninja_connection`), damit sie sich mit `tempfile::tempdir()` isoliert
 /// testen lässt, analog zu `Config::save`/`Config::load_or_default`.
-fn write_ninja_cache(data_dir: &Path, connection_id: &str, synced_at_utc: &str, groups: &[NinjaOrgDeviceGroupDto]) -> Result<(), AppError> {
+fn write_ninja_cache(
+    data_dir: &Path,
+    connection_id: &str,
+    synced_at_utc: &str,
+    groups: &[NinjaOrgDeviceGroupDto],
+) -> Result<(), AppError> {
     let dir = plugin_cache_dir(data_dir);
     std::fs::create_dir_all(&dir)?;
-    let cache = CachedNinjaSyncDto { synced_at_utc: synced_at_utc.to_string(), groups: groups.to_vec() };
+    let cache = CachedNinjaSyncDto {
+        synced_at_utc: synced_at_utc.to_string(),
+        groups: groups.to_vec(),
+    };
     let json = serde_json::to_string_pretty(&cache)
         .map_err(|e| AppError::Plugin(format!("Ninja-Cache konnte nicht kodiert werden: {e}")))?;
     std::fs::write(ninja_cache_path(data_dir, connection_id), json)?;
@@ -207,22 +225,32 @@ fn write_ninja_cache(data_dir: &Path, connection_id: &str, synced_at_utc: &str, 
 /// wurde (Datei existiert nicht) -- kein Fehlerfall. Als eigene Funktion
 /// herausgezogen (statt Inline-Code im Tauri-Kommando), damit sie sich ohne
 /// `State<AppState>` isoliert testen lässt.
-fn read_ninja_cache(data_dir: &Path, connection_id: &str) -> Result<Option<CachedNinjaSyncDto>, AppError> {
+fn read_ninja_cache(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedNinjaSyncDto>, AppError> {
     let path = ninja_cache_path(data_dir, connection_id);
     if !path.exists() {
         return Ok(None);
     }
     let text = std::fs::read_to_string(&path)?;
-    let cached: CachedNinjaSyncDto =
-        serde_json::from_str(&text).map_err(|e| AppError::Plugin(format!("Ninja-Cache-Datei ungültig: {e}")))?;
+    let cached: CachedNinjaSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Ninja-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
 fn ninja_device_url(base_url: &str, external_id: &str) -> String {
-    format!("{}/#/deviceDashboard/{external_id}/overview", base_url.trim_end_matches('/'))
+    format!(
+        "{}/#/deviceDashboard/{external_id}/overview",
+        base_url.trim_end_matches('/')
+    )
 }
 
-fn to_external_system_dto(base_url: &str, device: NinjaDevice, linked_system_id: Option<i64>) -> ExternalSystemDto {
+fn to_external_system_dto(
+    base_url: &str,
+    device: NinjaDevice,
+    linked_system_id: Option<i64>,
+) -> ExternalSystemDto {
     ExternalSystemDto {
         ninja_url: ninja_device_url(base_url, &device.external_id),
         external_id: device.external_id,
@@ -272,7 +300,10 @@ fn group_devices_by_organization(
 
     let mut devices_by_org: HashMap<String, Vec<NinjaDevice>> = HashMap::new();
     for device in devices {
-        devices_by_org.entry(device.organization_id.clone()).or_default().push(device.clone());
+        devices_by_org
+            .entry(device.organization_id.clone())
+            .or_default()
+            .push(device.clone());
     }
 
     let mut groups = Vec::with_capacity(organizations.len());
@@ -303,7 +334,11 @@ fn group_devices_by_organization(
 }
 
 #[tauri::command]
-pub fn test_ninja_connection(base_url: String, client_id: String, client_secret: String) -> Result<(), AppError> {
+pub fn test_ninja_connection(
+    base_url: String,
+    client_id: String,
+    client_secret: String,
+) -> Result<(), AppError> {
     test_credentials(&base_url, &client_id, &client_secret)?;
     Ok(())
 }
@@ -325,11 +360,18 @@ pub fn add_ninja_connection(
     let id = generate_connection_id(&label);
     let plugin_id = plugin_id_for(&id);
 
-    let secret_json = serde_json::to_string(&NinjaCredentials { client_id, client_secret })
-        .map_err(|e| AppError::Plugin(format!("Zugangsdaten konnten nicht kodiert werden: {e}")))?;
+    let secret_json = serde_json::to_string(&NinjaCredentials {
+        client_id,
+        client_secret,
+    })
+    .map_err(|e| AppError::Plugin(format!("Zugangsdaten konnten nicht kodiert werden: {e}")))?;
     plugin::secrets::store_secret(&plugin_id, &secret_json)?;
 
-    let meta = NinjaConnectionMeta { id, label, base_url };
+    let meta = NinjaConnectionMeta {
+        id,
+        label,
+        base_url,
+    };
 
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
     config.ninja_connections.push(meta.clone());
@@ -345,7 +387,9 @@ pub fn remove_ninja_connection(state: State<AppState>, id: String) -> Result<(),
     let before = config.ninja_connections.len();
     config.ninja_connections.retain(|c| c.id != id);
     if config.ninja_connections.len() == before {
-        return Err(AppError::NotFound(format!("Ninja-Verbindung {id} nicht gefunden")));
+        return Err(AppError::NotFound(format!(
+            "Ninja-Verbindung {id} nicht gefunden"
+        )));
     }
     // Aufräumen: Organisations-Zuordnungen dieser Verbindung sind ohne die
     // Verbindung bedeutungslos und würden sonst als Datenleiche liegen bleiben.
@@ -367,20 +411,30 @@ pub fn remove_ninja_connection(state: State<AppState>, id: String) -> Result<(),
     let cache_path = ninja_cache_path(&data_dir, &id);
     if cache_path.exists() {
         if let Err(e) = std::fs::remove_file(&cache_path) {
-            eprintln!("Ninja-Cache-Datei {} konnte nicht entfernt werden (ignoriert): {e}", cache_path.display());
+            eprintln!(
+                "Ninja-Cache-Datei {} konnte nicht entfernt werden (ignoriert): {e}",
+                cache_path.display()
+            );
         }
     }
     Ok(())
 }
 
 #[tauri::command]
-pub fn list_ninja_organizations(state: State<AppState>, connection_id: String) -> Result<Vec<NinjaOrganizationDto>, AppError> {
+pub fn list_ninja_organizations(
+    state: State<AppState>,
+    connection_id: String,
+) -> Result<Vec<NinjaOrganizationDto>, AppError> {
     let (plugin, credentials, mappings) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
         let (plugin, credentials) = build_plugin(&meta)?;
-        let mappings: Vec<NinjaOrgMapping> =
-            config.ninja_org_mappings.iter().filter(|m| m.connection_id == connection_id).cloned().collect();
+        let mappings: Vec<NinjaOrgMapping> = config
+            .ninja_org_mappings
+            .iter()
+            .filter(|m| m.connection_id == connection_id)
+            .cloned()
+            .collect();
         (plugin, credentials, mappings)
     };
 
@@ -388,8 +442,15 @@ pub fn list_ninja_organizations(state: State<AppState>, connection_id: String) -
     Ok(organizations
         .into_iter()
         .map(|org| {
-            let mapped_customer_id = mappings.iter().find(|m| m.organization_id == org.id).map(|m| m.customer_id);
-            NinjaOrganizationDto { id: org.id, name: org.name, mapped_customer_id }
+            let mapped_customer_id = mappings
+                .iter()
+                .find(|m| m.organization_id == org.id)
+                .map(|m| m.customer_id);
+            NinjaOrganizationDto {
+                id: org.id,
+                name: org.name,
+                mapped_customer_id,
+            }
         })
         .collect())
 }
@@ -407,13 +468,22 @@ pub fn map_ninja_organization(
     config
         .ninja_org_mappings
         .retain(|m| !(m.connection_id == connection_id && m.organization_id == organization_id));
-    config.ninja_org_mappings.push(NinjaOrgMapping { connection_id, organization_id, organization_name, customer_id });
+    config.ninja_org_mappings.push(NinjaOrgMapping {
+        connection_id,
+        organization_id,
+        organization_name,
+        customer_id,
+    });
     let config_path = config.data_dir.join("config.toml");
     config.save(&config_path)
 }
 
 #[tauri::command]
-pub fn unmap_ninja_organization(state: State<AppState>, connection_id: String, organization_id: String) -> Result<(), AppError> {
+pub fn unmap_ninja_organization(
+    state: State<AppState>,
+    connection_id: String,
+    organization_id: String,
+) -> Result<(), AppError> {
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
     // Kein Fehler, wenn keine passende Zuordnung existiert -- das Ergebnis
     // (keine Zuordnung mehr vorhanden) ist dasselbe, analog zu
@@ -428,21 +498,37 @@ pub fn unmap_ninja_organization(state: State<AppState>, connection_id: String, o
 }
 
 #[tauri::command]
-pub fn sync_ninja_connection(state: State<AppState>, connection_id: String) -> Result<Vec<NinjaOrgDeviceGroupDto>, AppError> {
+pub fn sync_ninja_connection(
+    state: State<AppState>,
+    connection_id: String,
+) -> Result<Vec<NinjaOrgDeviceGroupDto>, AppError> {
     let (base_url, plugin, credentials, mappings, data_dir) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
         let (plugin, credentials) = build_plugin(&meta)?;
-        let mappings: Vec<NinjaOrgMapping> =
-            config.ninja_org_mappings.iter().filter(|m| m.connection_id == connection_id).cloned().collect();
-        (meta.base_url, plugin, credentials, mappings, config.data_dir.clone())
+        let mappings: Vec<NinjaOrgMapping> = config
+            .ninja_org_mappings
+            .iter()
+            .filter(|m| m.connection_id == connection_id)
+            .cloned()
+            .collect();
+        (
+            meta.base_url,
+            plugin,
+            credentials,
+            mappings,
+            config.data_dir.clone(),
+        )
     };
 
     let organizations = plugin.list_organizations(&credentials)?;
     let devices = plugin.list_devices(&credentials)?;
     let groups = group_devices_by_organization(&organizations, &devices, &mappings, &connection_id);
 
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
     let plugin_id = plugin.id().to_string();
 
@@ -460,10 +546,11 @@ pub fn sync_ninja_connection(state: State<AppState>, connection_id: String) -> R
     // kundenunabhängig (siehe deren Doc-Kommentar), passend dazu, dass
     // `unmap_ninja_organization` Verknüpfungen ausdrücklich NICHT antastet,
     // wenn sich nur die Zuordnung ändert.
-    let linked_by_external_id: HashMap<String, i64> = db::external_refs::list_for_plugin(&conn, &plugin_id)?
-        .into_iter()
-        .map(|reference| (reference.external_id, reference.system_id))
-        .collect();
+    let linked_by_external_id: HashMap<String, i64> =
+        db::external_refs::list_for_plugin(&conn, &plugin_id)?
+            .into_iter()
+            .map(|reference| (reference.external_id, reference.system_id))
+            .collect();
 
     let mut result = Vec::with_capacity(groups.len());
     for group in groups {
@@ -472,7 +559,14 @@ pub fn sync_ninja_connection(state: State<AppState>, connection_id: String) -> R
             let linked_system_id = linked_by_external_id.get(&device.external_id).copied();
             if let Some(system_id) = linked_system_id {
                 let payload = plugin.get_system_details(&credentials, &device.external_id)?;
-                db::external_refs::upsert(&conn, system_id, &plugin_id, &device.external_id, &payload.to_string(), &tz)?;
+                db::external_refs::upsert(
+                    &conn,
+                    system_id,
+                    &plugin_id,
+                    &device.external_id,
+                    &payload.to_string(),
+                    &tz,
+                )?;
             }
             device_dtos.push(to_external_system_dto(&base_url, device, linked_system_id));
         }
@@ -492,11 +586,18 @@ pub fn sync_ninja_connection(state: State<AppState>, connection_id: String) -> R
 }
 
 #[tauri::command]
-pub fn get_cached_ninja_sync(state: State<AppState>, connection_id: String) -> Result<Option<CachedNinjaSyncDto>, AppError> {
+pub fn get_cached_ninja_sync(
+    state: State<AppState>,
+    connection_id: String,
+) -> Result<Option<CachedNinjaSyncDto>, AppError> {
     let (data_dir, mappings) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
-        let mappings: Vec<NinjaOrgMapping> =
-            config.ninja_org_mappings.iter().filter(|m| m.connection_id == connection_id).cloned().collect();
+        let mappings: Vec<NinjaOrgMapping> = config
+            .ninja_org_mappings
+            .iter()
+            .filter(|m| m.connection_id == connection_id)
+            .cloned()
+            .collect();
         (config.data_dir.clone(), mappings)
     };
     let mut cached = read_ninja_cache(&data_dir, &connection_id)?;
@@ -508,14 +609,22 @@ pub fn get_cached_ninja_sync(state: State<AppState>, connection_id: String) -> R
     // up-to-date mapping state without forcing a network call.
     if let Some(cache) = cached.as_mut() {
         for group in &mut cache.groups {
-            group.customer_id = mappings.iter().find(|m| m.organization_id == group.organization_id).map(|m| m.customer_id);
+            group.customer_id = mappings
+                .iter()
+                .find(|m| m.organization_id == group.organization_id)
+                .map(|m| m.customer_id);
         }
     }
     Ok(cached)
 }
 
 #[tauri::command]
-pub fn link_system_to_ninja(state: State<AppState>, system_id: i64, connection_id: String, external_id: String) -> Result<(), AppError> {
+pub fn link_system_to_ninja(
+    state: State<AppState>,
+    system_id: i64,
+    connection_id: String,
+    external_id: String,
+) -> Result<(), AppError> {
     let (plugin, credentials) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
@@ -525,20 +634,41 @@ pub fn link_system_to_ninja(state: State<AppState>, system_id: i64, connection_i
     let payload = plugin.get_system_details(&credentials, &external_id)?;
     plugin.link_system(system_id, &external_id)?;
 
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
-    db::external_refs::upsert(&conn, system_id, plugin.id(), &external_id, &payload.to_string(), &tz)?;
+    db::external_refs::upsert(
+        &conn,
+        system_id,
+        plugin.id(),
+        &external_id,
+        &payload.to_string(),
+        &tz,
+    )?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn unlink_system_from_ninja(state: State<AppState>, system_id: i64, connection_id: String) -> Result<(), AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+pub fn unlink_system_from_ninja(
+    state: State<AppState>,
+    system_id: i64,
+    connection_id: String,
+) -> Result<(), AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     db::external_refs::delete(&conn, system_id, &plugin_id_for(&connection_id))
 }
 
 #[tauri::command]
-pub fn get_ninja_system_details(state: State<AppState>, connection_id: String, external_id: String) -> Result<serde_json::Value, AppError> {
+pub fn get_ninja_system_details(
+    state: State<AppState>,
+    connection_id: String,
+    external_id: String,
+) -> Result<serde_json::Value, AppError> {
     let (plugin, credentials) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         let meta = find_connection(&config, &connection_id)?;
@@ -595,11 +725,17 @@ mod tests {
     #[test]
     fn ninja_device_url_trims_trailing_slash_and_builds_dashboard_link() {
         let url = ninja_device_url("https://eu.ninjarmm.com/", "101");
-        assert_eq!(url, "https://eu.ninjarmm.com/#/deviceDashboard/101/overview");
+        assert_eq!(
+            url,
+            "https://eu.ninjarmm.com/#/deviceDashboard/101/overview"
+        );
     }
 
     fn sample_org(id: &str, name: &str) -> NinjaOrganization {
-        NinjaOrganization { id: id.to_string(), name: name.to_string() }
+        NinjaOrganization {
+            id: id.to_string(),
+            name: name.to_string(),
+        }
     }
 
     fn sample_device(id: &str, org_id: &str) -> NinjaDevice {
@@ -614,8 +750,15 @@ mod tests {
 
     #[test]
     fn groups_devices_under_their_organization() {
-        let organizations = vec![sample_org("1", "ACME Hauptsitz"), sample_org("2", "ACME Zweigstelle")];
-        let devices = vec![sample_device("101", "1"), sample_device("102", "1"), sample_device("201", "2")];
+        let organizations = vec![
+            sample_org("1", "ACME Hauptsitz"),
+            sample_org("2", "ACME Zweigstelle"),
+        ];
+        let devices = vec![
+            sample_device("101", "1"),
+            sample_device("102", "1"),
+            sample_device("201", "2"),
+        ];
 
         let groups = group_devices_by_organization(&organizations, &devices, &[], "conn-1");
 
@@ -680,7 +823,10 @@ mod tests {
         let groups = group_devices_by_organization(&organizations, &devices, &[], "conn-1");
 
         assert_eq!(groups.len(), 2);
-        let leftover = groups.iter().find(|g| g.organization_id == "orphan-org").unwrap();
+        let leftover = groups
+            .iter()
+            .find(|g| g.organization_id == "orphan-org")
+            .unwrap();
         assert_eq!(leftover.devices.len(), 1);
         assert_eq!(leftover.organization_name, "orphan-org");
     }
@@ -713,7 +859,10 @@ mod tests {
         assert_eq!(loaded.groups.len(), 1);
         assert_eq!(loaded.groups[0].organization_id, "1");
         assert_eq!(loaded.groups[0].devices[0].external_id, "101");
-        assert_eq!(loaded.groups[0].devices[0].ip_address.as_deref(), Some("10.0.0.5"));
+        assert_eq!(
+            loaded.groups[0].devices[0].ip_address.as_deref(),
+            Some("10.0.0.5")
+        );
     }
 
     #[test]
@@ -727,7 +876,13 @@ mod tests {
     fn ninja_cache_overwrites_previous_snapshot_for_the_same_connection() {
         let dir = tempdir().unwrap();
         write_ninja_cache(dir.path(), "conn-1", "2026-09-07T10:00:00.000Z", &[]).unwrap();
-        write_ninja_cache(dir.path(), "conn-1", "2026-09-07T12:00:00.000Z", &[sample_group()]).unwrap();
+        write_ninja_cache(
+            dir.path(),
+            "conn-1",
+            "2026-09-07T12:00:00.000Z",
+            &[sample_group()],
+        )
+        .unwrap();
 
         let loaded = read_ninja_cache(dir.path(), "conn-1").unwrap().unwrap();
 

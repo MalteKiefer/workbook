@@ -55,12 +55,19 @@ pub trait Plugin {
 
     /// Listet alle Systeme, die der externe Dienst für diese Zugangsdaten
     /// kennt.
-    fn list_systems(&self, credentials: &PluginCredentials) -> Result<Vec<ExternalSystem>, PluginError>;
+    fn list_systems(
+        &self,
+        credentials: &PluginCredentials,
+    ) -> Result<Vec<ExternalSystem>, PluginError>;
 
     /// Liefert Detaildaten zu genau einem externen System als freies JSON --
     /// die Form ist werkzeugspezifisch, deshalb kein fester Rust-Typ. Landet
     /// unverändert in `external_refs.payload_json`.
-    fn get_system_details(&self, credentials: &PluginCredentials, external_id: &str) -> Result<serde_json::Value, PluginError>;
+    fn get_system_details(
+        &self,
+        credentials: &PluginCredentials,
+        external_id: &str,
+    ) -> Result<serde_json::Value, PluginError>;
 
     /// Vermerkt, dass ein lokales System (`local_system_id`, `systems.id`)
     /// einem externen System (`external_id`) entspricht. Diese Methode selbst

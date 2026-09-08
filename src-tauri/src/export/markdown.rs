@@ -5,8 +5,7 @@ use chrono::DateTime;
 use rusqlite::Connection;
 
 use crate::db::{
-    attachments,
-    customers,
+    attachments, customers,
     entries::{self, Entry, EntryFilter},
     systems,
 };
@@ -29,14 +28,16 @@ pub fn export_markdown(
 ) -> Result<(), AppError> {
     let customer = customers::get(conn, customer_id)?;
     let all_systems = systems::list_by_customer(conn, customer_id, true)?;
-    let system_name_by_id: HashMap<i64, String> = all_systems.into_iter().map(|s| (s.id, s.name)).collect();
+    let system_name_by_id: HashMap<i64, String> =
+        all_systems.into_iter().map(|s| (s.id, s.name)).collect();
 
     let mut entries_list = entries::list(conn, filter)?;
     entries_list.reverse(); // list() liefert DESC; Export liest chronologisch, älteste zuerst
 
     let system_tz = time::system_timezone()?;
     let (generated_at_utc, generated_at_tz) = time::now_with_tz(&system_tz);
-    let generated_at_display = time::format_timestamp_for_display(&generated_at_utc, &generated_at_tz)?;
+    let generated_at_display =
+        time::format_timestamp_for_display(&generated_at_utc, &generated_at_tz)?;
 
     std::fs::create_dir_all(dest_dir)?;
 
@@ -49,7 +50,10 @@ pub fn export_markdown(
 
     for (system_id, group_entries) in grouped {
         let system_label = match system_id {
-            Some(id) => system_name_by_id.get(&id).cloned().unwrap_or_else(|| format!("System {id}")),
+            Some(id) => system_name_by_id
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| format!("System {id}")),
             None => "Ohne System".to_string(),
         };
         let file_name = format!("{}.md", sanitize_filename(&system_label));
@@ -57,16 +61,25 @@ pub fn export_markdown(
 
         let mut content = String::new();
         content.push_str(&format!("# {} — {}\n\n", system_label, customer.name));
-        content.push_str(&format!("_Export erstellt: {generated_at_display}_\n\n---\n\n"));
+        content.push_str(&format!(
+            "_Export erstellt: {generated_at_display}_\n\n---\n\n"
+        ));
 
         for entry in group_entries {
-            let performed_display = time::format_timestamp_for_display(&entry.performed_at_utc, &entry.performed_at_tz)?;
+            let performed_display = time::format_timestamp_for_display(
+                &entry.performed_at_utc,
+                &entry.performed_at_tz,
+            )?;
             content.push_str(&format!("## {}\n\n", entry.title));
             content.push_str(&format!(
                 "**Zeitpunkt:** {}  \n**Kategorie:** {}  \n**Tags:** {}\n\n",
                 performed_display,
                 category_label(entry.category),
-                if entry.tags.is_empty() { "—".to_string() } else { entry.tags.join(", ") },
+                if entry.tags.is_empty() {
+                    "—".to_string()
+                } else {
+                    entry.tags.join(", ")
+                },
             ));
             if let Some(note) = late_entry_note(entry, late_entry_threshold_hours)? {
                 content.push_str(&format!("_{note}_\n\n"));
@@ -75,7 +88,10 @@ pub fn export_markdown(
             content.push_str("\n\n---\n\n");
 
             for attachment in attachments::list_for_entry(conn, entry.id)? {
-                let relative_path = crate::attachments::store::relative_path_for(&attachment.sha256, &attachment.original_filename);
+                let relative_path = crate::attachments::store::relative_path_for(
+                    &attachment.sha256,
+                    &attachment.original_filename,
+                );
                 let source = data_dir.join(&relative_path);
                 let dest = dest_dir.join(&relative_path);
                 if let Some(parent) = dest.parent() {
@@ -114,7 +130,8 @@ fn late_entry_note(entry: &Entry, threshold_hours: i64) -> Result<Option<String>
         .map_err(|e| AppError::InvalidTimestamp(format!("{}: {e}", entry.created_at_utc)))?;
     let diff_hours = (created - performed).num_hours();
     if diff_hours >= threshold_hours {
-        let display = time::format_timestamp_for_display(&entry.created_at_utc, &entry.created_at_tz)?;
+        let display =
+            time::format_timestamp_for_display(&entry.created_at_utc, &entry.created_at_tz)?;
         Ok(Some(format!("Nachträglich erfasst: {display}")))
     } else {
         Ok(None)
@@ -124,10 +141,20 @@ fn late_entry_note(entry: &Entry, threshold_hours: i64) -> Result<Option<String>
 fn sanitize_filename(name: &str) -> String {
     let sanitized: String = name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let trimmed = sanitized.trim();
-    if trimmed.is_empty() { "System".to_string() } else { trimmed.to_string() }
+    if trimmed.is_empty() {
+        "System".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -143,22 +170,44 @@ mod tests {
     }
 
     fn seed_customer(conn: &Connection, name: &str) -> i64 {
-        customers::create(conn, NewCustomer { name: name.into(), short_code: name.to_uppercase(), notes: "".into() }, &berlin())
-            .unwrap()
-            .id
-    }
-
-    fn seed_system(conn: &Connection, customer_id: i64, name: &str) -> i64 {
-        systems::create(
+        customers::create(
             conn,
-            NewSystem { customer_id, name: name.into(), system_type: "Server".into(), hostname: "".into(), ip_address: "".into(), notes: "".into() },
+            NewCustomer {
+                name: name.into(),
+                short_code: name.to_uppercase(),
+                notes: "".into(),
+            },
             &berlin(),
         )
         .unwrap()
         .id
     }
 
-    fn seed_entry(conn: &Connection, data_dir: &Path, customer_id: i64, system_id: Option<i64>, title: &str, performed_at_utc: &str) -> Entry {
+    fn seed_system(conn: &Connection, customer_id: i64, name: &str) -> i64 {
+        systems::create(
+            conn,
+            NewSystem {
+                customer_id,
+                name: name.into(),
+                system_type: "Server".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap()
+        .id
+    }
+
+    fn seed_entry(
+        conn: &Connection,
+        data_dir: &Path,
+        customer_id: i64,
+        system_id: Option<i64>,
+        title: &str,
+        performed_at_utc: &str,
+    ) -> Entry {
         entries::create(
             conn,
             data_dir,
@@ -187,11 +236,43 @@ mod tests {
         let sys_a = seed_system(&conn, customer_id, "Fileserver");
         let sys_b = seed_system(&conn, customer_id, "Firewall");
 
-        seed_entry(&conn, data_dir.path(), customer_id, Some(sys_a), "Update Fileserver", "2026-09-01T10:00:00.000Z");
-        seed_entry(&conn, data_dir.path(), customer_id, Some(sys_b), "Regelwerk geändert", "2026-09-02T10:00:00.000Z");
-        seed_entry(&conn, data_dir.path(), customer_id, None, "Allgemeine Notiz", "2026-09-03T10:00:00.000Z");
+        seed_entry(
+            &conn,
+            data_dir.path(),
+            customer_id,
+            Some(sys_a),
+            "Update Fileserver",
+            "2026-09-01T10:00:00.000Z",
+        );
+        seed_entry(
+            &conn,
+            data_dir.path(),
+            customer_id,
+            Some(sys_b),
+            "Regelwerk geändert",
+            "2026-09-02T10:00:00.000Z",
+        );
+        seed_entry(
+            &conn,
+            data_dir.path(),
+            customer_id,
+            None,
+            "Allgemeine Notiz",
+            "2026-09-03T10:00:00.000Z",
+        );
 
-        export_markdown(&conn, data_dir.path(), dest_dir.path(), customer_id, &EntryFilter { customer_id: Some(customer_id), ..Default::default() }, 24).unwrap();
+        export_markdown(
+            &conn,
+            data_dir.path(),
+            dest_dir.path(),
+            customer_id,
+            &EntryFilter {
+                customer_id: Some(customer_id),
+                ..Default::default()
+            },
+            24,
+        )
+        .unwrap();
 
         let fileserver_md = std::fs::read_to_string(dest_dir.path().join("Fileserver.md")).unwrap();
         assert!(fileserver_md.contains("Update Fileserver"));
@@ -200,7 +281,8 @@ mod tests {
         let firewall_md = std::fs::read_to_string(dest_dir.path().join("Firewall.md")).unwrap();
         assert!(firewall_md.contains("Regelwerk geändert"));
 
-        let ohne_system_md = std::fs::read_to_string(dest_dir.path().join("Ohne System.md")).unwrap();
+        let ohne_system_md =
+            std::fs::read_to_string(dest_dir.path().join("Ohne System.md")).unwrap();
         assert!(ohne_system_md.contains("Allgemeine Notiz"));
     }
 
@@ -210,7 +292,14 @@ mod tests {
         let data_dir = tempfile::tempdir().unwrap();
         let dest_dir = tempfile::tempdir().unwrap();
         let customer_id = seed_customer(&conn, "ACME");
-        let entry = seed_entry(&conn, data_dir.path(), customer_id, None, "Mit Anhang", "2026-09-01T10:00:00.000Z");
+        let entry = seed_entry(
+            &conn,
+            data_dir.path(),
+            customer_id,
+            None,
+            "Mit Anhang",
+            "2026-09-01T10:00:00.000Z",
+        );
 
         let attachment = crate::attachments::store::attach_bytes_to_entry(
             &conn,
@@ -223,11 +312,26 @@ mod tests {
         )
         .unwrap();
 
-        export_markdown(&conn, data_dir.path(), dest_dir.path(), customer_id, &EntryFilter { customer_id: Some(customer_id), ..Default::default() }, 24).unwrap();
+        export_markdown(
+            &conn,
+            data_dir.path(),
+            dest_dir.path(),
+            customer_id,
+            &EntryFilter {
+                customer_id: Some(customer_id),
+                ..Default::default()
+            },
+            24,
+        )
+        .unwrap();
 
-        let relative_path = crate::attachments::store::relative_path_for(&attachment.sha256, "screenshot.png");
+        let relative_path =
+            crate::attachments::store::relative_path_for(&attachment.sha256, "screenshot.png");
         let copied = dest_dir.path().join(&relative_path);
-        assert!(copied.exists(), "Anhang sollte unter {relative_path} im Export liegen");
+        assert!(
+            copied.exists(),
+            "Anhang sollte unter {relative_path} im Export liegen"
+        );
         assert_eq!(std::fs::read(&copied).unwrap(), b"fake png bytes");
     }
 

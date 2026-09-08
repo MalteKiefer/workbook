@@ -15,7 +15,10 @@ pub fn export_markdown(
     to_utc: Option<String>,
     dest_dir: String,
 ) -> Result<(), AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let (data_dir, late_entry_threshold_hours) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         (config.data_dir.clone(), config.late_entry_threshold_hours)
@@ -52,7 +55,10 @@ pub fn export_pdf(
     to_utc: Option<String>,
     dest_path: String,
 ) -> Result<(), AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let (data_dir, late_entry_threshold_hours) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         (config.data_dir.clone(), config.late_entry_threshold_hours)
@@ -62,8 +68,14 @@ pub fn export_pdf(
     let customer = db::customers::get(&conn, customer_id)?;
     let systems = db::systems::list_by_customer(&conn, customer_id, false)?;
 
-    let filter =
-        EntryFilter { customer_id: Some(customer_id), system_id, category: None, tag: None, from_utc, to_utc };
+    let filter = EntryFilter {
+        customer_id: Some(customer_id),
+        system_id,
+        category: None,
+        tag: None,
+        from_utc,
+        to_utc,
+    };
     let mut entries = db::entries::list(&conn, &filter)?;
     // `list` orders performed_at_utc DESC; the manual reads as a chronological
     // "grown history" per system (see the design spec's Systemansicht), so we
@@ -75,7 +87,8 @@ pub fn export_pdf(
     let (now_utc, now_tz) = time::now_with_tz(&tz);
     let generated_at_display = time::format_timestamp_for_display(&now_utc, &now_tz)?;
 
-    let pdf_bytes = export::pdf::render_manual_pdf(&data_dir, &customer.name, generated_at_display, sections)?;
+    let pdf_bytes =
+        export::pdf::render_manual_pdf(&data_dir, &customer.name, generated_at_display, sections)?;
 
     std::fs::write(&dest_path, pdf_bytes)
         .map_err(|e| AppError::Io(format!("PDF konnte nicht geschrieben werden: {e}")))
@@ -102,8 +115,10 @@ fn build_pdf_sections(
 ) -> Result<Vec<PdfSystemSection>, AppError> {
     let mut group_order: Vec<Option<i64>> = systems.iter().map(|s| Some(s.id)).collect();
     group_order.push(None);
-    let mut group_names: HashMap<Option<i64>, String> =
-        systems.iter().map(|s| (Some(s.id), s.name.clone())).collect();
+    let mut group_names: HashMap<Option<i64>, String> = systems
+        .iter()
+        .map(|s| (Some(s.id), s.name.clone()))
+        .collect();
     group_names.insert(None, "Ohne System".to_string());
 
     let mut grouped: HashMap<Option<i64>, Vec<PdfEntry>> = HashMap::new();
@@ -119,8 +134,14 @@ fn build_pdf_sections(
             if pdf_entries.is_empty() {
                 return None;
             }
-            let system_name = group_names.get(&key).cloned().unwrap_or_else(|| "Ohne System".to_string());
-            Some(PdfSystemSection { system_name, entries: pdf_entries })
+            let system_name = group_names
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| "Ohne System".to_string());
+            Some(PdfSystemSection {
+                system_name,
+                entries: pdf_entries,
+            })
         })
         .collect())
 }
@@ -142,12 +163,20 @@ fn category_label(category: Category) -> &'static str {
 /// `export::pdf::render_manual_pdf`.
 fn extract_image_paths(body_md: &str) -> Vec<String> {
     static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let pattern = PATTERN.get_or_init(|| regex::Regex::new(r"!\[[^\]]*\]\((attachments/[^)]+)\)").unwrap());
-    pattern.captures_iter(body_md).map(|caps| caps[1].to_string()).collect()
+    let pattern =
+        PATTERN.get_or_init(|| regex::Regex::new(r"!\[[^\]]*\]\((attachments/[^)]+)\)").unwrap());
+    pattern
+        .captures_iter(body_md)
+        .map(|caps| caps[1].to_string())
+        .collect()
 }
 
-fn to_pdf_entry(entry: &db::entries::Entry, late_entry_threshold_hours: i64) -> Result<PdfEntry, AppError> {
-    let performed_at_display = time::format_timestamp_for_display(&entry.performed_at_utc, &entry.performed_at_tz)?;
+fn to_pdf_entry(
+    entry: &db::entries::Entry,
+    late_entry_threshold_hours: i64,
+) -> Result<PdfEntry, AppError> {
+    let performed_at_display =
+        time::format_timestamp_for_display(&entry.performed_at_utc, &entry.performed_at_tz)?;
 
     let performed_at = chrono::DateTime::parse_from_rfc3339(&entry.performed_at_utc)
         .map_err(|e| AppError::InvalidTimestamp(format!("{}: {e}", entry.performed_at_utc)))?;
@@ -155,7 +184,8 @@ fn to_pdf_entry(entry: &db::entries::Entry, late_entry_threshold_hours: i64) -> 
         .map_err(|e| AppError::InvalidTimestamp(format!("{}: {e}", entry.created_at_utc)))?;
     let diff_hours = (created_at - performed_at).num_hours().abs();
     let late_entry_note = if diff_hours > late_entry_threshold_hours {
-        let created_display = time::format_timestamp_for_display(&entry.created_at_utc, &entry.created_at_tz)?;
+        let created_display =
+            time::format_timestamp_for_display(&entry.created_at_utc, &entry.created_at_tz)?;
         Some(format!("Nachträglich erfasst: {created_display}"))
     } else {
         None
@@ -186,22 +216,44 @@ mod tests {
     }
 
     fn seed_customer(conn: &Connection, name: &str) -> i64 {
-        customers::create(conn, NewCustomer { name: name.into(), short_code: name.to_uppercase(), notes: "".into() }, &berlin())
-            .unwrap()
-            .id
-    }
-
-    fn seed_system(conn: &Connection, customer_id: i64, name: &str) -> i64 {
-        systems::create(
+        customers::create(
             conn,
-            NewSystem { customer_id, name: name.into(), system_type: "".into(), hostname: "".into(), ip_address: "".into(), notes: "".into() },
+            NewCustomer {
+                name: name.into(),
+                short_code: name.to_uppercase(),
+                notes: "".into(),
+            },
             &berlin(),
         )
         .unwrap()
         .id
     }
 
-    fn seed_entry(conn: &Connection, data_dir: &std::path::Path, customer_id: i64, system_id: Option<i64>, title: &str, body_md: &str) -> entries::Entry {
+    fn seed_system(conn: &Connection, customer_id: i64, name: &str) -> i64 {
+        systems::create(
+            conn,
+            NewSystem {
+                customer_id,
+                name: name.into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap()
+        .id
+    }
+
+    fn seed_entry(
+        conn: &Connection,
+        data_dir: &std::path::Path,
+        customer_id: i64,
+        system_id: Option<i64>,
+        title: &str,
+        body_md: &str,
+    ) -> entries::Entry {
         entries::create(
             conn,
             data_dir,
@@ -227,14 +279,21 @@ mod tests {
     // assigned it to a system. `export_pdf` calls `list_by_customer(..,
     // false)` (archived excluded), so `systems` here mirrors that: two
     // active systems, no matching entries for either.
-    fn seed_production_shape(conn: &Connection, data_dir: &std::path::Path) -> (i64, Vec<db::systems::System>, entries::Entry) {
+    fn seed_production_shape(
+        conn: &Connection,
+        data_dir: &std::path::Path,
+    ) -> (i64, Vec<db::systems::System>, entries::Entry) {
         let customer_id = seed_customer(conn, "IntellyTec GmbH");
         let archived_id = seed_system(conn, customer_id, "SRV-LF-SU-60 (Navision)");
         systems::archive(conn, archived_id, &berlin()).unwrap();
         seed_system(conn, customer_id, "ESET Protect");
         seed_system(conn, customer_id, "NB-IT-KU-1");
         let active_systems = systems::list_by_customer(conn, customer_id, false).unwrap();
-        assert_eq!(active_systems.len(), 2, "archived system must be excluded, mirroring export_pdf's own query");
+        assert_eq!(
+            active_systems.len(),
+            2,
+            "archived system must be excluded, mirroring export_pdf's own query"
+        );
 
         let entry = seed_entry(
             conn,
@@ -255,14 +314,29 @@ mod tests {
 
         // Mirrors export_pdf's own unfiltered query (system_id: None) --
         // the export dialog's documented default, "no restriction".
-        let filter = EntryFilter { customer_id: None, system_id: None, category: None, tag: None, from_utc: None, to_utc: None };
+        let filter = EntryFilter {
+            customer_id: None,
+            system_id: None,
+            category: None,
+            tag: None,
+            from_utc: None,
+            to_utc: None,
+        };
         let mut fetched = entries::list(&conn, &filter).unwrap();
         fetched.reverse();
-        assert_eq!(fetched.len(), 1, "the one system_id: None entry must still be fetched when the filter is unrestricted");
+        assert_eq!(
+            fetched.len(),
+            1,
+            "the one system_id: None entry must still be fetched when the filter is unrestricted"
+        );
 
         let sections = build_pdf_sections(&systems, fetched, 24).unwrap();
 
-        assert_eq!(sections.len(), 1, "exactly one section ('Ohne System') should be produced, not zero");
+        assert_eq!(
+            sections.len(),
+            1,
+            "exactly one section ('Ohne System') should be produced, not zero"
+        );
         assert_eq!(sections[0].system_name, "Ohne System");
         assert_eq!(sections[0].entries.len(), 1);
         assert_eq!(sections[0].entries[0].title, "Eset enfernt");
@@ -284,7 +358,11 @@ mod tests {
         let conn = migrated_connection();
         let data_dir = tempfile::tempdir().unwrap();
         let (customer_id, systems, _entry) = seed_production_shape(&conn, data_dir.path());
-        let eset_protect_id = systems.iter().find(|s| s.name == "ESET Protect").unwrap().id;
+        let eset_protect_id = systems
+            .iter()
+            .find(|s| s.name == "ESET Protect")
+            .unwrap()
+            .id;
 
         // Simulates the exact production symptom: the export dialog's
         // System field silently carried over an unrelated system selection.
@@ -300,7 +378,10 @@ mod tests {
         assert!(fetched.is_empty(), "a system_id filter must exclude the system_id: None entry -- this is what produced the empty PDF");
 
         let sections = build_pdf_sections(&systems, fetched, 24).unwrap();
-        assert!(sections.is_empty(), "no matching entries means no sections, reproducing the near-blank content page");
+        assert!(
+            sections.is_empty(),
+            "no matching entries means no sections, reproducing the near-blank content page"
+        );
     }
 
     #[test]
@@ -309,14 +390,27 @@ mod tests {
         let data_dir = tempfile::tempdir().unwrap();
         let (_customer_id, systems, _entry) = seed_production_shape(&conn, data_dir.path());
 
-        let filter = EntryFilter { customer_id: None, system_id: None, category: None, tag: None, from_utc: None, to_utc: None };
+        let filter = EntryFilter {
+            customer_id: None,
+            system_id: None,
+            category: None,
+            tag: None,
+            from_utc: None,
+            to_utc: None,
+        };
         let mut fetched = entries::list(&conn, &filter).unwrap();
         fetched.reverse();
 
         let sections = build_pdf_sections(&systems, fetched, 24).unwrap();
         assert_eq!(sections.len(), 1);
 
-        let pdf_bytes = export::pdf::render_manual_pdf(data_dir.path(), "IntellyTec GmbH", "08.09.2026 19:52 CEST".to_string(), sections).unwrap();
+        let pdf_bytes = export::pdf::render_manual_pdf(
+            data_dir.path(),
+            "IntellyTec GmbH",
+            "08.09.2026 19:52 CEST".to_string(),
+            sections,
+        )
+        .unwrap();
 
         assert!(pdf_bytes.starts_with(b"%PDF-"));
         // Typst's default PDF output isn't stream-compressed for text
@@ -325,7 +419,13 @@ mod tests {
         // to confirm the entry's content actually made it into the output
         // (as opposed to only a cover page + empty TOC).
         let haystack = String::from_utf8_lossy(&pdf_bytes);
-        assert!(haystack.contains("Eset enfernt"), "entry title should appear in the rendered PDF bytes");
-        assert!(haystack.contains("Ohne System"), "the 'Ohne System' section heading should appear in the rendered PDF bytes");
+        assert!(
+            haystack.contains("Eset enfernt"),
+            "entry title should appear in the rendered PDF bytes"
+        );
+        assert!(
+            haystack.contains("Ohne System"),
+            "the 'Ohne System' section heading should appear in the rendered PDF bytes"
+        );
     }
 }

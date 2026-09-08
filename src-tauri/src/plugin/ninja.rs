@@ -121,7 +121,10 @@ impl NinjaPlugin {
     /// (`GET /v2/organizations`). Getrennt von der `Plugin`-Trait-Methode
     /// `list_systems`, weil Organisationen keine Geräte sind und der
     /// generische Trait dafür keinen Platz vorsieht.
-    pub fn list_organizations(&self, credentials: &PluginCredentials) -> Result<Vec<NinjaOrganization>, PluginError> {
+    pub fn list_organizations(
+        &self,
+        credentials: &PluginCredentials,
+    ) -> Result<Vec<NinjaOrganization>, PluginError> {
         let creds = parse_credentials(credentials)?;
         let agent = build_agent();
         let token = fetch_access_token(&agent, &self.base_url, &creds)?;
@@ -133,7 +136,10 @@ impl NinjaPlugin {
     /// Organisationszugehörigkeit und IP-Adresse (siehe `NinjaDevice`).
     /// Reichhaltiger als die Trait-Methode `list_systems`, die absichtlich
     /// beim schmalen, plugin-übergreifenden `ExternalSystem`-Typ bleibt.
-    pub fn list_devices(&self, credentials: &PluginCredentials) -> Result<Vec<NinjaDevice>, PluginError> {
+    pub fn list_devices(
+        &self,
+        credentials: &PluginCredentials,
+    ) -> Result<Vec<NinjaDevice>, PluginError> {
         let creds = parse_credentials(credentials)?;
         let agent = build_agent();
         let token = fetch_access_token(&agent, &self.base_url, &creds)?;
@@ -148,8 +154,15 @@ impl NinjaPlugin {
 /// `commands::plugins::test_ninja_connection`, damit Nutzer Tippfehler in
 /// Basis-URL/Zugangsdaten bemerken, bevor sie eine Verbindung tatsächlich
 /// anlegen (Zugangsdaten in den Schlüsselspeicher schreiben).
-pub fn test_credentials(base_url: &str, client_id: &str, client_secret: &str) -> Result<(), PluginError> {
-    let creds = NinjaCredentials { client_id: client_id.to_string(), client_secret: client_secret.to_string() };
+pub fn test_credentials(
+    base_url: &str,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<(), PluginError> {
+    let creds = NinjaCredentials {
+        client_id: client_id.to_string(),
+        client_secret: client_secret.to_string(),
+    };
     let agent = build_agent();
     fetch_access_token(&agent, base_url, &creds)?;
     Ok(())
@@ -160,7 +173,10 @@ impl Plugin for NinjaPlugin {
         self.id.as_str()
     }
 
-    fn list_systems(&self, credentials: &PluginCredentials) -> Result<Vec<ExternalSystem>, PluginError> {
+    fn list_systems(
+        &self,
+        credentials: &PluginCredentials,
+    ) -> Result<Vec<ExternalSystem>, PluginError> {
         let creds = parse_credentials(credentials)?;
         let agent = build_agent();
         let token = fetch_access_token(&agent, &self.base_url, &creds)?;
@@ -168,11 +184,20 @@ impl Plugin for NinjaPlugin {
         map_devices_response(&json)
     }
 
-    fn get_system_details(&self, credentials: &PluginCredentials, external_id: &str) -> Result<serde_json::Value, PluginError> {
+    fn get_system_details(
+        &self,
+        credentials: &PluginCredentials,
+        external_id: &str,
+    ) -> Result<serde_json::Value, PluginError> {
         let creds = parse_credentials(credentials)?;
         let agent = build_agent();
         let token = fetch_access_token(&agent, &self.base_url, &creds)?;
-        fetch_json(&agent, &self.base_url, &format!("/v2/device/{external_id}"), &token)
+        fetch_json(
+            &agent,
+            &self.base_url,
+            &format!("/v2/device/{external_id}"),
+            &token,
+        )
     }
 
     fn link_system(&self, local_system_id: i64, external_id: &str) -> Result<(), PluginError> {
@@ -196,7 +221,11 @@ fn build_agent() -> Agent {
     Agent::new_with_config(config)
 }
 
-fn fetch_access_token(agent: &Agent, base_url: &str, creds: &NinjaCredentials) -> Result<String, PluginError> {
+fn fetch_access_token(
+    agent: &Agent,
+    base_url: &str,
+    creds: &NinjaCredentials,
+) -> Result<String, PluginError> {
     let url = format!("{}/ws/oauth/token", base_url.trim_end_matches('/'));
     let mut response = agent
         .post(&url)
@@ -211,14 +240,22 @@ fn fetch_access_token(agent: &Agent, base_url: &str, creds: &NinjaCredentials) -
     Ok(token.access_token)
 }
 
-fn fetch_json(agent: &Agent, base_url: &str, path: &str, bearer_token: &str) -> Result<serde_json::Value, PluginError> {
+fn fetch_json(
+    agent: &Agent,
+    base_url: &str,
+    path: &str,
+    bearer_token: &str,
+) -> Result<serde_json::Value, PluginError> {
     let url = format!("{}{path}", base_url.trim_end_matches('/'));
     let mut response = agent
         .get(&url)
         .header("Authorization", format!("Bearer {bearer_token}"))
         .call()
         .map_err(map_ureq_error)?;
-    response.body_mut().read_json::<serde_json::Value>().map_err(map_ureq_error)
+    response
+        .body_mut()
+        .read_json::<serde_json::Value>()
+        .map_err(map_ureq_error)
 }
 
 fn map_ureq_error(e: ureq::Error) -> PluginError {
@@ -226,8 +263,12 @@ fn map_ureq_error(e: ureq::Error) -> PluginError {
         ureq::Error::StatusCode(code) if code == 401 || code == 403 => {
             PluginError::Authentication(format!("Ninja-API antwortete mit Status {code}"))
         }
-        ureq::Error::StatusCode(code) => PluginError::Unreachable(format!("Ninja-API antwortete mit Status {code}")),
-        ureq::Error::Json(err) => PluginError::UnexpectedResponse(format!("Ungültige JSON-Antwort: {err}")),
+        ureq::Error::StatusCode(code) => {
+            PluginError::Unreachable(format!("Ninja-API antwortete mit Status {code}"))
+        }
+        ureq::Error::Json(err) => {
+            PluginError::UnexpectedResponse(format!("Ungültige JSON-Antwort: {err}"))
+        }
         other => PluginError::Unreachable(other.to_string()),
     }
 }
@@ -237,9 +278,9 @@ fn map_ureq_error(e: ureq::Error) -> PluginError {
 /// herausgezogen -- lässt sich mit einem festen JSON-String testen, ganz
 /// ohne echten Netzwerkzugriff.
 fn map_devices_response(json: &serde_json::Value) -> Result<Vec<ExternalSystem>, PluginError> {
-    let array = json
-        .as_array()
-        .ok_or_else(|| PluginError::UnexpectedResponse("Erwartete JSON-Liste von Geräten".to_string()))?;
+    let array = json.as_array().ok_or_else(|| {
+        PluginError::UnexpectedResponse("Erwartete JSON-Liste von Geräten".to_string())
+    })?;
     Ok(array.iter().filter_map(map_device).collect())
 }
 
@@ -255,18 +296,30 @@ fn map_device(value: &serde_json::Value) -> Option<ExternalSystem> {
     };
     let system_name = value["systemName"].as_str();
     let display_name = value["displayName"].as_str();
-    let hostname = value["hostname"].as_str().or(system_name).map(str::to_string);
-    let name = display_name.or(system_name).unwrap_or(external_id.as_str()).to_string();
-    Some(ExternalSystem { external_id, name, hostname })
+    let hostname = value["hostname"]
+        .as_str()
+        .or(system_name)
+        .map(str::to_string);
+    let name = display_name
+        .or(system_name)
+        .unwrap_or(external_id.as_str())
+        .to_string();
+    Some(ExternalSystem {
+        external_id,
+        name,
+        hostname,
+    })
 }
 
 /// Bildet die von `GET /v2/organizations` gelieferte JSON-Liste auf
 /// `NinjaOrganization`-Werte ab. Reine, für sich mit hartkodiertem JSON
 /// testbare Funktion, analog zu `map_devices_response`.
-fn map_organizations_response(json: &serde_json::Value) -> Result<Vec<NinjaOrganization>, PluginError> {
-    let array = json
-        .as_array()
-        .ok_or_else(|| PluginError::UnexpectedResponse("Erwartete JSON-Liste von Organisationen".to_string()))?;
+fn map_organizations_response(
+    json: &serde_json::Value,
+) -> Result<Vec<NinjaOrganization>, PluginError> {
+    let array = json.as_array().ok_or_else(|| {
+        PluginError::UnexpectedResponse("Erwartete JSON-Liste von Organisationen".to_string())
+    })?;
     Ok(array.iter().filter_map(map_organization).collect())
 }
 
@@ -291,9 +344,9 @@ fn map_organization(value: &serde_json::Value) -> Option<NinjaOrganization> {
 /// generischen `ExternalSystem`-Typ befüllt. Reine, für sich testbare
 /// Funktion, kein echter Netzwerkzugriff nötig.
 fn map_ninja_devices_response(json: &serde_json::Value) -> Result<Vec<NinjaDevice>, PluginError> {
-    let array = json
-        .as_array()
-        .ok_or_else(|| PluginError::UnexpectedResponse("Erwartete JSON-Liste von Geräten".to_string()))?;
+    let array = json.as_array().ok_or_else(|| {
+        PluginError::UnexpectedResponse("Erwartete JSON-Liste von Geräten".to_string())
+    })?;
     Ok(array.iter().filter_map(map_ninja_device).collect())
 }
 
@@ -319,15 +372,27 @@ fn map_ninja_device(value: &serde_json::Value) -> Option<NinjaDevice> {
     };
     let system_name = value["systemName"].as_str();
     let display_name = value["displayName"].as_str();
-    let hostname = value["hostname"].as_str().or(system_name).map(str::to_string);
-    let name = display_name.or(system_name).unwrap_or(external_id.as_str()).to_string();
+    let hostname = value["hostname"]
+        .as_str()
+        .or(system_name)
+        .map(str::to_string);
+    let name = display_name
+        .or(system_name)
+        .unwrap_or(external_id.as_str())
+        .to_string();
     let ip_address = value["ipAddresses"]
         .as_array()
         .and_then(|addresses| addresses.first())
         .and_then(|first| first.as_str())
         .map(str::to_string)
         .or_else(|| value["publicIP"].as_str().map(str::to_string));
-    Some(NinjaDevice { external_id, name, hostname, ip_address, organization_id })
+    Some(NinjaDevice {
+        external_id,
+        name,
+        hostname,
+        ip_address,
+        organization_id,
+    })
 }
 
 #[cfg(test)]
@@ -349,7 +414,10 @@ mod tests {
         assert_eq!(systems.len(), 2);
         assert_eq!(systems[0].external_id, "101");
         assert_eq!(systems[0].name, "Server 01");
-        assert_eq!(systems[0].hostname.as_deref(), Some("srv-01.customer.local"));
+        assert_eq!(
+            systems[0].hostname.as_deref(),
+            Some("srv-01.customer.local")
+        );
         assert_eq!(systems[1].external_id, "202");
         assert_eq!(systems[1].name, "FW-EDGE");
         assert_eq!(systems[1].hostname.as_deref(), Some("FW-EDGE"));
@@ -379,7 +447,9 @@ mod tests {
 
     #[test]
     fn parses_credentials_from_json_secret() {
-        let creds = PluginCredentials { secret: r#"{"client_id":"abc","client_secret":"xyz"}"#.into() };
+        let creds = PluginCredentials {
+            secret: r#"{"client_id":"abc","client_secret":"xyz"}"#.into(),
+        };
         let parsed = parse_credentials(&creds).unwrap();
         assert_eq!(parsed.client_id, "abc");
         assert_eq!(parsed.client_secret, "xyz");
@@ -387,7 +457,9 @@ mod tests {
 
     #[test]
     fn rejects_malformed_credentials_json() {
-        let creds = PluginCredentials { secret: "not json".into() };
+        let creds = PluginCredentials {
+            secret: "not json".into(),
+        };
         let result = parse_credentials(&creds);
         assert!(matches!(result, Err(PluginError::Authentication(_))));
     }
@@ -412,7 +484,10 @@ mod tests {
 
     #[test]
     fn plugin_id_returns_configured_connection_id() {
-        let plugin = NinjaPlugin::new("ninja:acme-123".to_string(), "https://app.ninjarmm.com".to_string());
+        let plugin = NinjaPlugin::new(
+            "ninja:acme-123".to_string(),
+            "https://app.ninjarmm.com".to_string(),
+        );
         assert_eq!(plugin.id(), "ninja:acme-123");
     }
 
@@ -429,8 +504,20 @@ mod tests {
         let organizations = map_organizations_response(&json).unwrap();
 
         assert_eq!(organizations.len(), 2);
-        assert_eq!(organizations[0], NinjaOrganization { id: "1".to_string(), name: "ACME Hauptsitz".to_string() });
-        assert_eq!(organizations[1], NinjaOrganization { id: "2".to_string(), name: "ACME Zweigstelle".to_string() });
+        assert_eq!(
+            organizations[0],
+            NinjaOrganization {
+                id: "1".to_string(),
+                name: "ACME Hauptsitz".to_string()
+            }
+        );
+        assert_eq!(
+            organizations[1],
+            NinjaOrganization {
+                id: "2".to_string(),
+                name: "ACME Zweigstelle".to_string()
+            }
+        );
     }
 
     #[test]

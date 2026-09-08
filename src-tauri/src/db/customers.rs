@@ -58,9 +58,13 @@ pub fn create(conn: &Connection, input: NewCustomer, tz: &Tz) -> Result<Customer
 }
 
 pub fn get(conn: &Connection, id: i64) -> Result<Customer, AppError> {
-    conn.query_row("SELECT * FROM customers WHERE id = ?1", params![id], row_to_customer)
-        .optional()?
-        .ok_or_else(|| AppError::NotFound(format!("Kunde {id} nicht gefunden")))
+    conn.query_row(
+        "SELECT * FROM customers WHERE id = ?1",
+        params![id],
+        row_to_customer,
+    )
+    .optional()?
+    .ok_or_else(|| AppError::NotFound(format!("Kunde {id} nicht gefunden")))
 }
 
 pub fn list(conn: &Connection, include_archived: bool) -> Result<Vec<Customer>, AppError> {
@@ -78,7 +82,12 @@ pub fn list(conn: &Connection, include_archived: bool) -> Result<Vec<Customer>, 
     Ok(result)
 }
 
-pub fn update(conn: &Connection, id: i64, input: UpdateCustomer, tz: &Tz) -> Result<Customer, AppError> {
+pub fn update(
+    conn: &Connection,
+    id: i64,
+    input: UpdateCustomer,
+    tz: &Tz,
+) -> Result<Customer, AppError> {
     let (now_utc, now_tz) = now_with_tz(tz);
     let changed = conn.execute(
         "UPDATE customers SET name = ?1, short_code = ?2, notes = ?3, updated_at_utc = ?4, updated_at_tz = ?5 WHERE id = ?6",
@@ -116,7 +125,11 @@ mod tests {
         let conn = migrated_connection();
         let created = create(
             &conn,
-            NewCustomer { name: "ACME GmbH".into(), short_code: "ACME".into(), notes: "".into() },
+            NewCustomer {
+                name: "ACME GmbH".into(),
+                short_code: "ACME".into(),
+                notes: "".into(),
+            },
             &berlin(),
         )
         .unwrap();
@@ -135,8 +148,26 @@ mod tests {
     #[test]
     fn list_excludes_archived_by_default() {
         let conn = migrated_connection();
-        let a = create(&conn, NewCustomer { name: "Aktiv".into(), short_code: "AKT".into(), notes: "".into() }, &berlin()).unwrap();
-        let b = create(&conn, NewCustomer { name: "Archiviert".into(), short_code: "ARC".into(), notes: "".into() }, &berlin()).unwrap();
+        let a = create(
+            &conn,
+            NewCustomer {
+                name: "Aktiv".into(),
+                short_code: "AKT".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        let b = create(
+            &conn,
+            NewCustomer {
+                name: "Archiviert".into(),
+                short_code: "ARC".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
         archive(&conn, b.id, &berlin()).unwrap();
 
         let active = list(&conn, false).unwrap();
@@ -147,11 +178,24 @@ mod tests {
     #[test]
     fn update_changes_fields_and_keeps_created_at() {
         let conn = migrated_connection();
-        let created = create(&conn, NewCustomer { name: "Alt".into(), short_code: "ALT".into(), notes: "".into() }, &berlin()).unwrap();
+        let created = create(
+            &conn,
+            NewCustomer {
+                name: "Alt".into(),
+                short_code: "ALT".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
         let updated = update(
             &conn,
             created.id,
-            UpdateCustomer { name: "Neu".into(), short_code: "NEU".into(), notes: "geändert".into() },
+            UpdateCustomer {
+                name: "Neu".into(),
+                short_code: "NEU".into(),
+                notes: "geändert".into(),
+            },
             &berlin(),
         )
         .unwrap();
@@ -163,8 +207,25 @@ mod tests {
     #[test]
     fn duplicate_short_code_is_rejected() {
         let conn = migrated_connection();
-        create(&conn, NewCustomer { name: "Erster".into(), short_code: "DUP".into(), notes: "".into() }, &berlin()).unwrap();
-        let result = create(&conn, NewCustomer { name: "Zweiter".into(), short_code: "DUP".into(), notes: "".into() }, &berlin());
+        create(
+            &conn,
+            NewCustomer {
+                name: "Erster".into(),
+                short_code: "DUP".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        let result = create(
+            &conn,
+            NewCustomer {
+                name: "Zweiter".into(),
+                short_code: "DUP".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        );
         assert!(matches!(result, Err(AppError::Database(_))));
     }
 }

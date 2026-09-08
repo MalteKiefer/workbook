@@ -77,7 +77,11 @@ pub fn list_all_stored_files(data_dir: &Path) -> Result<Vec<StoredFile>, AppErro
     Ok(result)
 }
 
-pub fn save_content_addressed(data_dir: &Path, bytes: &[u8], original_filename: &str) -> Result<SavedFile, AppError> {
+pub fn save_content_addressed(
+    data_dir: &Path,
+    bytes: &[u8],
+    original_filename: &str,
+) -> Result<SavedFile, AppError> {
     let sha256 = sha256_hex(bytes);
     let relative_path = relative_path_for(&sha256, original_filename);
     let absolute_path = data_dir.join(&relative_path);
@@ -88,7 +92,12 @@ pub fn save_content_addressed(data_dir: &Path, bytes: &[u8], original_filename: 
         }
         std::fs::write(&absolute_path, bytes)?;
     }
-    Ok(SavedFile { sha256, relative_path, size_bytes: bytes.len() as i64, newly_written })
+    Ok(SavedFile {
+        sha256,
+        relative_path,
+        size_bytes: bytes.len() as i64,
+        newly_written,
+    })
 }
 
 use chrono_tz::Tz;
@@ -106,7 +115,15 @@ pub fn attach_bytes_to_entry(
     tz: &Tz,
 ) -> Result<Attachment, AppError> {
     let saved = save_content_addressed(data_dir, bytes, original_filename)?;
-    match attachments::create(conn, entry_id, &saved.sha256, original_filename, mime_type, saved.size_bytes, tz) {
+    match attachments::create(
+        conn,
+        entry_id,
+        &saved.sha256,
+        original_filename,
+        mime_type,
+        saved.size_bytes,
+        tz,
+    ) {
         Ok(attachment) => Ok(attachment),
         Err(e) => {
             if saved.newly_written {
@@ -174,8 +191,16 @@ mod tests {
         let entry_id = seed_entry(&conn, dir.path(), &tz);
 
         // Referenced: goes through the full attach flow, has a DB row.
-        let referenced =
-            attach_bytes_to_entry(&conn, dir.path(), entry_id, b"referenced bytes", "a.png", "image/png", &tz).unwrap();
+        let referenced = attach_bytes_to_entry(
+            &conn,
+            dir.path(),
+            entry_id,
+            b"referenced bytes",
+            "a.png",
+            "image/png",
+            &tz,
+        )
+        .unwrap();
 
         // Unreferenced: written directly to the store, no DB row.
         let unreferenced = save_content_addressed(dir.path(), b"orphan bytes", "b.png").unwrap();
@@ -183,10 +208,19 @@ mod tests {
         let found = list_all_stored_files(dir.path()).unwrap();
         assert_eq!(found.len(), 2);
 
-        let referenced_entry = found.iter().find(|f| f.sha256 == referenced.sha256).unwrap();
-        assert_eq!(referenced_entry.size_bytes, b"referenced bytes".len() as u64);
+        let referenced_entry = found
+            .iter()
+            .find(|f| f.sha256 == referenced.sha256)
+            .unwrap();
+        assert_eq!(
+            referenced_entry.size_bytes,
+            b"referenced bytes".len() as u64
+        );
 
-        let unreferenced_entry = found.iter().find(|f| f.sha256 == unreferenced.sha256).unwrap();
+        let unreferenced_entry = found
+            .iter()
+            .find(|f| f.sha256 == unreferenced.sha256)
+            .unwrap();
         assert_eq!(unreferenced_entry.size_bytes, b"orphan bytes".len() as u64);
     }
 
@@ -194,7 +228,17 @@ mod tests {
     use crate::db::entries::{self, Category, NewEntry};
 
     fn seed_entry(conn: &Connection, data_dir: &Path, tz: &Tz) -> i64 {
-        let customer_id = customers::create(conn, NewCustomer { name: "ACME".into(), short_code: "ACME".into(), notes: "".into() }, tz).unwrap().id;
+        let customer_id = customers::create(
+            conn,
+            NewCustomer {
+                name: "ACME".into(),
+                short_code: "ACME".into(),
+                notes: "".into(),
+            },
+            tz,
+        )
+        .unwrap()
+        .id;
         entries::create(
             conn,
             data_dir,
@@ -222,7 +266,16 @@ mod tests {
         let tz: Tz = "Europe/Berlin".parse().unwrap();
         let entry_id = seed_entry(&conn, dir.path(), &tz);
 
-        let attachment = attach_bytes_to_entry(&conn, dir.path(), entry_id, b"png bytes", "shot.png", "image/png", &tz).unwrap();
+        let attachment = attach_bytes_to_entry(
+            &conn,
+            dir.path(),
+            entry_id,
+            b"png bytes",
+            "shot.png",
+            "image/png",
+            &tz,
+        )
+        .unwrap();
 
         assert_eq!(attachment.entry_id, entry_id);
         let relative_path = relative_path_for(&attachment.sha256, "shot.png");
@@ -235,12 +288,23 @@ mod tests {
         let conn = crate::db::test_support::migrated_connection();
         let tz: Tz = "Europe/Berlin".parse().unwrap();
 
-        let result = attach_bytes_to_entry(&conn, dir.path(), 999, b"orphan bytes", "shot.png", "image/png", &tz);
+        let result = attach_bytes_to_entry(
+            &conn,
+            dir.path(),
+            999,
+            b"orphan bytes",
+            "shot.png",
+            "image/png",
+            &tz,
+        );
         assert!(result.is_err());
 
         let sha256 = sha256_hex(b"orphan bytes");
         let relative_path = relative_path_for(&sha256, "shot.png");
-        assert!(!dir.path().join(&relative_path).exists(), "neu geschriebene Datei hätte entfernt werden müssen");
+        assert!(
+            !dir.path().join(&relative_path).exists(),
+            "neu geschriebene Datei hätte entfernt werden müssen"
+        );
     }
 
     #[test]
@@ -250,12 +314,32 @@ mod tests {
         let tz: Tz = "Europe/Berlin".parse().unwrap();
         let entry_id = seed_entry(&conn, dir.path(), &tz);
 
-        let first = attach_bytes_to_entry(&conn, dir.path(), entry_id, b"shared bytes", "shot.png", "image/png", &tz).unwrap();
+        let first = attach_bytes_to_entry(
+            &conn,
+            dir.path(),
+            entry_id,
+            b"shared bytes",
+            "shot.png",
+            "image/png",
+            &tz,
+        )
+        .unwrap();
         let relative_path = relative_path_for(&first.sha256, "shot.png");
         assert!(dir.path().join(&relative_path).exists());
 
-        let result = attach_bytes_to_entry(&conn, dir.path(), 999, b"shared bytes", "shot.png", "image/png", &tz);
+        let result = attach_bytes_to_entry(
+            &conn,
+            dir.path(),
+            999,
+            b"shared bytes",
+            "shot.png",
+            "image/png",
+            &tz,
+        );
         assert!(result.is_err());
-        assert!(dir.path().join(&relative_path).exists(), "über Dedup geteilte Datei darf nicht gelöscht werden");
+        assert!(
+            dir.path().join(&relative_path).exists(),
+            "über Dedup geteilte Datei darf nicht gelöscht werden"
+        );
     }
 }

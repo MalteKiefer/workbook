@@ -69,12 +69,20 @@ pub fn create(conn: &Connection, input: NewSystem, tz: &Tz) -> Result<System, Ap
 }
 
 pub fn get(conn: &Connection, id: i64) -> Result<System, AppError> {
-    conn.query_row("SELECT * FROM systems WHERE id = ?1", params![id], row_to_system)
-        .optional()?
-        .ok_or_else(|| AppError::NotFound(format!("System {id} nicht gefunden")))
+    conn.query_row(
+        "SELECT * FROM systems WHERE id = ?1",
+        params![id],
+        row_to_system,
+    )
+    .optional()?
+    .ok_or_else(|| AppError::NotFound(format!("System {id} nicht gefunden")))
 }
 
-pub fn list_by_customer(conn: &Connection, customer_id: i64, include_archived: bool) -> Result<Vec<System>, AppError> {
+pub fn list_by_customer(
+    conn: &Connection,
+    customer_id: i64,
+    include_archived: bool,
+) -> Result<Vec<System>, AppError> {
     let sql = if include_archived {
         "SELECT * FROM systems WHERE customer_id = ?1 ORDER BY name COLLATE NOCASE"
     } else {
@@ -89,7 +97,12 @@ pub fn list_by_customer(conn: &Connection, customer_id: i64, include_archived: b
     Ok(result)
 }
 
-pub fn update(conn: &Connection, id: i64, input: UpdateSystem, tz: &Tz) -> Result<System, AppError> {
+pub fn update(
+    conn: &Connection,
+    id: i64,
+    input: UpdateSystem,
+    tz: &Tz,
+) -> Result<System, AppError> {
     let (now_utc, now_tz) = now_with_tz(tz);
     let changed = conn.execute(
         "UPDATE systems SET name = ?1, system_type = ?2, hostname = ?3, ip_address = ?4, notes = ?5, updated_at_utc = ?6, updated_at_tz = ?7 WHERE id = ?8",
@@ -124,9 +137,17 @@ mod tests {
     }
 
     fn seed_customer(conn: &Connection) -> i64 {
-        customers::create(conn, NewCustomer { name: "ACME".into(), short_code: "ACME".into(), notes: "".into() }, &berlin())
-            .unwrap()
-            .id
+        customers::create(
+            conn,
+            NewCustomer {
+                name: "ACME".into(),
+                short_code: "ACME".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap()
+        .id
     }
 
     #[test]
@@ -135,7 +156,14 @@ mod tests {
         let customer_id = seed_customer(&conn);
         let created = create(
             &conn,
-            NewSystem { customer_id, name: "FS01".into(), system_type: "Server".into(), hostname: "fs01.acme.local".into(), ip_address: "10.0.0.5".into(), notes: "".into() },
+            NewSystem {
+                customer_id,
+                name: "FS01".into(),
+                system_type: "Server".into(),
+                hostname: "fs01.acme.local".into(),
+                ip_address: "10.0.0.5".into(),
+                notes: "".into(),
+            },
             &berlin(),
         )
         .unwrap();
@@ -148,7 +176,14 @@ mod tests {
         let conn = migrated_connection();
         let result = create(
             &conn,
-            NewSystem { customer_id: 999, name: "Ghost".into(), system_type: "".into(), hostname: "".into(), ip_address: "".into(), notes: "".into() },
+            NewSystem {
+                customer_id: 999,
+                name: "Ghost".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
             &berlin(),
         );
         assert!(matches!(result, Err(AppError::Database(_))));
@@ -158,8 +193,32 @@ mod tests {
     fn list_by_customer_excludes_archived_by_default() {
         let conn = migrated_connection();
         let customer_id = seed_customer(&conn);
-        let a = create(&conn, NewSystem { customer_id, name: "Aktiv".into(), system_type: "".into(), hostname: "".into(), ip_address: "".into(), notes: "".into() }, &berlin()).unwrap();
-        let b = create(&conn, NewSystem { customer_id, name: "Alt".into(), system_type: "".into(), hostname: "".into(), ip_address: "".into(), notes: "".into() }, &berlin()).unwrap();
+        let a = create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "Aktiv".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        let b = create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "Alt".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
         archive(&conn, b.id, &berlin()).unwrap();
 
         let active = list_by_customer(&conn, customer_id, false).unwrap();
@@ -171,11 +230,29 @@ mod tests {
     fn update_changes_fields_and_keeps_created_at() {
         let conn = migrated_connection();
         let customer_id = seed_customer(&conn);
-        let created = create(&conn, NewSystem { customer_id, name: "Alt".into(), system_type: "".into(), hostname: "".into(), ip_address: "".into(), notes: "".into() }, &berlin()).unwrap();
+        let created = create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "Alt".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
         let updated = update(
             &conn,
             created.id,
-            UpdateSystem { name: "Neu".into(), system_type: "Firewall".into(), hostname: "fw.acme.local".into(), ip_address: "10.0.0.1".into(), notes: "".into() },
+            UpdateSystem {
+                name: "Neu".into(),
+                system_type: "Firewall".into(),
+                hostname: "fw.acme.local".into(),
+                ip_address: "10.0.0.1".into(),
+                notes: "".into(),
+            },
             &berlin(),
         )
         .unwrap();

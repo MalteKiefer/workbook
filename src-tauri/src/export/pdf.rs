@@ -73,7 +73,10 @@ impl IntoValue for PdfEntry {
         let mut dict = Dict::new();
         dict.insert("title".into(), self.title.into_value());
         dict.insert("category_label".into(), self.category_label.into_value());
-        dict.insert("performed_at_display".into(), self.performed_at_display.into_value());
+        dict.insert(
+            "performed_at_display".into(),
+            self.performed_at_display.into_value(),
+        );
         dict.insert("late_entry_note".into(), self.late_entry_note.into_value());
         dict.insert("tags".into(), self.tags.into_value());
         dict.insert("body_typst".into(), self.body_typst.into_value());
@@ -189,11 +192,18 @@ mod tests {
         let mut entry = sample_entry("Nachträglich dokumentiert");
         entry.late_entry_note = Some("Nachträglich erfasst: 09.09.2026 08:00 CEST".to_string());
 
-        let sections = vec![PdfSystemSection { system_name: "Ohne System".to_string(), entries: vec![entry] }];
+        let sections = vec![PdfSystemSection {
+            system_name: "Ohne System".to_string(),
+            entries: vec![entry],
+        }];
 
-        let pdf_bytes =
-            render_manual_pdf(data_dir.path(), "ACME GmbH", "07.09.2026 15:00 CEST".to_string(), sections)
-                .expect("PDF-Rendering sollte erfolgreich sein");
+        let pdf_bytes = render_manual_pdf(
+            data_dir.path(),
+            "ACME GmbH",
+            "07.09.2026 15:00 CEST".to_string(),
+            sections,
+        )
+        .expect("PDF-Rendering sollte erfolgreich sein");
 
         assert!(pdf_bytes.starts_with(b"%PDF-"));
     }
@@ -205,21 +215,29 @@ mod tests {
         std::fs::create_dir_all(&attachments_dir).unwrap();
         // Smallest possible valid PNG (1x1 transparent pixel).
         let png_bytes: &[u8] = &[
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00,
-            0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00,
-            0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
-            0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+            0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+            0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
         ];
         std::fs::write(attachments_dir.join("abc123.png"), png_bytes).unwrap();
 
         let mut entry = sample_entry("Mit Screenshot");
         entry.image_relative_paths = vec!["attachments/ab/abc123.png".to_string()];
 
-        let sections = vec![PdfSystemSection { system_name: "Ohne System".to_string(), entries: vec![entry] }];
+        let sections = vec![PdfSystemSection {
+            system_name: "Ohne System".to_string(),
+            entries: vec![entry],
+        }];
 
-        let pdf_bytes =
-            render_manual_pdf(data_dir.path(), "ACME GmbH", "07.09.2026 15:00 CEST".to_string(), sections)
-                .expect("PDF-Rendering mit eingebettetem Bild sollte erfolgreich sein");
+        let pdf_bytes = render_manual_pdf(
+            data_dir.path(),
+            "ACME GmbH",
+            "07.09.2026 15:00 CEST".to_string(),
+            sections,
+        )
+        .expect("PDF-Rendering mit eingebettetem Bild sollte erfolgreich sein");
 
         assert!(pdf_bytes.starts_with(b"%PDF-"));
     }
@@ -230,18 +248,30 @@ mod tests {
         let mut entry = sample_entry("Fehlendes Bild");
         entry.image_relative_paths = vec!["attachments/zz/does-not-exist.png".to_string()];
 
-        let sections = vec![PdfSystemSection { system_name: "Ohne System".to_string(), entries: vec![entry] }];
+        let sections = vec![PdfSystemSection {
+            system_name: "Ohne System".to_string(),
+            entries: vec![entry],
+        }];
 
-        let result = render_manual_pdf(data_dir.path(), "ACME GmbH", "07.09.2026 15:00 CEST".to_string(), sections);
+        let result = render_manual_pdf(
+            data_dir.path(),
+            "ACME GmbH",
+            "07.09.2026 15:00 CEST".to_string(),
+            sections,
+        );
         assert!(matches!(result, Err(AppError::Io(_))));
     }
 
     #[test]
     fn empty_sections_still_produce_a_valid_cover_page_pdf() {
         let data_dir = tempfile::tempdir().unwrap();
-        let pdf_bytes =
-            render_manual_pdf(data_dir.path(), "ACME GmbH", "07.09.2026 15:00 CEST".to_string(), vec![])
-                .expect("PDF-Rendering ohne Einträge sollte erfolgreich sein");
+        let pdf_bytes = render_manual_pdf(
+            data_dir.path(),
+            "ACME GmbH",
+            "07.09.2026 15:00 CEST".to_string(),
+            vec![],
+        )
+        .expect("PDF-Rendering ohne Einträge sollte erfolgreich sein");
         assert!(pdf_bytes.starts_with(b"%PDF-"));
     }
 }

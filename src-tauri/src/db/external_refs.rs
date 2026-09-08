@@ -68,13 +68,18 @@ pub fn upsert(
 }
 
 pub fn get(conn: &Connection, id: i64) -> Result<ExternalRef, AppError> {
-    conn.query_row("SELECT * FROM external_refs WHERE id = ?1", params![id], row_to_external_ref)
-        .optional()?
-        .ok_or_else(|| AppError::NotFound(format!("external_ref {id} nicht gefunden")))
+    conn.query_row(
+        "SELECT * FROM external_refs WHERE id = ?1",
+        params![id],
+        row_to_external_ref,
+    )
+    .optional()?
+    .ok_or_else(|| AppError::NotFound(format!("external_ref {id} nicht gefunden")))
 }
 
 pub fn list_for_system(conn: &Connection, system_id: i64) -> Result<Vec<ExternalRef>, AppError> {
-    let mut stmt = conn.prepare("SELECT * FROM external_refs WHERE system_id = ?1 ORDER BY plugin_id")?;
+    let mut stmt =
+        conn.prepare("SELECT * FROM external_refs WHERE system_id = ?1 ORDER BY plugin_id")?;
     let rows = stmt.query_map(params![system_id], row_to_external_ref)?;
     let mut result = Vec::new();
     for row in rows {
@@ -98,7 +103,8 @@ pub fn list_for_system(conn: &Connection, system_id: i64) -> Result<Vec<External
 /// aktuellen `customer_id` auffindbar sein statt nur innerhalb der Systeme
 /// EINES Kunden gesucht zu werden).
 pub fn list_for_plugin(conn: &Connection, plugin_id: &str) -> Result<Vec<ExternalRef>, AppError> {
-    let mut stmt = conn.prepare("SELECT * FROM external_refs WHERE plugin_id = ?1 ORDER BY external_id")?;
+    let mut stmt =
+        conn.prepare("SELECT * FROM external_refs WHERE plugin_id = ?1 ORDER BY external_id")?;
     let rows = stmt.query_map(params![plugin_id], row_to_external_ref)?;
     let mut result = Vec::new();
     for row in rows {
@@ -130,12 +136,27 @@ mod tests {
     }
 
     fn seed_system(conn: &Connection) -> i64 {
-        let customer_id = customers::create(conn, NewCustomer { name: "ACME".into(), short_code: "ACME".into(), notes: "".into() }, &berlin())
-            .unwrap()
-            .id;
+        let customer_id = customers::create(
+            conn,
+            NewCustomer {
+                name: "ACME".into(),
+                short_code: "ACME".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap()
+        .id;
         systems::create(
             conn,
-            NewSystem { customer_id, name: "FS01".into(), system_type: "Server".into(), hostname: "fs01.acme.local".into(), ip_address: "10.0.0.5".into(), notes: "".into() },
+            NewSystem {
+                customer_id,
+                name: "FS01".into(),
+                system_type: "Server".into(),
+                hostname: "fs01.acme.local".into(),
+                ip_address: "10.0.0.5".into(),
+                notes: "".into(),
+            },
             &berlin(),
         )
         .unwrap()
@@ -147,8 +168,24 @@ mod tests {
         let conn = migrated_connection();
         let system_id = seed_system(&conn);
 
-        let first = upsert(&conn, system_id, "dummy", "dummy-1", r#"{"status":"ok"}"#, &berlin()).unwrap();
-        let second = upsert(&conn, system_id, "dummy", "dummy-1", r#"{"status":"changed"}"#, &berlin()).unwrap();
+        let first = upsert(
+            &conn,
+            system_id,
+            "dummy",
+            "dummy-1",
+            r#"{"status":"ok"}"#,
+            &berlin(),
+        )
+        .unwrap();
+        let second = upsert(
+            &conn,
+            system_id,
+            "dummy",
+            "dummy-1",
+            r#"{"status":"changed"}"#,
+            &berlin(),
+        )
+        .unwrap();
 
         assert_eq!(first.id, second.id);
         assert_eq!(second.payload_json, r#"{"status":"changed"}"#);
@@ -227,11 +264,38 @@ mod tests {
     #[test]
     fn list_for_plugin_finds_link_regardless_of_the_linked_systems_current_customer() {
         let conn = migrated_connection();
-        let customer_a = customers::create(&conn, NewCustomer { name: "Falscher Kunde".into(), short_code: "FALSCH".into(), notes: "".into() }, &berlin()).unwrap().id;
-        let customer_b = customers::create(&conn, NewCustomer { name: "Richtiger Kunde".into(), short_code: "RICHTIG".into(), notes: "".into() }, &berlin()).unwrap().id;
+        let customer_a = customers::create(
+            &conn,
+            NewCustomer {
+                name: "Falscher Kunde".into(),
+                short_code: "FALSCH".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap()
+        .id;
+        let customer_b = customers::create(
+            &conn,
+            NewCustomer {
+                name: "Richtiger Kunde".into(),
+                short_code: "RICHTIG".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap()
+        .id;
         let system_under_a = systems::create(
             &conn,
-            NewSystem { customer_id: customer_a, name: "SRV-01".into(), system_type: "".into(), hostname: "".into(), ip_address: "".into(), notes: "".into() },
+            NewSystem {
+                customer_id: customer_a,
+                name: "SRV-01".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
             &berlin(),
         )
         .unwrap()

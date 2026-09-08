@@ -132,7 +132,12 @@ fn row_to_entry(row: &Row) -> rusqlite::Result<Entry> {
     })
 }
 
-pub fn create(conn: &Connection, data_dir: &std::path::Path, input: NewEntry, tz: &Tz) -> Result<Entry, AppError> {
+pub fn create(
+    conn: &Connection,
+    data_dir: &std::path::Path,
+    input: NewEntry,
+    tz: &Tz,
+) -> Result<Entry, AppError> {
     let (now_utc, now_tz) = now_with_tz(tz);
     conn.execute(
         "INSERT INTO entries (customer_id, system_id, title, body_md, category, performed_at_utc, performed_at_tz, created_at_utc, created_at_tz, updated_at_utc, updated_at_tz)
@@ -157,14 +162,24 @@ pub fn create(conn: &Connection, data_dir: &std::path::Path, input: NewEntry, tz
 
 pub fn get(conn: &Connection, id: i64) -> Result<Entry, AppError> {
     let mut entry = conn
-        .query_row("SELECT * FROM entries WHERE id = ?1", params![id], row_to_entry)
+        .query_row(
+            "SELECT * FROM entries WHERE id = ?1",
+            params![id],
+            row_to_entry,
+        )
         .optional()?
         .ok_or_else(|| AppError::NotFound(format!("Eintrag {id} nicht gefunden")))?;
     entry.tags = tags::tags_for_entry(conn, id)?;
     Ok(entry)
 }
 
-pub fn update(conn: &Connection, data_dir: &std::path::Path, id: i64, input: UpdateEntry, tz: &Tz) -> Result<Entry, AppError> {
+pub fn update(
+    conn: &Connection,
+    data_dir: &std::path::Path,
+    id: i64,
+    input: UpdateEntry,
+    tz: &Tz,
+) -> Result<Entry, AppError> {
     let (now_utc, now_tz) = now_with_tz(tz);
     let changed = conn.execute(
         "UPDATE entries SET system_id = ?1, title = ?2, body_md = ?3, category = ?4, performed_at_utc = ?5, performed_at_tz = ?6, updated_at_utc = ?7, updated_at_tz = ?8 WHERE id = ?9",
@@ -199,18 +214,34 @@ fn resolve_pending_attachments(
         return Ok(());
     }
     use base64::prelude::*;
-    let mut body_md: String = conn.query_row("SELECT body_md FROM entries WHERE id = ?1", params![entry_id], |r| r.get(0))?;
+    let mut body_md: String = conn.query_row(
+        "SELECT body_md FROM entries WHERE id = ?1",
+        params![entry_id],
+        |r| r.get(0),
+    )?;
     for item in pending {
         let bytes = BASE64_STANDARD
             .decode(&item.bytes_base64)
             .map_err(|e| AppError::Config(format!("Anhang konnte nicht dekodiert werden: {e}")))?;
         let attachment = crate::attachments::store::attach_bytes_to_entry(
-            conn, data_dir, entry_id, &bytes, &item.original_filename, &item.mime_type, tz,
+            conn,
+            data_dir,
+            entry_id,
+            &bytes,
+            &item.original_filename,
+            &item.mime_type,
+            tz,
         )?;
-        let relative_path = crate::attachments::store::relative_path_for(&attachment.sha256, &item.original_filename);
+        let relative_path = crate::attachments::store::relative_path_for(
+            &attachment.sha256,
+            &item.original_filename,
+        );
         body_md = body_md.replace(&item.placeholder_token, &relative_path);
     }
-    conn.execute("UPDATE entries SET body_md = ?1 WHERE id = ?2", params![body_md, entry_id])?;
+    conn.execute(
+        "UPDATE entries SET body_md = ?1 WHERE id = ?2",
+        params![body_md, entry_id],
+    )?;
     Ok(())
 }
 
@@ -230,7 +261,14 @@ pub fn list(conn: &Connection, filter: &EntryFilter) -> Result<Vec<Entry>, AppEr
     )?;
     let category_str = filter.category.map(|c| c.as_db_str());
     let rows = stmt.query_map(
-        params![filter.customer_id, filter.system_id, category_str, filter.from_utc, filter.to_utc, filter.tag],
+        params![
+            filter.customer_id,
+            filter.system_id,
+            category_str,
+            filter.from_utc,
+            filter.to_utc,
+            filter.tag
+        ],
         row_to_entry,
     )?;
     let mut result = Vec::new();
@@ -257,12 +295,25 @@ mod tests {
     }
 
     fn seed_customer(conn: &Connection) -> i64 {
-        customers::create(conn, NewCustomer { name: "ACME".into(), short_code: "ACME".into(), notes: "".into() }, &berlin())
-            .unwrap()
-            .id
+        customers::create(
+            conn,
+            NewCustomer {
+                name: "ACME".into(),
+                short_code: "ACME".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap()
+        .id
     }
 
-    fn new_entry(customer_id: i64, title: &str, performed_at_utc: &str, category: Category) -> NewEntry {
+    fn new_entry(
+        customer_id: i64,
+        title: &str,
+        performed_at_utc: &str,
+        category: Category,
+    ) -> NewEntry {
         NewEntry {
             customer_id,
             system_id: None,
@@ -281,7 +332,18 @@ mod tests {
         let conn = migrated_connection();
         let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
-        let created = create(&conn, data_dir.path(), new_entry(customer_id, "Update", "2026-09-07T12:00:00.000Z", Category::Wartung), &berlin()).unwrap();
+        let created = create(
+            &conn,
+            data_dir.path(),
+            new_entry(
+                customer_id,
+                "Update",
+                "2026-09-07T12:00:00.000Z",
+                Category::Wartung,
+            ),
+            &berlin(),
+        )
+        .unwrap();
         assert_eq!(created.tags, vec!["exchange".to_string()]);
         assert_eq!(created.created_at_utc, created.updated_at_utc);
         assert_eq!(get(&conn, created.id).unwrap(), created);
@@ -292,7 +354,18 @@ mod tests {
         let conn = migrated_connection();
         let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
-        let created = create(&conn, data_dir.path(), new_entry(customer_id, "Update", "2026-09-07T12:00:00.000Z", Category::Wartung), &berlin()).unwrap();
+        let created = create(
+            &conn,
+            data_dir.path(),
+            new_entry(
+                customer_id,
+                "Update",
+                "2026-09-07T12:00:00.000Z",
+                Category::Wartung,
+            ),
+            &berlin(),
+        )
+        .unwrap();
 
         let updated = update(
             &conn,
@@ -323,11 +396,36 @@ mod tests {
         let conn = migrated_connection();
         let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
-        let older = create(&conn, data_dir.path(), new_entry(customer_id, "Älter", "2026-09-01T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
-        let newer = create(&conn, data_dir.path(), new_entry(customer_id, "Neuer", "2026-09-07T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
+        let older = create(
+            &conn,
+            data_dir.path(),
+            new_entry(
+                customer_id,
+                "Älter",
+                "2026-09-01T10:00:00.000Z",
+                Category::Wartung,
+            ),
+            &berlin(),
+        )
+        .unwrap();
+        let newer = create(
+            &conn,
+            data_dir.path(),
+            new_entry(
+                customer_id,
+                "Neuer",
+                "2026-09-07T10:00:00.000Z",
+                Category::Wartung,
+            ),
+            &berlin(),
+        )
+        .unwrap();
 
         let result = list(&conn, &EntryFilter::default()).unwrap();
-        assert_eq!(result.iter().map(|e| e.id).collect::<Vec<_>>(), vec![newer.id, older.id]);
+        assert_eq!(
+            result.iter().map(|e| e.id).collect::<Vec<_>>(),
+            vec![newer.id, older.id]
+        );
     }
 
     #[test]
@@ -335,18 +433,57 @@ mod tests {
         let conn = migrated_connection();
         let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
-        create(&conn, data_dir.path(), new_entry(customer_id, "Wartung", "2026-09-05T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
-        let stoerung = create(&conn, data_dir.path(), new_entry(customer_id, "Störung", "2026-09-06T10:00:00.000Z", Category::Stoerung), &berlin()).unwrap();
+        create(
+            &conn,
+            data_dir.path(),
+            new_entry(
+                customer_id,
+                "Wartung",
+                "2026-09-05T10:00:00.000Z",
+                Category::Wartung,
+            ),
+            &berlin(),
+        )
+        .unwrap();
+        let stoerung = create(
+            &conn,
+            data_dir.path(),
+            new_entry(
+                customer_id,
+                "Störung",
+                "2026-09-06T10:00:00.000Z",
+                Category::Stoerung,
+            ),
+            &berlin(),
+        )
+        .unwrap();
 
-        let by_category = list(&conn, &EntryFilter { category: Some(Category::Stoerung), ..Default::default() }).unwrap();
-        assert_eq!(by_category.iter().map(|e| e.id).collect::<Vec<_>>(), vec![stoerung.id]);
+        let by_category = list(
+            &conn,
+            &EntryFilter {
+                category: Some(Category::Stoerung),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            by_category.iter().map(|e| e.id).collect::<Vec<_>>(),
+            vec![stoerung.id]
+        );
 
         let by_range = list(
             &conn,
-            &EntryFilter { from_utc: Some("2026-09-06T00:00:00.000Z".into()), to_utc: Some("2026-09-07T00:00:00.000Z".into()), ..Default::default() },
+            &EntryFilter {
+                from_utc: Some("2026-09-06T00:00:00.000Z".into()),
+                to_utc: Some("2026-09-07T00:00:00.000Z".into()),
+                ..Default::default()
+            },
         )
         .unwrap();
-        assert_eq!(by_range.iter().map(|e| e.id).collect::<Vec<_>>(), vec![stoerung.id]);
+        assert_eq!(
+            by_range.iter().map(|e| e.id).collect::<Vec<_>>(),
+            vec![stoerung.id]
+        );
     }
 
     #[test]
@@ -354,17 +491,46 @@ mod tests {
         let conn = migrated_connection();
         let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
-        let with_tag = create(&conn, data_dir.path(), new_entry(customer_id, "Mit Tag", "2026-09-05T10:00:00.000Z", Category::Wartung), &berlin()).unwrap();
+        let with_tag = create(
+            &conn,
+            data_dir.path(),
+            new_entry(
+                customer_id,
+                "Mit Tag",
+                "2026-09-05T10:00:00.000Z",
+                Category::Wartung,
+            ),
+            &berlin(),
+        )
+        .unwrap();
         create(
             &conn,
             data_dir.path(),
-            NewEntry { tag_names: vec!["anderes".into()], ..new_entry(customer_id, "Ohne passendes Tag", "2026-09-06T10:00:00.000Z", Category::Wartung) },
+            NewEntry {
+                tag_names: vec!["anderes".into()],
+                ..new_entry(
+                    customer_id,
+                    "Ohne passendes Tag",
+                    "2026-09-06T10:00:00.000Z",
+                    Category::Wartung,
+                )
+            },
             &berlin(),
         )
         .unwrap();
 
-        let result = list(&conn, &EntryFilter { tag: Some("exchange".into()), ..Default::default() }).unwrap();
-        assert_eq!(result.iter().map(|e| e.id).collect::<Vec<_>>(), vec![with_tag.id]);
+        let result = list(
+            &conn,
+            &EntryFilter {
+                tag: Some("exchange".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            result.iter().map(|e| e.id).collect::<Vec<_>>(),
+            vec![with_tag.id]
+        );
     }
 
     #[test]
@@ -374,7 +540,12 @@ mod tests {
         let data_dir = temp_data_dir();
         let customer_id = seed_customer(&conn);
 
-        let mut input = new_entry(customer_id, "Mit Screenshot", "2026-09-07T12:00:00.000Z", Category::Wartung);
+        let mut input = new_entry(
+            customer_id,
+            "Mit Screenshot",
+            "2026-09-07T12:00:00.000Z",
+            Category::Wartung,
+        );
         input.body_md = "Vorher\n![Screenshot](pending:tok1)\nNachher".into();
         input.pending_attachments = vec![PendingAttachment {
             placeholder_token: "pending:tok1".into(),

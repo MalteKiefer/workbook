@@ -34,9 +34,12 @@ pub struct AppState {
 pub fn run() {
     let data_dir = config::resolve_data_dir();
     let config_path = data_dir.join("config.toml");
-    let mut app_config = Config::load_or_default(&config_path).expect("Konfiguration konnte nicht geladen werden");
+    let mut app_config =
+        Config::load_or_default(&config_path).expect("Konfiguration konnte nicht geladen werden");
     app_config.data_dir = data_dir.clone();
-    app_config.save(&config_path).expect("Konfiguration konnte nicht gespeichert werden");
+    app_config
+        .save(&config_path)
+        .expect("Konfiguration konnte nicht gespeichert werden");
 
     if let Err(e) = backup::apply_pending_restore_if_present(&data_dir) {
         eprintln!("Ausstehende Wiederherstellung konnte nicht angewendet werden: {e}");
@@ -45,9 +48,11 @@ pub fn run() {
     let db_path = data_dir.join(backup::DB_FILE_NAME);
     let pool = build_pool(&db_path).expect("Datenbank-Pool konnte nicht erstellt werden");
     {
-        let system_tz = time::system_timezone().expect("Systemzeitzone konnte nicht ermittelt werden");
+        let system_tz =
+            time::system_timezone().expect("Systemzeitzone konnte nicht ermittelt werden");
         let mut conn = pool.get().expect("Keine Datenbankverbindung verfügbar");
-        db::migrations::run_migrations(&mut conn, &db_path, &system_tz).expect("Migration fehlgeschlagen");
+        db::migrations::run_migrations(&mut conn, &db_path, &system_tz)
+            .expect("Migration fehlgeschlagen");
     }
 
     let hotkey_config = app_config.hotkeys.clone();
@@ -64,7 +69,11 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState { pool, config: Mutex::new(app_config), previous_foreground: Mutex::new(None) })
+        .manage(AppState {
+            pool,
+            config: Mutex::new(app_config),
+            previous_foreground: Mutex::new(None),
+        })
         .setup(move |app| {
             window::install_hide_on_close(app.handle());
             if let Err(e) = tray::build_tray(app.handle()) {
@@ -86,10 +95,18 @@ pub fn run() {
             window::install_hide_on_close_for(&quick_capture_window);
 
             let state = app.state::<AppState>();
-            let autostart_enabled = state.config.lock().expect("Config-Mutex vergiftet").autostart_enabled;
+            let autostart_enabled = state
+                .config
+                .lock()
+                .expect("Config-Mutex vergiftet")
+                .autostart_enabled;
             use tauri_plugin_autostart::ManagerExt;
             let autolaunch = app.autolaunch();
-            let sync_result = if autostart_enabled { autolaunch.enable() } else { autolaunch.disable() };
+            let sync_result = if autostart_enabled {
+                autolaunch.enable()
+            } else {
+                autolaunch.disable()
+            };
             if let Err(e) = sync_result {
                 eprintln!("Autostart konnte nicht synchronisiert werden: {e}");
             }

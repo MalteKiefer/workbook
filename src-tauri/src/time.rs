@@ -5,8 +5,7 @@ use regex::Regex;
 use crate::error::AppError;
 
 pub fn system_timezone() -> Result<Tz, AppError> {
-    let name = iana_time_zone::get_timezone()
-        .map_err(|e| AppError::Timezone(e.to_string()))?;
+    let name = iana_time_zone::get_timezone().map_err(|e| AppError::Timezone(e.to_string()))?;
     name.parse::<Tz>()
         .map_err(|_| AppError::Timezone(format!("unbekannte Zone: {name}")))
 }
@@ -73,7 +72,10 @@ pub fn format_timestamp_for_display(utc: &str, tz_name: &str) -> Result<String, 
     let tz: Tz = tz_name
         .parse()
         .map_err(|_| AppError::Timezone(format!("unbekannte Zone: {tz_name}")))?;
-    Ok(parsed.with_timezone(&tz).format("%d.%m.%Y %H:%M %Z").to_string())
+    Ok(parsed
+        .with_timezone(&tz)
+        .format("%d.%m.%Y %H:%M %Z")
+        .to_string())
 }
 
 fn localize(
@@ -107,9 +109,7 @@ fn yesterday_pattern() -> &'static Regex {
 
 fn absolute_pattern() -> &'static Regex {
     static PATTERN: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(r"^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{1,2}):(\d{2})$").unwrap()
-    })
+    PATTERN.get_or_init(|| Regex::new(r"^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{1,2}):(\d{2})$").unwrap())
 }
 
 #[cfg(test)]
@@ -173,7 +173,8 @@ mod tests {
 
     #[test]
     fn formats_utc_timestamp_in_target_zone_with_abbreviation() {
-        let display = format_timestamp_for_display("2026-09-07T12:32:00.000Z", "Europe/Berlin").unwrap();
+        let display =
+            format_timestamp_for_display("2026-09-07T12:32:00.000Z", "Europe/Berlin").unwrap();
         assert!(display.starts_with("07.09.2026 14:32"));
     }
 

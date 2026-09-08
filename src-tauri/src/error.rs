@@ -111,7 +111,9 @@ mod tests {
 
     #[test]
     fn plugin_error_converts_from_plugin_error_type() {
-        let plugin_err = crate::plugin::PluginError::Unreachable("Ninja-API antwortete mit Status 500".to_string());
+        let plugin_err = crate::plugin::PluginError::Unreachable(
+            "Ninja-API antwortete mit Status 500".to_string(),
+        );
         let app_err: AppError = plugin_err.into();
         assert_eq!(app_err.code(), "plugin");
         assert!(app_err.to_string().contains("Status 500"));

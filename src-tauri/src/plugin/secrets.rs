@@ -23,9 +23,11 @@ const SERVICE_NAME: &str = "wartungsdoku";
 pub fn store_secret(plugin_id: &str, secret: &str) -> Result<(), AppError> {
     let entry = keyring::Entry::new(SERVICE_NAME, plugin_id)
         .map_err(|e| AppError::Config(format!("Schlüsselspeicher nicht verfügbar: {e}")))?;
-    entry
-        .set_password(secret)
-        .map_err(|e| AppError::Config(format!("Anmeldedaten konnten nicht gespeichert werden: {e}")))
+    entry.set_password(secret).map_err(|e| {
+        AppError::Config(format!(
+            "Anmeldedaten konnten nicht gespeichert werden: {e}"
+        ))
+    })
 }
 
 /// Liest ein zuvor gespeichertes Plugin-Zugangsdatum. `Ok(None)`, wenn für
@@ -36,6 +38,8 @@ pub fn load_secret(plugin_id: &str) -> Result<Option<String>, AppError> {
     match entry.get_password() {
         Ok(secret) => Ok(Some(secret)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(AppError::Config(format!("Anmeldedaten konnten nicht gelesen werden: {e}"))),
+        Err(e) => Err(AppError::Config(format!(
+            "Anmeldedaten konnten nicht gelesen werden: {e}"
+        ))),
     }
 }

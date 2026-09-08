@@ -88,8 +88,14 @@ mod tests {
         assert_eq!(current_version(&conn).unwrap(), 1);
 
         for table in [
-            "customers", "systems", "entries", "tags", "entry_tags",
-            "attachments", "external_refs", "entries_fts",
+            "customers",
+            "systems",
+            "entries",
+            "tags",
+            "entry_tags",
+            "attachments",
+            "external_refs",
+            "entries_fts",
         ] {
             let count: i64 = conn
                 .query_row(
@@ -177,7 +183,8 @@ mod tests {
             .unwrap();
         assert_eq!(hit_count, 1);
 
-        conn.execute("DELETE FROM entries WHERE id = 1", []).unwrap();
+        conn.execute("DELETE FROM entries WHERE id = 1", [])
+            .unwrap();
         let hit_count_after_delete: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH 'kumulatives'",

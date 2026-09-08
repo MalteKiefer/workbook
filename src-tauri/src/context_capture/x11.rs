@@ -75,7 +75,12 @@ pub fn restore_foreground(handle: &ForegroundHandle) {
     // data[0] = 1 => source indication: normal application (EWMH spec).
     // data[1] = 0 => timestamp: CurrentTime — acceptable here, we don't have the
     // original triggering event's timestamp available.
-    let event = ClientMessageEvent::new(32, handle.0 as Window, net_active_window, [1u32, 0, 0, 0, 0]);
+    let event = ClientMessageEvent::new(
+        32,
+        handle.0 as Window,
+        net_active_window,
+        [1u32, 0, 0, 0, 0],
+    );
 
     let mask = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT;
     let _ = conn.send_event(false, root, mask, event);
@@ -97,8 +102,18 @@ pub fn foreground_window_title() -> Option<String> {
 }
 
 fn read_utf8_property(conn: &impl Connection, window: u32) -> Option<String> {
-    let utf8_string = conn.intern_atom(false, b"UTF8_STRING").ok()?.reply().ok()?.atom;
-    let net_wm_name = conn.intern_atom(false, b"_NET_WM_NAME").ok()?.reply().ok()?.atom;
+    let utf8_string = conn
+        .intern_atom(false, b"UTF8_STRING")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    let net_wm_name = conn
+        .intern_atom(false, b"_NET_WM_NAME")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
 
     let reply = conn
         .get_property(false, window, net_wm_name, utf8_string, 0, 1024)

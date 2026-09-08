@@ -192,7 +192,10 @@ impl SnipeitPlugin {
     /// `list_systems`, weil Firmen keine Assets sind und der generische
     /// Trait dafür keinen Platz vorsieht -- analog zu
     /// `plugin::ninja::NinjaPlugin::list_organizations`.
-    pub fn list_companies(&self, credentials: &PluginCredentials) -> Result<Vec<SnipeitCompany>, PluginError> {
+    pub fn list_companies(
+        &self,
+        credentials: &PluginCredentials,
+    ) -> Result<Vec<SnipeitCompany>, PluginError> {
         let agent = build_agent();
         let raw = fetch_all_companies(&agent, &self.base_url, &credentials.secret)?;
         Ok(map_companies_response(&raw))
@@ -203,7 +206,10 @@ impl SnipeitPlugin {
     /// Trait-Methode `list_systems`, die absichtlich beim schmalen,
     /// plugin-übergreifenden `ExternalSystem`-Typ bleibt (kein
     /// `asset_tag`/`serial`/`company_id`-Feld dort).
-    pub fn list_devices(&self, credentials: &PluginCredentials) -> Result<Vec<SnipeitDevice>, PluginError> {
+    pub fn list_devices(
+        &self,
+        credentials: &PluginCredentials,
+    ) -> Result<Vec<SnipeitDevice>, PluginError> {
         let agent = build_agent();
         let raw = fetch_all_hardware(&agent, &self.base_url, &credentials.secret)?;
         Ok(map_hardware_response(&raw))
@@ -227,17 +233,33 @@ impl Plugin for SnipeitPlugin {
         self.id.as_str()
     }
 
-    fn list_systems(&self, credentials: &PluginCredentials) -> Result<Vec<ExternalSystem>, PluginError> {
+    fn list_systems(
+        &self,
+        credentials: &PluginCredentials,
+    ) -> Result<Vec<ExternalSystem>, PluginError> {
         let devices = self.list_devices(credentials)?;
         Ok(devices
             .into_iter()
-            .map(|d| ExternalSystem { external_id: d.external_id, name: d.name, hostname: d.hostname })
+            .map(|d| ExternalSystem {
+                external_id: d.external_id,
+                name: d.name,
+                hostname: d.hostname,
+            })
             .collect())
     }
 
-    fn get_system_details(&self, credentials: &PluginCredentials, external_id: &str) -> Result<serde_json::Value, PluginError> {
+    fn get_system_details(
+        &self,
+        credentials: &PluginCredentials,
+        external_id: &str,
+    ) -> Result<serde_json::Value, PluginError> {
         let agent = build_agent();
-        fetch_json(&agent, &self.base_url, &format!("/hardware/{external_id}"), &credentials.secret)
+        fetch_json(
+            &agent,
+            &self.base_url,
+            &format!("/hardware/{external_id}"),
+            &credentials.secret,
+        )
     }
 
     fn link_system(&self, local_system_id: i64, external_id: &str) -> Result<(), PluginError> {
@@ -256,17 +278,31 @@ fn build_agent() -> Agent {
     Agent::new_with_config(config)
 }
 
-fn fetch_json(agent: &Agent, base_url: &str, path: &str, token: &str) -> Result<serde_json::Value, PluginError> {
+fn fetch_json(
+    agent: &Agent,
+    base_url: &str,
+    path: &str,
+    token: &str,
+) -> Result<serde_json::Value, PluginError> {
     let url = format!("{}{API_PATH}{path}", base_url.trim_end_matches('/'));
     let mut response = agent
         .get(&url)
         .header("Authorization", format!("Bearer {token}"))
         .call()
         .map_err(map_ureq_error)?;
-    response.body_mut().read_json::<serde_json::Value>().map_err(map_ureq_error)
+    response
+        .body_mut()
+        .read_json::<serde_json::Value>()
+        .map_err(map_ureq_error)
 }
 
-fn fetch_hardware_page(agent: &Agent, base_url: &str, token: &str, offset: u32, limit: u32) -> Result<serde_json::Value, PluginError> {
+fn fetch_hardware_page(
+    agent: &Agent,
+    base_url: &str,
+    token: &str,
+    offset: u32,
+    limit: u32,
+) -> Result<serde_json::Value, PluginError> {
     let url = format!("{}{API_PATH}/hardware", base_url.trim_end_matches('/'));
     let mut response = agent
         .get(&url)
@@ -275,10 +311,19 @@ fn fetch_hardware_page(agent: &Agent, base_url: &str, token: &str, offset: u32, 
         .query("offset", offset.to_string())
         .call()
         .map_err(map_ureq_error)?;
-    response.body_mut().read_json::<serde_json::Value>().map_err(map_ureq_error)
+    response
+        .body_mut()
+        .read_json::<serde_json::Value>()
+        .map_err(map_ureq_error)
 }
 
-fn fetch_companies_page(agent: &Agent, base_url: &str, token: &str, offset: u32, limit: u32) -> Result<serde_json::Value, PluginError> {
+fn fetch_companies_page(
+    agent: &Agent,
+    base_url: &str,
+    token: &str,
+    offset: u32,
+    limit: u32,
+) -> Result<serde_json::Value, PluginError> {
     let url = format!("{}{API_PATH}/companies", base_url.trim_end_matches('/'));
     let mut response = agent
         .get(&url)
@@ -287,7 +332,10 @@ fn fetch_companies_page(agent: &Agent, base_url: &str, token: &str, offset: u32,
         .query("offset", offset.to_string())
         .call()
         .map_err(map_ureq_error)?;
-    response.body_mut().read_json::<serde_json::Value>().map_err(map_ureq_error)
+    response
+        .body_mut()
+        .read_json::<serde_json::Value>()
+        .map_err(map_ureq_error)
 }
 
 /// Ruft alle Seiten von `GET /api/v1/hardware` ab und reicht die rohen
@@ -296,7 +344,11 @@ fn fetch_companies_page(agent: &Agent, base_url: &str, token: &str, offset: u32,
 /// als `PAGE_LIMIT` Zeilen liefert (letzte Seite) ODER die bereits
 /// abgerufene Zeilenzahl `total` erreicht, oder wenn `MAX_PAGES` erreicht
 /// ist (Schutz gegen eine sich falsch verhaltende Gegenstelle).
-fn fetch_all_hardware(agent: &Agent, base_url: &str, token: &str) -> Result<Vec<serde_json::Value>, PluginError> {
+fn fetch_all_hardware(
+    agent: &Agent,
+    base_url: &str,
+    token: &str,
+) -> Result<Vec<serde_json::Value>, PluginError> {
     let mut all = Vec::new();
     let mut offset: u32 = 0;
     for _ in 0..MAX_PAGES {
@@ -314,7 +366,11 @@ fn fetch_all_hardware(agent: &Agent, base_url: &str, token: &str) -> Result<Vec<
 
 /// Ruft alle Seiten von `GET /api/v1/companies` ab, exakt nach demselben
 /// Muster wie `fetch_all_hardware`.
-fn fetch_all_companies(agent: &Agent, base_url: &str, token: &str) -> Result<Vec<serde_json::Value>, PluginError> {
+fn fetch_all_companies(
+    agent: &Agent,
+    base_url: &str,
+    token: &str,
+) -> Result<Vec<serde_json::Value>, PluginError> {
     let mut all = Vec::new();
     let mut offset: u32 = 0;
     for _ in 0..MAX_PAGES {
@@ -335,8 +391,12 @@ fn map_ureq_error(e: ureq::Error) -> PluginError {
         ureq::Error::StatusCode(code) if code == 401 || code == 403 => {
             PluginError::Authentication(format!("Snipe-IT-API antwortete mit Status {code}"))
         }
-        ureq::Error::StatusCode(code) => PluginError::Unreachable(format!("Snipe-IT-API antwortete mit Status {code}")),
-        ureq::Error::Json(err) => PluginError::UnexpectedResponse(format!("Ungültige JSON-Antwort: {err}")),
+        ureq::Error::StatusCode(code) => {
+            PluginError::Unreachable(format!("Snipe-IT-API antwortete mit Status {code}"))
+        }
+        ureq::Error::Json(err) => {
+            PluginError::UnexpectedResponse(format!("Ungültige JSON-Antwort: {err}"))
+        }
         other => PluginError::Unreachable(other.to_string()),
     }
 }
@@ -350,10 +410,14 @@ fn map_ureq_error(e: ureq::Error) -> PluginError {
 /// tatsächliche Zeilenzahl dieser Seite zurück (dann bricht
 /// `fetch_all_hardware` nach dieser einen Seite ab, statt in eine Endlos-
 /// schleife zu laufen).
-fn parse_hardware_page(json: &serde_json::Value) -> Result<(Vec<serde_json::Value>, u64), PluginError> {
-    let rows = json["rows"]
-        .as_array()
-        .ok_or_else(|| PluginError::UnexpectedResponse("Erwartete 'rows'-Liste in Snipe-IT-Geräte-Antwort".to_string()))?;
+fn parse_hardware_page(
+    json: &serde_json::Value,
+) -> Result<(Vec<serde_json::Value>, u64), PluginError> {
+    let rows = json["rows"].as_array().ok_or_else(|| {
+        PluginError::UnexpectedResponse(
+            "Erwartete 'rows'-Liste in Snipe-IT-Geräte-Antwort".to_string(),
+        )
+    })?;
     let total = json["total"].as_u64().unwrap_or(rows.len() as u64);
     Ok((rows.clone(), total))
 }
@@ -363,10 +427,14 @@ fn parse_hardware_page(json: &serde_json::Value) -> Result<(Vec<serde_json::Valu
 /// für beide Endpunkte verwendet), aber bewusst als eigene Funktion mit
 /// eigener Fehlermeldung gehalten, analog zu
 /// `plugin::level::parse_devices_page`/`parse_groups_page`.
-fn parse_companies_page(json: &serde_json::Value) -> Result<(Vec<serde_json::Value>, u64), PluginError> {
-    let rows = json["rows"]
-        .as_array()
-        .ok_or_else(|| PluginError::UnexpectedResponse("Erwartete 'rows'-Liste in Snipe-IT-Firmen-Antwort".to_string()))?;
+fn parse_companies_page(
+    json: &serde_json::Value,
+) -> Result<(Vec<serde_json::Value>, u64), PluginError> {
+    let rows = json["rows"].as_array().ok_or_else(|| {
+        PluginError::UnexpectedResponse(
+            "Erwartete 'rows'-Liste in Snipe-IT-Firmen-Antwort".to_string(),
+        )
+    })?;
     let total = json["total"].as_u64().unwrap_or(rows.len() as u64);
     Ok((rows.clone(), total))
 }
@@ -410,7 +478,15 @@ fn map_hardware_asset(value: &serde_json::Value) -> Option<SnipeitDevice> {
         serde_json::Value::String(s) => s.clone(),
         _ => UNASSIGNED_COMPANY_ID.to_string(),
     };
-    Some(SnipeitDevice { external_id, name, hostname: None, ip_address: None, asset_tag, serial, company_id })
+    Some(SnipeitDevice {
+        external_id,
+        name,
+        hostname: None,
+        ip_address: None,
+        asset_tag,
+        serial,
+        company_id,
+    })
 }
 
 /// Bildet die von `GET /api/v1/companies` gelieferte Zeilenliste auf
@@ -578,8 +654,20 @@ mod tests {
         let companies = map_companies_response(json.as_array().unwrap());
 
         assert_eq!(companies.len(), 2);
-        assert_eq!(companies[0], SnipeitCompany { id: "1".to_string(), name: "ACME Hauptsitz".to_string() });
-        assert_eq!(companies[1], SnipeitCompany { id: "2".to_string(), name: "ACME Zweigstelle".to_string() });
+        assert_eq!(
+            companies[0],
+            SnipeitCompany {
+                id: "1".to_string(),
+                name: "ACME Hauptsitz".to_string()
+            }
+        );
+        assert_eq!(
+            companies[1],
+            SnipeitCompany {
+                id: "2".to_string(),
+                name: "ACME Zweigstelle".to_string()
+            }
+        );
     }
 
     #[test]
@@ -616,7 +704,10 @@ mod tests {
 
     #[test]
     fn plugin_id_returns_configured_connection_id() {
-        let plugin = SnipeitPlugin::new("snipeit:acme-123".to_string(), "https://assets.example.com".to_string());
+        let plugin = SnipeitPlugin::new(
+            "snipeit:acme-123".to_string(),
+            "https://assets.example.com".to_string(),
+        );
         assert_eq!(plugin.id(), "snipeit:acme-123");
     }
 }

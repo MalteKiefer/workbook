@@ -11,7 +11,10 @@ pub struct LastSelection {
 
 #[tauri::command]
 pub fn get_last_selection(state: State<AppState>) -> Result<LastSelection, AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let (last_customer_id, last_system_id) = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         (config.last_customer_id, config.last_system_id)
@@ -22,7 +25,11 @@ pub fn get_last_selection(state: State<AppState>) -> Result<LastSelection, AppEr
 }
 
 #[tauri::command]
-pub fn open_quick_capture_with_context(app: AppHandle, customer_id: Option<i64>, system_id: Option<i64>) -> Result<(), AppError> {
+pub fn open_quick_capture_with_context(
+    app: AppHandle,
+    customer_id: Option<i64>,
+    system_id: Option<i64>,
+) -> Result<(), AppError> {
     crate::quickcapture::open_with_context(&app, customer_id, system_id)
 }
 
@@ -31,7 +38,11 @@ pub fn quick_capture_close(app: AppHandle, state: State<AppState>) -> Result<(),
     if let Some(window) = app.get_webview_window("quick-capture") {
         let _ = window.hide();
     }
-    let previous = state.previous_foreground.lock().expect("Foreground-Mutex vergiftet").take();
+    let previous = state
+        .previous_foreground
+        .lock()
+        .expect("Foreground-Mutex vergiftet")
+        .take();
     if let Some(handle) = previous {
         crate::context_capture::restore_foreground(&handle);
     }

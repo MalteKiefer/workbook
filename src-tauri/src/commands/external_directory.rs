@@ -60,36 +60,45 @@ fn plugin_cache_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("plugin-cache")
 }
 
-fn read_ninja_cache_file(data_dir: &Path, connection_id: &str) -> Result<Option<CachedNinjaSyncDto>, AppError> {
+fn read_ninja_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedNinjaSyncDto>, AppError> {
     let path = plugin_cache_dir(data_dir).join(format!("ninja-{connection_id}.json"));
     if !path.exists() {
         return Ok(None);
     }
     let text = std::fs::read_to_string(&path)?;
-    let cached: CachedNinjaSyncDto =
-        serde_json::from_str(&text).map_err(|e| AppError::Plugin(format!("Ninja-Cache-Datei ungültig: {e}")))?;
+    let cached: CachedNinjaSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Ninja-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
-fn read_level_cache_file(data_dir: &Path, connection_id: &str) -> Result<Option<CachedLevelSyncDto>, AppError> {
+fn read_level_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedLevelSyncDto>, AppError> {
     let path = plugin_cache_dir(data_dir).join(format!("level-{connection_id}.json"));
     if !path.exists() {
         return Ok(None);
     }
     let text = std::fs::read_to_string(&path)?;
-    let cached: CachedLevelSyncDto =
-        serde_json::from_str(&text).map_err(|e| AppError::Plugin(format!("Level-Cache-Datei ungültig: {e}")))?;
+    let cached: CachedLevelSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Level-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
-fn read_snipeit_cache_file(data_dir: &Path, connection_id: &str) -> Result<Option<CachedSnipeitSyncDto>, AppError> {
+fn read_snipeit_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedSnipeitSyncDto>, AppError> {
     let path = plugin_cache_dir(data_dir).join(format!("snipeit-{connection_id}.json"));
     if !path.exists() {
         return Ok(None);
     }
     let text = std::fs::read_to_string(&path)?;
-    let cached: CachedSnipeitSyncDto =
-        serde_json::from_str(&text).map_err(|e| AppError::Plugin(format!("Snipe-IT-Cache-Datei ungültig: {e}")))?;
+    let cached: CachedSnipeitSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Snipe-IT-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
@@ -103,7 +112,12 @@ fn read_snipeit_cache_file(data_dir: &Path, connection_id: &str) -> Result<Optio
 /// demselben Grund bereits löst (dortiger Kommentar), und genau der Zweck
 /// dieser Funktion (Geräte "automatisch" auftauchen lassen) würde sonst für
 /// gerade erst zugeordnete Organisationen verfehlt.
-fn collect_ninja(config: &Config, data_dir: &Path, customer_id: i64, out: &mut Vec<UnlinkedExternalSystemDto>) -> Result<(), AppError> {
+fn collect_ninja(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
     for connection in &config.ninja_connections {
         let Some(cache) = read_ninja_cache_file(data_dir, &connection.id)? else {
             continue;
@@ -112,7 +126,9 @@ fn collect_ninja(config: &Config, data_dir: &Path, customer_id: i64, out: &mut V
             let mapped_customer_id = config
                 .ninja_org_mappings
                 .iter()
-                .find(|m| m.connection_id == connection.id && m.organization_id == group.organization_id)
+                .find(|m| {
+                    m.connection_id == connection.id && m.organization_id == group.organization_id
+                })
                 .map(|m| m.customer_id);
             if mapped_customer_id != Some(customer_id) {
                 continue;
@@ -140,7 +156,12 @@ fn collect_ninja(config: &Config, data_dir: &Path, customer_id: i64, out: &mut V
 /// siehe `commands::level`-Moduldokumentation. Kein Staleness-Problem wie bei
 /// Ninja/Snipe-IT: `customer_id` ist ein direktes Verbindungsfeld, nicht in
 /// einer Cache-Datei eingefroren.
-fn collect_level(config: &Config, data_dir: &Path, customer_id: i64, out: &mut Vec<UnlinkedExternalSystemDto>) -> Result<(), AppError> {
+fn collect_level(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
     for connection in &config.level_connections {
         if connection.customer_id != customer_id {
             continue;
@@ -174,7 +195,12 @@ fn collect_level(config: &Config, data_dir: &Path, customer_id: i64, out: &mut V
 /// (`plugin::snipeit`) bereits selbst von `name` über `asset_tag` und
 /// `serial` bis zur externen ID zurückfällt, bevor der Wert überhaupt in den
 /// Cache gelangt.
-fn collect_snipeit(config: &Config, data_dir: &Path, customer_id: i64, out: &mut Vec<UnlinkedExternalSystemDto>) -> Result<(), AppError> {
+fn collect_snipeit(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
     for connection in &config.snipeit_connections {
         let Some(cache) = read_snipeit_cache_file(data_dir, &connection.id)? else {
             continue;
@@ -243,8 +269,12 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::commands::level::ExternalSystemDto as LevelExternalSystemDto;
-    use crate::commands::plugins::{ExternalSystemDto as NinjaExternalSystemDto, NinjaOrgDeviceGroupDto};
-    use crate::commands::snipeit::{ExternalSystemDto as SnipeitExternalSystemDto, SnipeitCompanyDeviceGroupDto};
+    use crate::commands::plugins::{
+        ExternalSystemDto as NinjaExternalSystemDto, NinjaOrgDeviceGroupDto,
+    };
+    use crate::commands::snipeit::{
+        ExternalSystemDto as SnipeitExternalSystemDto, SnipeitCompanyDeviceGroupDto,
+    };
     use crate::plugin::level::LevelConnectionMeta;
     use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
     use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
@@ -277,7 +307,11 @@ mod tests {
         }
     }
 
-    fn ninja_config_with_connection(connection_id: &str, organization_id: &str, mapped_customer_id: Option<i64>) -> Config {
+    fn ninja_config_with_connection(
+        connection_id: &str,
+        organization_id: &str,
+        mapped_customer_id: Option<i64>,
+    ) -> Config {
         let mut config = Config::default();
         config.ninja_connections.push(NinjaConnectionMeta {
             id: connection_id.to_string(),
@@ -313,7 +347,8 @@ mod tests {
         };
         write_json(&ninja_cache_path(dir.path(), "conn-1"), &cache);
 
-        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].plugin, "ninja");
@@ -337,7 +372,8 @@ mod tests {
         };
         write_json(&ninja_cache_path(dir.path(), "conn-1"), &cache);
 
-        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
 
         assert!(result.is_empty());
     }
@@ -358,7 +394,8 @@ mod tests {
         };
         write_json(&ninja_cache_path(dir.path(), "conn-1"), &cache);
 
-        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
 
         assert!(result.is_empty());
     }
@@ -380,7 +417,8 @@ mod tests {
         };
         write_json(&ninja_cache_path(dir.path(), "conn-1"), &cache);
 
-        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
 
         assert!(result.is_empty());
     }
@@ -421,7 +459,8 @@ mod tests {
         };
         write_json(&level_cache_path(dir.path(), "level-conn-1"), &cache);
 
-        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].plugin, "level");
@@ -452,7 +491,8 @@ mod tests {
         };
         write_json(&level_cache_path(dir.path(), "level-conn-1"), &cache);
 
-        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
 
         assert!(result.is_empty());
     }
@@ -480,7 +520,8 @@ mod tests {
         };
         write_json(&level_cache_path(dir.path(), "level-conn-1"), &cache);
 
-        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
 
         assert!(result.is_empty());
     }
@@ -536,7 +577,8 @@ mod tests {
         };
         write_json(&snipeit_cache_path(dir.path(), "snipeit-conn-1"), &cache);
 
-        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].plugin, "snipeit");
@@ -579,7 +621,8 @@ mod tests {
         };
         write_json(&snipeit_cache_path(dir.path(), "snipeit-conn-1"), &cache);
 
-        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
 
         assert!(result.is_empty());
     }
@@ -619,7 +662,8 @@ mod tests {
         };
         write_json(&snipeit_cache_path(dir.path(), "snipeit-conn-1"), &cache);
 
-        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
 
         assert!(result.is_empty());
     }
@@ -684,7 +728,8 @@ mod tests {
             },
         );
 
-        let mut result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
+        let mut result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
         result.sort_by(|a, b| a.plugin.cmp(&b.plugin));
 
         assert_eq!(result.len(), 2);

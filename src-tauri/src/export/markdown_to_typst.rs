@@ -173,7 +173,10 @@ mod tests {
     fn converts_bold_with_both_syntaxes() {
         assert_eq!(convert("**fett**"), "*fett*");
         assert_eq!(convert("__fett__"), "*fett*");
-        assert_eq!(convert("Text mit **fett** dazwischen"), "Text mit *fett* dazwischen");
+        assert_eq!(
+            convert("Text mit **fett** dazwischen"),
+            "Text mit *fett* dazwischen"
+        );
     }
 
     #[test]
@@ -196,7 +199,10 @@ mod tests {
 
     #[test]
     fn converts_inline_code_unchanged() {
-        assert_eq!(convert("Befehl: `systemctl restart nginx`"), "Befehl: `systemctl restart nginx`");
+        assert_eq!(
+            convert("Befehl: `systemctl restart nginx`"),
+            "Befehl: `systemctl restart nginx`"
+        );
     }
 
     #[test]

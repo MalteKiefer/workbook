@@ -6,17 +6,34 @@ use crate::error::AppError;
 use crate::window::show_and_focus_main;
 
 pub fn build_tray(app: &AppHandle) -> Result<(), AppError> {
-    let quick_capture_item = MenuItem::with_id(app, "quick_capture", "Schnellerfassung", true, None::<&str>)
-        .map_err(|e| AppError::Config(format!("Tray-Menüeintrag konnte nicht erstellt werden: {e}")))?;
-    let show_item = MenuItem::with_id(app, "show", "Fenster zeigen", true, None::<&str>)
-        .map_err(|e| AppError::Config(format!("Tray-Menüeintrag konnte nicht erstellt werden: {e}")))?;
-    let separator = PredefinedMenuItem::separator(app)
-        .map_err(|e| AppError::Config(format!("Tray-Trennlinie konnte nicht erstellt werden: {e}")))?;
-    let quit_item = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)
-        .map_err(|e| AppError::Config(format!("Tray-Menüeintrag konnte nicht erstellt werden: {e}")))?;
+    let quick_capture_item =
+        MenuItem::with_id(app, "quick_capture", "Schnellerfassung", true, None::<&str>).map_err(
+            |e| {
+                AppError::Config(format!(
+                    "Tray-Menüeintrag konnte nicht erstellt werden: {e}"
+                ))
+            },
+        )?;
+    let show_item =
+        MenuItem::with_id(app, "show", "Fenster zeigen", true, None::<&str>).map_err(|e| {
+            AppError::Config(format!(
+                "Tray-Menüeintrag konnte nicht erstellt werden: {e}"
+            ))
+        })?;
+    let separator = PredefinedMenuItem::separator(app).map_err(|e| {
+        AppError::Config(format!("Tray-Trennlinie konnte nicht erstellt werden: {e}"))
+    })?;
+    let quit_item = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>).map_err(|e| {
+        AppError::Config(format!(
+            "Tray-Menüeintrag konnte nicht erstellt werden: {e}"
+        ))
+    })?;
 
-    let menu = Menu::with_items(app, &[&quick_capture_item, &show_item, &separator, &quit_item])
-        .map_err(|e| AppError::Config(format!("Tray-Menü konnte nicht erstellt werden: {e}")))?;
+    let menu = Menu::with_items(
+        app,
+        &[&quick_capture_item, &show_item, &separator, &quit_item],
+    )
+    .map_err(|e| AppError::Config(format!("Tray-Menü konnte nicht erstellt werden: {e}")))?;
 
     let icon = app
         .default_window_icon()
@@ -38,7 +55,12 @@ pub fn build_tray(app: &AppHandle) -> Result<(), AppError> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
                 show_and_focus_main(tray.app_handle());
             }
         })

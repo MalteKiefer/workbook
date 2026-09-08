@@ -152,16 +152,16 @@ impl Config {
         }
         let text = std::fs::read_to_string(config_path)
             .map_err(|e| AppError::Config(format!("config.toml lesen fehlgeschlagen: {e}")))?;
-        toml::from_str(&text)
-            .map_err(|e| AppError::Config(format!("config.toml ungültig: {e}")))
+        toml::from_str(&text).map_err(|e| AppError::Config(format!("config.toml ungültig: {e}")))
     }
 
     pub fn save(&self, config_path: &Path) -> Result<(), AppError> {
         if let Some(parent) = config_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let text = toml::to_string_pretty(self)
-            .map_err(|e| AppError::Config(format!("config.toml serialisieren fehlgeschlagen: {e}")))?;
+        let text = toml::to_string_pretty(self).map_err(|e| {
+            AppError::Config(format!("config.toml serialisieren fehlgeschlagen: {e}"))
+        })?;
         std::fs::write(config_path, text)?;
         Ok(())
     }
@@ -238,7 +238,10 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert_eq!(loaded.ninja_connections.len(), 1);
-        assert_eq!(loaded.ninja_connections[0].base_url, "https://eu.ninjarmm.com");
+        assert_eq!(
+            loaded.ninja_connections[0].base_url,
+            "https://eu.ninjarmm.com"
+        );
         assert_eq!(loaded, config);
     }
 
@@ -347,7 +350,10 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert_eq!(loaded.snipeit_connections.len(), 1);
-        assert_eq!(loaded.snipeit_connections[0].base_url, "https://assets.example.com");
+        assert_eq!(
+            loaded.snipeit_connections[0].base_url,
+            "https://assets.example.com"
+        );
         assert_eq!(loaded, config);
     }
 
@@ -437,9 +443,18 @@ mod tests {
 
     #[test]
     fn theme_preference_serializes_as_lowercase_snake_case() {
-        assert_eq!(serde_json::to_string(&ThemePreference::Light).unwrap(), "\"light\"");
-        assert_eq!(serde_json::to_string(&ThemePreference::Dark).unwrap(), "\"dark\"");
-        assert_eq!(serde_json::to_string(&ThemePreference::System).unwrap(), "\"system\"");
+        assert_eq!(
+            serde_json::to_string(&ThemePreference::Light).unwrap(),
+            "\"light\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ThemePreference::Dark).unwrap(),
+            "\"dark\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ThemePreference::System).unwrap(),
+            "\"system\""
+        );
     }
 
     #[test]

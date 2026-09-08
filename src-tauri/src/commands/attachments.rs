@@ -4,8 +4,14 @@ use crate::db::attachments::{self, Attachment};
 use crate::{time, AppError, AppState};
 
 #[tauri::command]
-pub fn list_attachments_for_entry(state: State<AppState>, entry_id: i64) -> Result<Vec<Attachment>, AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+pub fn list_attachments_for_entry(
+    state: State<AppState>,
+    entry_id: i64,
+) -> Result<Vec<Attachment>, AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     attachments::list_for_entry(&conn, entry_id)
 }
 
@@ -21,36 +27,88 @@ pub fn add_attachment_to_entry(
     let bytes = BASE64_STANDARD
         .decode(&bytes_base64)
         .map_err(|e| AppError::Config(format!("Anhang konnte nicht dekodiert werden: {e}")))?;
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
-    let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let data_dir = state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .data_dir
+        .clone();
     let tz = time::system_timezone()?;
-    crate::attachments::store::attach_bytes_to_entry(&conn, &data_dir, entry_id, &bytes, &original_filename, &mime_type, &tz)
+    crate::attachments::store::attach_bytes_to_entry(
+        &conn,
+        &data_dir,
+        entry_id,
+        &bytes,
+        &original_filename,
+        &mime_type,
+        &tz,
+    )
 }
 
 #[tauri::command]
 pub fn remove_attachment(state: State<AppState>, attachment_id: i64) -> Result<(), AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     attachments::delete(&conn, attachment_id)
 }
 
 #[tauri::command]
-pub fn read_attachment_data_url(state: State<AppState>, attachment_id: i64) -> Result<String, AppError> {
+pub fn read_attachment_data_url(
+    state: State<AppState>,
+    attachment_id: i64,
+) -> Result<String, AppError> {
     use base64::prelude::*;
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let attachment = attachments::get(&conn, attachment_id)?;
-    let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
-    let relative_path = crate::attachments::store::relative_path_for(&attachment.sha256, &attachment.original_filename);
+    let data_dir = state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .data_dir
+        .clone();
+    let relative_path = crate::attachments::store::relative_path_for(
+        &attachment.sha256,
+        &attachment.original_filename,
+    );
     let bytes = std::fs::read(data_dir.join(&relative_path))
         .map_err(|e| AppError::Io(format!("Anhang konnte nicht gelesen werden: {e}")))?;
-    Ok(format!("data:{};base64,{}", attachment.mime_type, BASE64_STANDARD.encode(&bytes)))
+    Ok(format!(
+        "data:{};base64,{}",
+        attachment.mime_type,
+        BASE64_STANDARD.encode(&bytes)
+    ))
 }
 
 #[tauri::command]
-pub fn copy_attachment_to(state: State<AppState>, attachment_id: i64, dest_path: String) -> Result<(), AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+pub fn copy_attachment_to(
+    state: State<AppState>,
+    attachment_id: i64,
+    dest_path: String,
+) -> Result<(), AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let attachment = attachments::get(&conn, attachment_id)?;
-    let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
-    let relative_path = crate::attachments::store::relative_path_for(&attachment.sha256, &attachment.original_filename);
+    let data_dir = state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .data_dir
+        .clone();
+    let relative_path = crate::attachments::store::relative_path_for(
+        &attachment.sha256,
+        &attachment.original_filename,
+    );
     std::fs::copy(data_dir.join(&relative_path), &dest_path)
         .map_err(|e| AppError::Io(format!("Anhang konnte nicht exportiert werden: {e}")))?;
     Ok(())
@@ -67,8 +125,16 @@ pub struct CleanupResult {
 
 #[tauri::command]
 pub fn cleanup_orphans(state: State<AppState>) -> Result<CleanupResult, AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
-    let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let data_dir = state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .data_dir
+        .clone();
     let referenced = attachments::all_referenced_hashes(&conn)?;
     let stored = crate::attachments::store::list_all_stored_files(&data_dir)?;
     let mut removed_count = 0u32;
@@ -81,15 +147,33 @@ pub fn cleanup_orphans(state: State<AppState>) -> Result<CleanupResult, AppError
             }
         }
     }
-    Ok(CleanupResult { removed_count, removed_bytes })
+    Ok(CleanupResult {
+        removed_count,
+        removed_bytes,
+    })
 }
 
 #[tauri::command]
-pub fn open_attachment(app: tauri::AppHandle, state: State<AppState>, attachment_id: i64) -> Result<(), AppError> {
-    let conn = state.pool.get().map_err(|e| AppError::Database(e.to_string()))?;
+pub fn open_attachment(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    attachment_id: i64,
+) -> Result<(), AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let attachment = attachments::get(&conn, attachment_id)?;
-    let data_dir = state.config.lock().expect("Config-Mutex vergiftet").data_dir.clone();
-    let relative_path = crate::attachments::store::relative_path_for(&attachment.sha256, &attachment.original_filename);
+    let data_dir = state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .data_dir
+        .clone();
+    let relative_path = crate::attachments::store::relative_path_for(
+        &attachment.sha256,
+        &attachment.original_filename,
+    );
     let absolute_path = data_dir.join(&relative_path);
     use tauri_plugin_opener::OpenerExt;
     app.opener()

@@ -8,7 +8,8 @@ use crate::{quickcapture, window};
 pub fn register(app: &AppHandle, hotkeys: &HotkeyConfig) -> Result<(), AppError> {
     let quick_capture = parse_shortcut(&hotkeys.quick_capture, "Schnellerfassung");
     let search = parse_shortcut(&hotkeys.search, "Suche");
-    let clipboard_screenshot = parse_shortcut(&hotkeys.clipboard_screenshot, "Zwischenablage-Screenshot");
+    let clipboard_screenshot =
+        parse_shortcut(&hotkeys.clipboard_screenshot, "Zwischenablage-Screenshot");
 
     let quick_capture_for_handler = quick_capture.clone();
     let search_for_handler = search.clone();
@@ -34,7 +35,11 @@ pub fn register(app: &AppHandle, hotkeys: &HotkeyConfig) -> Result<(), AppError>
             })
             .build(),
     )
-    .map_err(|e| AppError::Config(format!("Global-Shortcut-Plugin konnte nicht registriert werden: {e}")))?;
+    .map_err(|e| {
+        AppError::Config(format!(
+            "Global-Shortcut-Plugin konnte nicht registriert werden: {e}"
+        ))
+    })?;
 
     // Jeder Hotkey wird einzeln registriert (nicht über with_shortcuts() als eine
     // Sammel-Registrierung), weil das OS Hotkeys exklusiv vergibt: ist einer davon
