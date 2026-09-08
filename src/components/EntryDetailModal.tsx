@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
+import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
 
 interface Entry {
@@ -92,7 +93,7 @@ export default function EntryDetailModal() {
           setSystemName(null);
         }
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(formatInvokeError(e)));
     invoke<Attachment[]>("list_attachments_for_entry", { entryId: viewingEntryId })
       .then(setAttachments)
       .catch(() => setAttachments([]));
@@ -123,7 +124,7 @@ export default function EntryDetailModal() {
     try {
       await invoke("open_attachment", { attachmentId });
     } catch (e) {
-      setError(String(e));
+      setError(formatInvokeError(e));
     }
   }
 
@@ -134,7 +135,7 @@ export default function EntryDetailModal() {
         await invoke("copy_attachment_to", { attachmentId, destPath });
       }
     } catch (e) {
-      setError(String(e));
+      setError(formatInvokeError(e));
     }
   }
 

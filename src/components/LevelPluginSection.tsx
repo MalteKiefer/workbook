@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
+import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
 
 // Level.io (RMM) plugin settings screen — second RMM integration after
@@ -439,7 +440,7 @@ export default function LevelPluginSection() {
   const reloadConnections = useCallback(() => {
     invoke<LevelConnectionDto[]>("list_level_connections")
       .then(setConnections)
-      .catch((e) => setConnectionsError(String(e)));
+      .catch((e) => setConnectionsError(formatInvokeError(e)));
   }, []);
 
   const reloadCustomers = useCallback(async () => {
@@ -483,7 +484,7 @@ export default function LevelPluginSection() {
           setNewCustomerId(newlyCreated[0].id);
         }
       } catch (err) {
-        setAddError(String(err));
+        setAddError(formatInvokeError(err));
       } finally {
         setAwaitingNewCustomer(false);
       }
@@ -495,7 +496,7 @@ export default function LevelPluginSection() {
     try {
       await reloadCustomers();
     } catch (err) {
-      setAddError(String(err));
+      setAddError(formatInvokeError(err));
     } finally {
       setCustomersRefreshBusy(false);
     }
@@ -539,7 +540,7 @@ export default function LevelPluginSection() {
       }
       await refreshLocalSystems(connection.customer_id).catch(() => {});
     } catch (err) {
-      setCacheError((prev) => ({ ...prev, [id]: String(err) }));
+      setCacheError((prev) => ({ ...prev, [id]: formatInvokeError(err) }));
     } finally {
       setCacheBusy((prev) => ({ ...prev, [id]: false }));
     }
@@ -755,7 +756,7 @@ export default function LevelPluginSection() {
       await invoke("test_level_connection", { apiKey: newApiKey });
       setTestResult({ ok: true, message: "✓ Verbindung erfolgreich" });
     } catch (err) {
-      setTestResult({ ok: false, message: String(err) });
+      setTestResult({ ok: false, message: formatInvokeError(err) });
     } finally {
       setTestBusy(false);
     }
@@ -776,7 +777,7 @@ export default function LevelPluginSection() {
       reloadConnections();
       closeAddForm();
     } catch (err) {
-      setAddError(String(err));
+      setAddError(formatInvokeError(err));
     } finally {
       setAddBusy(false);
     }
@@ -798,7 +799,7 @@ export default function LevelPluginSection() {
       });
       reloadConnections();
     } catch (err) {
-      setConnectionsError(String(err));
+      setConnectionsError(formatInvokeError(err));
     } finally {
       setRemoveBusy((prev) => ({ ...prev, [id]: false }));
     }
@@ -821,7 +822,7 @@ export default function LevelPluginSection() {
       // synced_at_utc) over building the timestamp from the client clock.
       await loadCachedSync(connection);
     } catch (err) {
-      setSyncError((prev) => ({ ...prev, [id]: String(err) }));
+      setSyncError((prev) => ({ ...prev, [id]: formatInvokeError(err) }));
     } finally {
       setSyncBusy((prev) => ({ ...prev, [id]: false }));
     }
@@ -856,7 +857,7 @@ export default function LevelPluginSection() {
       setLinkPickerKey(null);
       await loadCachedSync(connection);
     } catch (err) {
-      setDeviceError((prev) => ({ ...prev, [key]: String(err) }));
+      setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
     } finally {
       setLinkBusy((prev) => ({ ...prev, [key]: false }));
     }
@@ -886,7 +887,7 @@ export default function LevelPluginSection() {
       await refreshLocalSystems(customerId);
       await loadCachedSync(connection);
     } catch (err) {
-      setDeviceError((prev) => ({ ...prev, [key]: String(err) }));
+      setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
     } finally {
       setCreateLinkBusy((prev) => ({ ...prev, [key]: false }));
     }
@@ -902,7 +903,7 @@ export default function LevelPluginSection() {
       if (detailsOpenKey === key) setDetailsOpenKey(null);
       await loadCachedSync(connection);
     } catch (err) {
-      setDeviceError((prev) => ({ ...prev, [key]: String(err) }));
+      setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
     } finally {
       setUnlinkBusy((prev) => ({ ...prev, [key]: false }));
     }
@@ -926,7 +927,7 @@ export default function LevelPluginSection() {
       const [data] = await Promise.all([detailsPromise, refreshPromise]);
       setDetailsData((prev) => ({ ...prev, [key]: data }));
     } catch (err) {
-      setDetailsError((prev) => ({ ...prev, [key]: String(err) }));
+      setDetailsError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
     } finally {
       setDetailsBusy((prev) => ({ ...prev, [key]: false }));
     }
@@ -949,7 +950,7 @@ export default function LevelPluginSection() {
       });
       await refreshLocalSystems(localSystem.customer_id);
     } catch (err) {
-      setAdoptError((prev) => ({ ...prev, [busyKey]: String(err) }));
+      setAdoptError((prev) => ({ ...prev, [busyKey]: formatInvokeError(err) }));
     } finally {
       setAdoptBusy((prev) => ({ ...prev, [busyKey]: false }));
     }

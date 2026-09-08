@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
+import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
 import MarkdownEditor, { type MarkdownEditorHandle } from "./MarkdownEditor";
 import AttachmentDropzone, { type PickedFile } from "./AttachmentDropzone";
@@ -262,7 +263,7 @@ export default function EntryEditor() {
       // (not still listed as an unlinked plugin suggestion).
       refreshSystemsForCustomer(custId);
     } catch (e) {
-      setError(String(e));
+      setError(formatInvokeError(e));
       setSystemQuery(previousQuery);
     } finally {
       setSystemCreateLinkBusy(false);
@@ -340,7 +341,7 @@ export default function EntryEditor() {
           setPerformedAtTz(now.tz);
           await refreshPreview(now.utc, now.tz);
         } catch (e) {
-          setError(String(e));
+          setError(formatInvokeError(e));
         }
       })();
       titleRef.current?.focus();
@@ -363,11 +364,11 @@ export default function EntryEditor() {
         setPerformedAtTz(entry.performed_at_tz);
         await refreshPreview(entry.performed_at_utc, entry.performed_at_tz);
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(formatInvokeError(e)))
       .finally(() => setLoadingEntry(false));
     invoke<Attachment[]>("list_attachments_for_entry", { entryId: editorTarget })
       .then(setAttachments)
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(formatInvokeError(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editorTarget]);
 
@@ -398,7 +399,7 @@ export default function EntryEditor() {
       await refreshPreview(result.utc, result.tz);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(formatInvokeError(e));
     }
   }
 
@@ -423,7 +424,7 @@ export default function EntryEditor() {
             editorRef.current?.insertAtCursor(`![${file.filename}](${relativePath})`);
             setAttachments((prev) => [...prev, attachment]);
           } catch (e) {
-            setError(String(e));
+            setError(formatInvokeError(e));
           }
         } else {
           const token = `pending:${crypto.randomUUID()}`;
@@ -470,7 +471,7 @@ export default function EntryEditor() {
           await invoke("copy_attachment_to", { attachmentId, destPath });
         }
       } catch (e) {
-        setError(String(e));
+        setError(formatInvokeError(e));
       }
     },
     [attachments],
@@ -479,7 +480,7 @@ export default function EntryEditor() {
   const handleAttachmentRemove = useCallback((attachmentId: number) => {
     invoke("remove_attachment", { attachmentId })
       .then(() => setAttachments((prev) => prev.filter((a) => a.id !== attachmentId)))
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(formatInvokeError(e)));
   }, []);
 
   const save = useCallback(async () => {
@@ -530,7 +531,7 @@ export default function EntryEditor() {
       closeForm();
       closeEntryEditor();
     } catch (e) {
-      setError(String(e));
+      setError(formatInvokeError(e));
     }
   }, [
     editorTarget,
@@ -750,7 +751,7 @@ export default function EntryEditor() {
         {isEditMode && (
           <AttachmentList
             attachments={attachments}
-            onOpen={(id) => void invoke("open_attachment", { attachmentId: id }).catch((e) => setError(String(e)))}
+            onOpen={(id) => void invoke("open_attachment", { attachmentId: id }).catch((e) => setError(formatInvokeError(e)))}
             onExport={handleAttachmentExport}
             onRemove={handleAttachmentRemove}
             resolveImageUrl={(attachment) => invoke<string>("read_attachment_data_url", { attachmentId: attachment.id })}

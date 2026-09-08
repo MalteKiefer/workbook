@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { formatInvokeError } from "../lib/errors";
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -28,7 +29,7 @@ export default function BackupView() {
       await invoke("create_backup", { destPath });
       setBackupStatus(`Backup erfolgreich erstellt: ${destPath}`);
     } catch (e) {
-      setBackupError(String(e));
+      setBackupError(formatInvokeError(e));
     } finally {
       setBackupBusy(false);
     }
@@ -51,7 +52,7 @@ export default function BackupView() {
       // dieses Promise aufgelöst wird.
       setRestoreStatus("Wiederherstellung abgeschlossen.");
     } catch (e) {
-      setRestoreError(String(e));
+      setRestoreError(formatInvokeError(e));
     } finally {
       setRestoreBusy(false);
     }

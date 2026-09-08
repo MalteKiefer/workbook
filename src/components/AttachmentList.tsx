@@ -63,14 +63,14 @@ function ImageThumbnail({
 
   if (error) {
     return (
-      <p style={{ color: "crimson", fontSize: "0.85rem", margin: "0 0 0.3rem" }}>
+      <p style={{ color: "var(--danger)", fontSize: "0.85rem", margin: "0 0 0.3rem" }}>
         Bild konnte nicht geladen werden: {attachment.original_filename}
       </p>
     );
   }
   if (!url) {
     return (
-      <p style={{ fontSize: "0.85rem", color: "#a0a0a0", margin: "0 0 0.3rem" }}>
+      <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: "0 0 0.3rem" }}>
         Lade {attachment.original_filename}…
       </p>
     );
@@ -107,21 +107,21 @@ export default function AttachmentList({ attachments, onOpen, onExport, onRemove
           key={a.id}
           style={{
             padding: "0.4rem 0.5rem",
-            borderBottom: "1px solid #333",
+            borderBottom: "1px solid var(--border-subtle)",
           }}
         >
           {isImage(a) && <ImageThumbnail attachment={a} resolveImageUrl={resolveImageUrl} />}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
             <span
               style={{
-                fontFamily: "monospace",
+                fontFamily: "var(--font-mono)",
                 fontSize: "0.85rem",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
             >
-              {a.original_filename} <span style={{ color: "#a0a0a0" }}>({formatSize(a.size_bytes)})</span>
+              {a.original_filename} <span style={{ color: "var(--text-muted)" }}>({formatSize(a.size_bytes)})</span>
             </span>
             <span style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
               <button type="button" onClick={() => onOpen(a.id)}>

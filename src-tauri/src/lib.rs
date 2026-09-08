@@ -78,8 +78,9 @@ pub fn run() {
             )
             .title("Schnellerfassung")
             .inner_size(520.0, 560.0)
+            .min_inner_size(420.0, 320.0)
             .center()
-            .resizable(false)
+            .resizable(true)
             .visible(false)
             .build()?;
             window::install_hide_on_close_for(&quick_capture_window);
@@ -118,6 +119,8 @@ pub fn run() {
             commands::entries::update_entry,
             commands::entries::parse_temporal_input,
             commands::entries::format_timestamp_for_display,
+            commands::settings::get_theme_preference,
+            commands::settings::set_theme_preference,
             commands::quickcapture::get_last_selection,
             commands::quickcapture::quick_capture_close,
             commands::quickcapture::open_quick_capture_with_context,

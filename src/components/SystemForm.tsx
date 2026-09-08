@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
+import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
 
 interface System {
@@ -87,7 +88,7 @@ export default function SystemForm() {
           setNotes(match.notes);
         }
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(formatInvokeError(e)));
   }, [systemEditorTarget, systemEditorCustomerId]);
 
   useEffect(() => {
@@ -141,7 +142,7 @@ export default function SystemForm() {
       closeForm();
       closeSystemEditor();
     } catch (err) {
-      setError(String(err));
+      setError(formatInvokeError(err));
     }
   }
 

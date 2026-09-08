@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
+import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
 
 interface Customer {
@@ -53,7 +54,7 @@ export default function CustomerForm() {
           setShortCodeTouched(true);
         }
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(formatInvokeError(e)));
   }, [customerEditorTarget]);
 
   // Engage the global Esc-closing convention whenever the editor is open, and
@@ -110,7 +111,7 @@ export default function CustomerForm() {
       closeForm();
       closeCustomerEditor();
     } catch (err) {
-      setError(String(err));
+      setError(formatInvokeError(err));
     }
   }
 

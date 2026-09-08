@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
+import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
 
 // Ninja (NinjaOne RMM) plugin settings screen. We only ever READ devices from
@@ -424,7 +425,7 @@ export default function NinjaPluginSection() {
   const reloadConnections = useCallback(() => {
     invoke<NinjaConnectionDto[]>("list_ninja_connections")
       .then(setConnections)
-      .catch((e) => setConnectionsError(String(e)));
+      .catch((e) => setConnectionsError(formatInvokeError(e)));
   }, []);
 
   const refreshCustomers = useCallback(() => {
@@ -518,7 +519,7 @@ export default function NinjaPluginSection() {
         await Promise.all(customerIds.map((cid) => refreshLocalSystems(cid).catch(() => {})));
       }
     } catch (err) {
-      setCacheError((prev) => ({ ...prev, [id]: String(err) }));
+      setCacheError((prev) => ({ ...prev, [id]: formatInvokeError(err) }));
     } finally {
       setCacheBusy((prev) => ({ ...prev, [id]: false }));
     }
@@ -548,7 +549,7 @@ export default function NinjaPluginSection() {
       });
       setTestResult({ ok: true, message: "✓ Verbindung erfolgreich" });
     } catch (err) {
-      setTestResult({ ok: false, message: String(err) });
+      setTestResult({ ok: false, message: formatInvokeError(err) });
     } finally {
       setTestBusy(false);
     }
@@ -575,7 +576,7 @@ export default function NinjaPluginSection() {
       reloadConnections();
       setAddFormOpen(false);
     } catch (err) {
-      setAddError(String(err));
+      setAddError(formatInvokeError(err));
     } finally {
       setAddBusy(false);
     }
@@ -597,7 +598,7 @@ export default function NinjaPluginSection() {
       });
       reloadConnections();
     } catch (err) {
-      setConnectionsError(String(err));
+      setConnectionsError(formatInvokeError(err));
     } finally {
       setRemoveBusy((prev) => ({ ...prev, [id]: false }));
     }
@@ -630,7 +631,7 @@ export default function NinjaPluginSection() {
         return next;
       });
     } catch (err) {
-      setSyncError((prev) => ({ ...prev, [id]: String(err) }));
+      setSyncError((prev) => ({ ...prev, [id]: formatInvokeError(err) }));
     } finally {
       setSyncBusy((prev) => ({ ...prev, [id]: false }));
     }
@@ -674,7 +675,7 @@ export default function NinjaPluginSection() {
       // up the new/removed mapping without requiring a live re-sync.
       await loadCachedSync(connection);
     } catch (err) {
-      setOrgMapError((prev) => ({ ...prev, [mapKey]: String(err) }));
+      setOrgMapError((prev) => ({ ...prev, [mapKey]: formatInvokeError(err) }));
     } finally {
       setOrgMapBusy((prev) => ({ ...prev, [mapKey]: false }));
     }
@@ -710,7 +711,7 @@ export default function NinjaPluginSection() {
       setLinkPickerKey(null);
       await loadCachedSync(connection);
     } catch (err) {
-      setDeviceError((prev) => ({ ...prev, [key]: String(err) }));
+      setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
     } finally {
       setLinkBusy((prev) => ({ ...prev, [key]: false }));
     }
@@ -741,7 +742,7 @@ export default function NinjaPluginSection() {
       await refreshLocalSystems(customerId);
       await loadCachedSync(connection);
     } catch (err) {
-      setDeviceError((prev) => ({ ...prev, [key]: String(err) }));
+      setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
     } finally {
       setCreateLinkBusy((prev) => ({ ...prev, [key]: false }));
     }
@@ -757,7 +758,7 @@ export default function NinjaPluginSection() {
       if (detailsOpenKey === key) setDetailsOpenKey(null);
       await loadCachedSync(connection);
     } catch (err) {
-      setDeviceError((prev) => ({ ...prev, [key]: String(err) }));
+      setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
     } finally {
       setUnlinkBusy((prev) => ({ ...prev, [key]: false }));
     }
@@ -781,7 +782,7 @@ export default function NinjaPluginSection() {
       const [data] = await Promise.all([detailsPromise, refreshPromise]);
       setDetailsData((prev) => ({ ...prev, [key]: data }));
     } catch (err) {
-      setDetailsError((prev) => ({ ...prev, [key]: String(err) }));
+      setDetailsError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
     } finally {
       setDetailsBusy((prev) => ({ ...prev, [key]: false }));
     }
@@ -804,7 +805,7 @@ export default function NinjaPluginSection() {
       });
       await refreshLocalSystems(localSystem.customer_id);
     } catch (err) {
-      setAdoptError((prev) => ({ ...prev, [busyKey]: String(err) }));
+      setAdoptError((prev) => ({ ...prev, [busyKey]: formatInvokeError(err) }));
     } finally {
       setAdoptBusy((prev) => ({ ...prev, [busyKey]: false }));
     }

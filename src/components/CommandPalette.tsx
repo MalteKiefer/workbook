@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
+import { formatInvokeError } from "../lib/errors";
 
 interface DirectoryHit {
   kind: "customer" | "system";
@@ -170,7 +171,7 @@ export default function CommandPalette() {
             const kb = (result.removed_bytes / 1024).toFixed(1);
             setNotice(`${result.removed_count} verwaiste Datei(en) entfernt (${kb} KB freigegeben).`);
           })
-          .catch((e) => setNotice(`Fehler: ${e}`));
+          .catch((e) => setNotice(`Fehler: ${formatInvokeError(e)}`));
       },
     });
     return cmds;

@@ -1,4 +1,5 @@
 import { useAppStore } from "../state/appStore";
+import GeneralSettingsView from "./GeneralSettingsView";
 import BackupView from "./BackupView";
 import PluginsView from "./PluginsView";
 
@@ -34,6 +35,9 @@ export default function SettingsView() {
           borderBottom: "1px solid var(--border)",
         }}
       >
+        <TabButton active={settingsTab === "general"} onClick={() => setSettingsTab("general")}>
+          Allgemein
+        </TabButton>
         <TabButton active={settingsTab === "backup"} onClick={() => setSettingsTab("backup")}>
           Backup
         </TabButton>
@@ -41,6 +45,7 @@ export default function SettingsView() {
           Plugins
         </TabButton>
       </div>
+      {settingsTab === "general" && <GeneralSettingsView />}
       {settingsTab === "backup" && <BackupView />}
       {settingsTab === "plugins" && <PluginsView />}
     </div>

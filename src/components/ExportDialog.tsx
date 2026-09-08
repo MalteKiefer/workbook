@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
+import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
 
 interface Customer {
@@ -117,7 +118,7 @@ export default function ExportDialog() {
       });
       setStatus(`Markdown-Export abgeschlossen: ${destDir}`);
     } catch (e) {
-      setError(String(e));
+      setError(formatInvokeError(e));
     } finally {
       setBusy(false);
     }
@@ -146,7 +147,7 @@ export default function ExportDialog() {
       });
       setStatus(`PDF-Export abgeschlossen: ${destPath}`);
     } catch (e) {
-      setError(String(e));
+      setError(formatInvokeError(e));
     } finally {
       setBusy(false);
     }

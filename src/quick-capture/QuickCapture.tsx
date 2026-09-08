@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import MarkdownEditor, { type MarkdownEditorHandle } from "../components/MarkdownEditor";
+import { formatInvokeError } from "../lib/errors";
 
 interface Customer {
   id: number;
@@ -248,7 +249,7 @@ export default function QuickCapture() {
       // (not still listed as an unlinked plugin suggestion).
       void loadSystems(custId);
     } catch (e) {
-      setError(String(e));
+      setError(formatInvokeError(e));
       setSystemQuery(previousQuery);
     } finally {
       setSystemCreateLinkBusy(false);
@@ -390,7 +391,7 @@ export default function QuickCapture() {
       await refreshPreview(result.utc, result.tz);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(formatInvokeError(e));
     }
   }
 
@@ -444,7 +445,7 @@ export default function QuickCapture() {
       resetDraft();
       await invoke("quick_capture_close");
     } catch (e) {
-      setError(String(e));
+      setError(formatInvokeError(e));
     }
   }, [customerId, systemId, title, bodyMd, category, performedAtUtc, performedAtTz, tagNames, pendingAttachments, resetDraft]);
 

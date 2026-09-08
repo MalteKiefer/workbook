@@ -23,6 +23,109 @@
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
 }
 
+/* Light palette -- Einstellungen -> Allgemein -> Theme. The dark :root block
+   above stays the unconditional default (this app was dark-only until now;
+   an untouched preference must not change anything). Two ways to enter the
+   light palette:
+
+   1. "System" (no data-theme attribute at all): follow the OS via
+      prefers-color-scheme, but ONLY when the user has not explicitly chosen
+      "Dunkel" -- :not([data-theme="dark"]) means an explicit dark choice
+      always wins over a light OS preference.
+   2. "Hell" (data-theme="light" set explicitly by src/lib/theme.ts): applies
+      regardless of the OS preference.
+
+   Every token from the dark block above has an explicit light equivalent
+   here -- a partially-themed page reads as broken, not intentional. Where a
+   token isn't color-dependent (radius/font tokens) the value is repeated
+   unchanged for completeness; it would already inherit correctly either way. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg-base: #f1f3f6;
+    --bg-surface: #ffffff;
+    --bg-elevated: #ffffff;
+    --bg-hover: #eceef2;
+    --bg-selected: #dfe6fd;
+    --border: #dde1e7;
+    --border-subtle: #eceef1;
+    --text-primary: #1a1d24;
+    --text-secondary: #5b6270;
+    --text-muted: #8b93a1;
+    --accent: #4a63d9;
+    --accent-hover: #3a4fb8;
+    --accent-text: #ffffff;
+    --danger: #dc2626;
+    --success: #15803d;
+    --radius-sm: 5px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --shadow-modal: 0 24px 60px rgba(15, 23, 42, 0.16), 0 4px 16px rgba(15, 23, 42, 0.08);
+    --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.12);
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  }
+}
+
+/* The base rules further down hardcode two dark-theme-specific colors
+   instead of using tokens (pre-existing, not itself part of the palette
+   block above): the button hover state (one step lighter than
+   --bg-hover/--border, dark-mode-only values) and the input focus ring
+   (an rgba() built from the dark --accent's RGB channels, which CSS custom
+   properties can't decompose on their own). Both need an explicit light
+   equivalent here too, or buttons would render illegible dark-on-dark on
+   hover once text turns dark, and the focus ring would keep the wrong hue. */
+@media (prefers-color-scheme: light) {
+  /* :not(.btn-primary):not([type="submit"]) excludes the primary/submit
+     button variant -- its own hover rule (background: var(--accent-hover))
+     already themes correctly via the token block above, and without this
+     exclusion this rule's higher selector specificity would otherwise win
+     over it and paint primary buttons with the plain gray hover instead of
+     the accent color. */
+  :root:not([data-theme="dark"]) button:not(.btn-primary):not([type="submit"]):hover:not(:disabled) {
+    background: #e2e5ea;
+    border-color: #c9ced6;
+  }
+  :root:not([data-theme="dark"]) input:focus,
+  :root:not([data-theme="dark"]) select:focus,
+  :root:not([data-theme="dark"]) textarea:focus {
+    box-shadow: 0 0 0 3px rgba(74, 99, 217, 0.18);
+  }
+}
+:root[data-theme="light"] button:not(.btn-primary):not([type="submit"]):hover:not(:disabled) {
+  background: #e2e5ea;
+  border-color: #c9ced6;
+}
+:root[data-theme="light"] input:focus,
+:root[data-theme="light"] select:focus,
+:root[data-theme="light"] textarea:focus {
+  box-shadow: 0 0 0 3px rgba(74, 99, 217, 0.18);
+}
+
+:root[data-theme="light"] {
+  --bg-base: #f1f3f6;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: #eceef2;
+  --bg-selected: #dfe6fd;
+  --border: #dde1e7;
+  --border-subtle: #eceef1;
+  --text-primary: #1a1d24;
+  --text-secondary: #5b6270;
+  --text-muted: #8b93a1;
+  --accent: #4a63d9;
+  --accent-hover: #3a4fb8;
+  --accent-text: #ffffff;
+  --danger: #dc2626;
+  --success: #15803d;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-modal: 0 24px 60px rgba(15, 23, 42, 0.16), 0 4px 16px rgba(15, 23, 42, 0.08);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.12);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+}
+
 * {
   box-sizing: border-box;
 }

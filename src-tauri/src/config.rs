@@ -6,6 +6,31 @@ use crate::plugin::level::LevelConnectionMeta;
 use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
 use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
 
+/// Theme-Präferenz für die Oberfläche (siehe `src/styles/theme.css` und
+/// `src/lib/theme.ts` auf der Frontend-Seite). Reines TOML/JSON-Serde --
+/// keine DB-Spalte -- daher genügen einfache Serde-Derives; `rename_all =
+/// "snake_case"` sorgt dafür, dass die Werte in `config.toml` und über den
+/// Tauri-Command als `"light"`/`"dark"`/`"system"` erscheinen statt in Rusts
+/// Standard-Schreibweise `Light`/`Dark`/`System` (dieselbe Konvention wie
+/// `db::entries::Category`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemePreference {
+    Light,
+    Dark,
+    System,
+}
+
+impl Default for ThemePreference {
+    fn default() -> Self {
+        // Die App war bislang ausschließlich dunkel -- eine config.toml, die
+        // dieses Feld zum ersten Mal bekommt (bestehender Nutzer, altes
+        // Backup), darf sich dadurch NICHT optisch verändern. Nur eine
+        // explizite künftige Auswahl darf das Erscheinungsbild umstellen.
+        ThemePreference::Dark
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HotkeyConfig {
@@ -79,6 +104,12 @@ pub struct Config {
     /// `#[serde(default)]`-kompatibel mit Konfigurationen von vor dieser
     /// Änderung.
     pub snipeit_company_mappings: Vec<SnipeitCompanyMapping>,
+    /// Vom Nutzer gewählte Theme-Präferenz (Einstellungen → Allgemein).
+    /// `#[serde(default)]`-kompatibel mit Konfigurationen von vor Einführung
+    /// dieses Feldes, analog zu `ninja_connections` oben -- fehlt es, greift
+    /// `ThemePreference::default()` (= `Dark`), NICHT `System`, damit
+    /// bestehende Installationen optisch unverändert bleiben.
+    pub theme_preference: ThemePreference,
 }
 
 impl Default for Config {
@@ -96,6 +127,7 @@ impl Default for Config {
             level_connections: Vec::new(),
             snipeit_connections: Vec::new(),
             snipeit_company_mappings: Vec::new(),
+            theme_preference: ThemePreference::default(),
         }
     }
 }
@@ -372,6 +404,42 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.snipeit_company_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_theme_preference() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.theme_preference = ThemePreference::Light;
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.theme_preference, ThemePreference::Light);
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_theme_preference_field_defaults_to_dark() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simuliert eine config.toml von vor Einführung der Theme-Auswahl --
+        // das Feld fehlt komplett und muss dank `#[serde(default)]` klaglos
+        // auf `Dark` zurückfallen (NICHT `System`), damit sich das
+        // Erscheinungsbild bestehender Installationen nicht ungefragt ändert.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.theme_preference, ThemePreference::Dark);
+    }
+
+    #[test]
+    fn theme_preference_serializes_as_lowercase_snake_case() {
+        assert_eq!(serde_json::to_string(&ThemePreference::Light).unwrap(), "\"light\"");
+        assert_eq!(serde_json::to_string(&ThemePreference::Dark).unwrap(), "\"dark\"");
+        assert_eq!(serde_json::to_string(&ThemePreference::System).unwrap(), "\"system\"");
     }
 
     #[test]
