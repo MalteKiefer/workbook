@@ -1,12 +1,13 @@
 # Plugin-Architektur
 
-Status: Zwei echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
-`commands::plugins`) und Level.io (`plugin::level`, `commands::level`) --,
-beide mit Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
+Status: Drei echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+`commands::plugins`), Level.io (`plugin::level`, `commands::level`) und
+Snipe-IT (`plugin::snipeit`, `commands::snipeit`) --, alle mit
+Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
 Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
 einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
 von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`).
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -339,3 +340,168 @@ Gruppierung nach Organisation, ein Kunde-Auswahlfeld im Anlage-Formular
 (statt einer separaten Organisations-Zuordnungs-UI), und kein
 Level-Dashboard-Link-Element (kein verifiziertes Geräte-URL-Muster in Levels
 öffentlicher Doku gefunden).
+
+## Snipe-IT-Plugin (`plugin::snipeit`) -- dritte echte Integration
+
+`plugin/snipeit.rs` implementiert `Plugin` für Snipe-ITs öffentliche REST-API
+über HTTPS. Snipe-IT ist ein selbst gehostetes, quelloffenes
+IT-Asset-Management-System -- strukturell näher an NinjaOne (Mehrfach-
+Mandantenfähigkeit über eigene "Companies" innerhalb einer Verbindung,
+konfigurierbare `base_url`) als an Level.io, aber mit einer wichtigen,
+verifizierten Abweichung von beiden: Snipe-IT ist Asset-/Inventar-
+verwaltung, keine RMM-Überwachungssoftware.
+
+- **Authentifizierung**: statischer Bearer-Token im `Authorization`-Header
+  (`Authorization: Bearer <token>`) -- ein "Personal Access Token", den der
+  Nutzer selbst in Snipe-ITs eigener Weboberfläche erzeugt (Profil -> API
+  Tokens; verifiziert über Snipe-ITs eigenes `routes/api.php` auf GitHub:
+  `POST/GET/DELETE /api/v1/account/personal-access-tokens`). Kein
+  OAuth2-Grant wie bei NinjaOne, kein Token-Austausch -- genauso einfach wie
+  Level.ios Authentifizierung, nur mit `Bearer `-Präfix (Level hat keins).
+- **Selbst gehostet**: wie NinjaOne (und anders als Level.ios feste
+  `BASE_URL`-Konstante) braucht eine Snipe-IT-Verbindung eine vom Nutzer
+  angegebene Basis-URL (`SnipeitConnectionMeta.base_url`); `/api/v1` wird
+  beim Aufbau jeder Anfrage-URL fest angehängt.
+- **Firmen (Mehrmandantenfähigkeit)**: `GET {base_url}/api/v1/companies`
+  (verifiziert über Snipe-ITs `routes/api.php`) liefert die Firmenliste einer
+  Instanz. Eine einzelne Snipe-IT-Instanz kann Assets mehrerer Firmen
+  verwalten (z. B. ein MSP, der Kundenbestände in einer gemeinsamen Instanz
+  führt) -- deshalb exakt dasselbe granulare Zuordnungsprinzip wie bei
+  NinjaOnes "Organizations": `SnipeitCompanyMapping { connection_id,
+  company_id, company_name, customer_id }` in
+  `Config::snipeit_company_mappings`, `SnipeitConnectionMeta` selbst bewusst
+  OHNE `customer_id`.
+- **Assets**: `GET {base_url}/api/v1/hardware`, Offset-paginiert (`limit`/
+  `offset`-Query-Parameter -- NICHT Cursor-basiert wie NinjaOne/Level.io),
+  verifiziert über Snipe-ITs eigene API-Referenzseite. Der Standard-`limit`-
+  Wert ist mit 2 absurd niedrig, `plugin::snipeit` schickt deshalb immer
+  explizit `PAGE_LIMIT` (100) mit. Der Antwort-Umschlag ist über Snipe-ITs
+  eigenen Quellcode verifiziert (`DatatablesTransformer::transformDatatables`):
+  `{"total": <Zahl>, "rows": [...], "current_page": ..., "per_page": ...,
+  "total_pages": ..., "prev_page_url": ..., "next_page_url": ...}` --
+  `total`/`rows`, keine Vermutung. `list_devices`/`list_companies` durchlaufen
+  alle Seiten intern (bis zu `MAX_PAGES` Seiten à `PAGE_LIMIT`, Schutz gegen
+  eine sich falsch verhaltende Gegenstelle) und liefern eine einzige,
+  bereits zusammengefügte Liste, exakt dasselbe Prinzip wie bei
+  NinjaOne/Level.io.
+- **Kein Hostname/keine IP-Adresse**: verifiziert über Snipe-ITs eigenen
+  Quellcode (`AssetsTransformer::transformAsset`) -- das Kern-Asset-Objekt
+  hat nachweislich weder ein Hostname- noch ein IP-Adress-Feld.
+  `SnipeitDevice.hostname`/`ip_address` sind deshalb IMMER `None` -- keine
+  Auslassung aus Bequemlichkeit, sondern eine verifizierte, ehrliche
+  Tatsache. Stattdessen sind Snipe-ITs eigene, natürliche
+  Identifikationsfelder -- `asset_tag` (Snipe-ITs primärer Identifikator,
+  `name` ist oft leer/`null`) und `serial` -- hier erstklassige Felder.
+  Snipe-IT liefert zusätzlich ein `custom_fields`-Objekt pro Asset
+  (verifiziert: nach admin-konfiguriertem Feldnamen benannte Schlüssel,
+  keine feste Liste) -- da diese Feldnamen instanzspezifisch und frei
+  konfigurierbar sind, verzichtet `plugin::snipeit` bewusst auf brüchige
+  Ratelogik nach einem "hostname"-artigen benutzerdefinierten Feld; das
+  saubere, `asset_tag`/`serial`-basierte Modell mit `hostname`/`ip_address`
+  immer `None` ist für v1 die ehrliche, korrekte Lösung.
+- **Web-Oberflächen-Link**: `{base_url}/hardware/{id}` zeigt die
+  Asset-Detailseite in Snipe-ITs eigener Weboberfläche, verifiziert über
+  Snipe-ITs `routes/web/hardware.php` (Laravel-Resource-Route
+  `hardware/{asset}`). `commands::snipeit::ExternalSystemDto.snipeit_url`
+  ist deshalb ein echtes, aus Snipe-ITs Quellcode abgeleitetes
+  Gegenstück zu `ExternalSystemDto.ninja_url`, kein erfundenes URL-Schema.
+- **HTTP-Client**: `ureq` 3.4.1, synchron, dieselbe Abhängigkeit wie
+  `plugin::ninja`/`plugin::level`.
+- **Zugangsdaten-Kodierung**: Snipe-IT braucht nur einen einzigen Geheimwert
+  (den Personal Access Token), 1:1 als `PluginCredentials.secret`
+  durchgereicht -- wie Level.io, keine JSON-Kodierung mehrerer Werte nötig
+  (anders als NinjaOne).
+
+### Snipe-IT-Verbindungen, jede mit mehreren Firmen
+
+Strukturell identisch zu NinjaOnes Verbindungs-/Organisations-Modell:
+
+- Nicht-geheime Metadaten (`id`, `label`, `base_url`, bewusst OHNE
+  `customer_id`) liegen als `SnipeitConnectionMeta` in
+  `Config::snipeit_connections` (`#[serde(default)]`-kompatibel).
+  Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"snipeit:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei NinjaOne/Level.io.
+- Welche Firma innerhalb einer Verbindung welchem lokalen Kunden entspricht
+  (falls überhaupt), steht granular in `Config::snipeit_company_mappings`.
+  Eine nicht zugeordnete Firma liefert bei jeder Synchronisierung ihre
+  Assets weiterhin (zur Ansicht), aber immer mit `linked_system_id: None`.
+- Ein Asset, das laut Snipe-IT selbst KEINER Firma zugeordnet ist
+  (`"company": null`/fehlend -- ein legitimer Fall, z. B. bei
+  Alleinstellungs-Instanzen, die das Firmen-Konzept gar nicht nutzen),
+  bekommt den synthetischen, nicht-numerischen Platzhalter
+  `plugin::snipeit::UNASSIGNED_COMPANY_ID`. `commands::snipeit::
+  group_devices_by_company` (analog zu `commands::plugins::
+  group_devices_by_organization`) zeigt solche Assets als eigene Gruppe
+  ("Ohne Firma (Snipe-IT)") statt sie stillschweigend zu verwerfen.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie NinjaOne/Level.io:
+`sync_snipeit_connection` schreibt das Ergebnis jedes Laufs zusätzlich als
+JSON nach `data_dir/plugin-cache/snipeit-<connection_id>.json`
+(`{"synced_at_utc": "...", "groups": [...]}`). `get_cached_snipeit_sync`
+liest ausschließlich diese Datei (kein Netzwerkzugriff), rejoint dabei aber
+`customer_id` je Gruppe live gegen die AKTUELLEN
+`Config::snipeit_company_mappings` (nicht den beim letzten Sync
+eingefrorenen Wert) -- exakt wie `commands::plugins::get_cached_ninja_sync`
+--, und liefert `None`, wenn für eine Verbindung noch nie synchronisiert
+wurde. `remove_snipeit_connection` löscht diese Cache-Datei (bestes
+Bemühen) und alle `snipeit_company_mappings`-Zeilen der entfernten
+Verbindung gleich mit.
+
+### Tauri-Kommandos (`commands::snipeit`)
+
+`test_snipeit_connection`, `list_snipeit_connections`,
+`add_snipeit_connection`, `remove_snipeit_connection`,
+`list_snipeit_companies`, `map_snipeit_company`, `unmap_snipeit_company`,
+`sync_snipeit_connection`, `get_cached_snipeit_sync`,
+`link_system_to_snipeit`, `unlink_system_from_snipeit`,
+`get_snipeit_system_details` -- dünne Wrapper nach dem Muster von
+`commands::plugins`. `list_snipeit_companies` liefert die Live-Firmenliste
+einer Verbindung (analog zu `list_ninja_organizations`), wird aber vom
+Frontend nicht aufgerufen -- `SnipeitPluginSection.tsx` ist wie
+`NinjaPluginSection.tsx` konsequent Cache-first (`get_cached_snipeit_sync`
+beim Öffnen, `sync_snipeit_connection` nur auf "Aktualisieren"); der Befehl
+bleibt für Symmetrie und einen möglichen künftigen
+Ersteinrichtungs-Anwendungsfall erhalten. Das Übernehmen eines extern
+gelieferten Werts in ein selbst gepflegtes Feld (`name`, `hostname`,
+`ip_address`, `notes` in `systems`) bleibt -- wie bei NinjaOne/Level.io --
+ausschließlich eine bewusste, manuelle Aktion über
+`get_snipeit_system_details` plus eine spätere UI-Aktion; kein Kommando
+hier schreibt automatisch in diese vier Felder.
+
+### Verknüpfungs-Vorschlag: welches Feld als Abgleichsschlüssel
+
+Anders als NinjaOne/Level.io (die per Konvention `hostname` als
+Abgleichsschlüssel für den "Mit bestehendem System verknüpfen"-Vorschlag
+verwenden) hat ein Snipe-IT-Asset kein Hostname-Feld. `SnipeitPluginSection.
+tsx`s `matchKeyForDevice` nimmt deshalb das erste vorhandene, wirklich
+identifizierende Snipe-IT-Feld in dieser Reihenfolge: `asset_tag` zuerst
+(Snipe-ITs primärer Identifikator), dann `hostname` (falls doch einmal
+vorhanden), zuletzt `serial`. Verglichen wird dieser Wert weiterhin gegen
+das einzige freie Textfeld, das ein lokales System dafür hat --
+`System.hostname` --, exakt wie bei NinjaOne/Level.io. Weil ein lokales
+System kein eigenes `asset_tag`/`serial`-Feld hat, werden diese beiden
+Snipe-IT-Felder beim "Neu anlegen" zusätzlich einmalig in das neu
+angelegte Systems `notes`-Feld geschrieben (siehe
+`SnipeitPluginSection.tsx::createAndLink`) -- eine einmalige Vorbelegung bei
+der Erstanlage, keine spätere automatische Überschreibung.
+
+### Frontend (`SnipeitPluginSection.tsx`)
+
+Strukturell die reifste, aktuellste Fassung des Musters -- mechanisch an
+`NinjaPluginSection.tsx`s post-Paginierung-Stand angelehnt (Firmen
+eingeklappt mit Geräte-Anzahl-Zusammenfassung, Kunde-Zuordnungs-`<select>`
+inklusive "+ Neuen Kunden anlegen…", aufklappbare, filterbare,
+10-pro-Seite-paginierte Geräteliste mit `j`/`k`/`Enter`/`l`/`u`-
+Tastaturnavigation, Vergleichs-/Übernahme-Panel für verknüpfte Geräte). Der
+Verbindungs-Anlage-Dialog hat drei Felder statt Ninjas vier (Label,
+Base-URL, Personal-Access-Token als `type="password"`) -- kein
+Client-ID/-Secret-Paar nötig. `DeviceSummaryLine` zeigt `asset_tag`/`serial`
+statt `hostname`/`ip_address` (Letztere sind für Snipe-IT praktisch immer
+leer, siehe oben), unterdrückt aber den redundanten
+`asset_tag`-Zusatz, wenn der Anzeigename ohnehin schon der Asset-Tag ist
+(Backend-Fallback-Fall). `PluginsView.tsx` bindet die Sektion als dritte
+Karte neben `NinjaPluginSection.tsx`/`LevelPluginSection.tsx` ein.

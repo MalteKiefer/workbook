@@ -155,6 +155,18 @@ pub fn run() {
             commands::level::link_system_to_level,
             commands::level::unlink_system_from_level,
             commands::level::get_level_system_details,
+            commands::snipeit::test_snipeit_connection,
+            commands::snipeit::list_snipeit_connections,
+            commands::snipeit::add_snipeit_connection,
+            commands::snipeit::remove_snipeit_connection,
+            commands::snipeit::list_snipeit_companies,
+            commands::snipeit::map_snipeit_company,
+            commands::snipeit::unmap_snipeit_company,
+            commands::snipeit::sync_snipeit_connection,
+            commands::snipeit::get_cached_snipeit_sync,
+            commands::snipeit::link_system_to_snipeit,
+            commands::snipeit::unlink_system_from_snipeit,
+            commands::snipeit::get_snipeit_system_details,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

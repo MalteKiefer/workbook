@@ -7,5 +7,6 @@ pub mod level;
 pub mod plugins;
 pub mod quickcapture;
 pub mod search;
+pub mod snipeit;
 pub mod systems;
 pub mod tags;

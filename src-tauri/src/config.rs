@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::error::AppError;
 use crate::plugin::level::LevelConnectionMeta;
 use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
+use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -59,6 +60,25 @@ pub struct Config {
     /// Konfigurationen von vor dieser Änderung, analog zu
     /// `ninja_connections` oben.
     pub level_connections: Vec<LevelConnectionMeta>,
+    /// Nicht-geheime Metadaten je konfigurierter Snipe-IT-Verbindung (eine
+    /// selbst gehostete Snipe-IT-Instanz; ein Nutzer kann beliebig viele
+    /// Verbindungen anlegen). Wie eine Ninja-Verbindung ist eine
+    /// Snipe-IT-Verbindung NICHT an genau einen lokalen Kunden gebunden --
+    /// siehe `snipeit_company_mappings`. Der zugehörige Personal Access
+    /// Token liegt ausschließlich im OS-Schlüsselspeicher, siehe
+    /// `plugin::secrets`. `#[serde(default)]`-kompatibel mit Konfigurationen
+    /// von vor dieser Änderung, analog zu `ninja_connections` oben.
+    pub snipeit_connections: Vec<SnipeitConnectionMeta>,
+    /// Zuordnung einzelner Snipe-IT-"Companies" (innerhalb einer Verbindung)
+    /// zu lokalen Kunden. Eine einzelne Snipe-IT-Instanz (eine Verbindung)
+    /// kann mehrere Firmen verwalten -- z. B. weil der Nutzer selbst ein MSP
+    /// ist, der mehrere eigene Kunden als getrennte Firmen in einer
+    /// gemeinsamen Snipe-IT-Instanz führt --, deshalb diese separate,
+    /// granulare Zuordnungstabelle statt eines `customer_id`-Felds direkt an
+    /// der Verbindung -- exakt dasselbe Prinzip wie `ninja_org_mappings`.
+    /// `#[serde(default)]`-kompatibel mit Konfigurationen von vor dieser
+    /// Änderung.
+    pub snipeit_company_mappings: Vec<SnipeitCompanyMapping>,
 }
 
 impl Default for Config {
@@ -74,6 +94,8 @@ impl Default for Config {
             ninja_connections: Vec::new(),
             ninja_org_mappings: Vec::new(),
             level_connections: Vec::new(),
+            snipeit_connections: Vec::new(),
+            snipeit_company_mappings: Vec::new(),
         }
     }
 }
@@ -276,6 +298,80 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.level_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_snipeit_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.snipeit_connections.push(SnipeitConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Snipe-IT".to_string(),
+            base_url: "https://assets.example.com".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.snipeit_connections.len(), 1);
+        assert_eq!(loaded.snipeit_connections[0].base_url, "https://assets.example.com");
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_snipeit_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simuliert eine config.toml von vor Einführung der Snipe-IT-Integration
+        // -- das Feld fehlt komplett und muss dank `#[serde(default)]` klaglos
+        // auf eine leere Liste zurückfallen statt das Laden scheitern zu
+        // lassen.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.snipeit_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_snipeit_company_mappings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.snipeit_connections.push(SnipeitConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Snipe-IT".to_string(),
+            base_url: "https://assets.example.com".to_string(),
+        });
+        config.snipeit_company_mappings.push(SnipeitCompanyMapping {
+            connection_id: "acme-1700000000000".to_string(),
+            company_id: "1".to_string(),
+            company_name: "ACME Hauptsitz".to_string(),
+            customer_id: 7,
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.snipeit_company_mappings.len(), 1);
+        assert_eq!(loaded.snipeit_company_mappings[0].company_id, "1");
+        assert_eq!(loaded.snipeit_company_mappings[0].customer_id, 7);
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_snipeit_company_mappings_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simuliert eine config.toml von vor Einführung der Firmen-Zuordnung --
+        // das Feld fehlt komplett und muss dank `#[serde(default)]` klaglos auf
+        // eine leere Liste zurückfallen statt das Laden scheitern zu lassen.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.snipeit_company_mappings.is_empty());
     }
 
     #[test]
