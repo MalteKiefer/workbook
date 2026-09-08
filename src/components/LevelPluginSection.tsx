@@ -339,6 +339,7 @@ function DeviceSummaryLine({ device }: { device: ExternalSystemDto }) {
 
 export default function LevelPluginSection() {
   const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
+  const customerEditorTarget = useAppStore((s) => s.customerEditorTarget);
 
   const [connections, setConnections] = useState<LevelConnectionDto[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -356,6 +357,13 @@ export default function LevelPluginSection() {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [customersRefreshBusy, setCustomersRefreshBusy] = useState(false);
   const kundeSelectRef = useRef<HTMLSelectElement>(null);
+  // Set when the user picks "+ Neuen Kunden anlegen…" in the add-connection
+  // form's Kunde select — tells the customerEditorTarget-closed effect below
+  // (mirroring CustomerListView.tsx's own reload-on-close pattern) that it
+  // should not just refresh the customer list but also try to auto-select
+  // whichever customer the CustomerForm modal just created, instead of
+  // leaving the user to find and pick it themselves after a manual refresh.
+  const [awaitingNewCustomer, setAwaitingNewCustomer] = useState(false);
 
   // Which connection's device modal is open (page-local UI state — this
   // modal only ever opens from a button on this same page, so unlike the
@@ -444,6 +452,43 @@ export default function LevelPluginSection() {
     reloadConnections();
     void reloadCustomers();
   }, [reloadConnections, reloadCustomers]);
+
+  // CustomerForm is globally mounted and driven by the store, so — exactly
+  // like CustomerListView.tsx — this component learns the editor closed by
+  // watching customerEditorTarget transition from non-null back to null,
+  // rather than via an onDone callback. Beyond that shared reload, when the
+  // close follows the "+ Neuen Kunden anlegen…" option (awaitingNewCustomer)
+  // it also diffs the freshly-fetched list against whatever was in state
+  // just before the fetch to find the newly-created customer and auto-select
+  // it in this form's Kunde select.
+  const prevCustomerEditorTargetRef = useRef(customerEditorTarget);
+  useEffect(() => {
+    const prevTarget = prevCustomerEditorTargetRef.current;
+    prevCustomerEditorTargetRef.current = customerEditorTarget;
+    if (prevTarget === null || customerEditorTarget !== null) return;
+    if (!awaitingNewCustomer) return;
+
+    const previousCustomers = customers;
+    void (async () => {
+      try {
+        const freshList = await reloadCustomers();
+        const previousIds = new Set(previousCustomers.map((c) => c.id));
+        const newlyCreated = freshList.filter((c) => !previousIds.has(c.id));
+        // Exactly one new customer: the common case (the user actually
+        // created one) — auto-select it. Zero (the user cancelled instead)
+        // or more than one (rare: concurrent creation elsewhere) both just
+        // fall through to leaving the Kunde select as-is; the list itself is
+        // still refreshed either way.
+        if (newlyCreated.length === 1) {
+          setNewCustomerId(newlyCreated[0].id);
+        }
+      } catch (err) {
+        setAddError(String(err));
+      } finally {
+        setAwaitingNewCustomer(false);
+      }
+    })();
+  }, [customerEditorTarget, awaitingNewCustomer, customers, reloadCustomers]);
 
   async function handleRefreshCustomers() {
     setCustomersRefreshBusy(true);
@@ -683,10 +728,12 @@ export default function LevelPluginSection() {
     setTestResult(null);
     setAddStatus(null);
     setAddError(null);
+    setAwaitingNewCustomer(false);
   }
 
   function handleKundeSelectChange(value: string) {
     if (value === CREATE_NEW_CUSTOMER) {
+      setAwaitingNewCustomer(true);
       openCustomerEditor("new");
       // The <select> is controlled by newCustomerId, which we deliberately
       // don't change here — but the browser has already visually flipped

@@ -307,6 +307,7 @@ function DeviceSummaryLine({ device }: { device: ExternalSystemDto }) {
 
 export default function NinjaPluginSection() {
   const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
+  const customerEditorTarget = useAppStore((s) => s.customerEditorTarget);
 
   const [connections, setConnections] = useState<NinjaConnectionDto[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -328,6 +329,15 @@ export default function NinjaPluginSection() {
   // UI state — this modal only ever opens from a button on this same page,
   // so it doesn't need to live in the global store.
   const [openConnectionId, setOpenConnectionId] = useState<string | null>(null);
+
+  // Which organization's Kunde-mapping select is waiting on a customer being
+  // created via the "+ Neuen Kunden anlegen…" option — keyed the same way as
+  // everything else here (`${connectionId}:${organizationId}`). Set right
+  // before opening the globally-mounted CustomerForm modal; consumed by the
+  // customerEditorTarget-transition-to-null effect below, which auto-maps
+  // the freshly-created customer to this organization once the editor
+  // closes, so the user doesn't have to manually refresh + re-select it.
+  const [pendingCustomerCreationGroupKey, setPendingCustomerCreationGroupKey] = useState<string | null>(null);
 
   // Org-mapping busy/error, keyed by `${connectionId}:${organizationId}`.
   const [orgMapBusy, setOrgMapBusy] = useState<Record<string, boolean>>({});
@@ -427,6 +437,50 @@ export default function NinjaPluginSection() {
     reloadConnections();
     refreshCustomers();
   }, [reloadConnections, refreshCustomers]);
+
+  // CustomerForm is globally mounted and driven by the store (see
+  // CustomerListView.tsx for the same pattern) — this component doesn't get
+  // an onDone callback from it, so it detects "the editor just closed" by
+  // watching customerEditorTarget go from non-null to null. When that
+  // happens AND a "+ Neuen Kunden anlegen…" selection left
+  // pendingCustomerCreationGroupKey set, re-fetch the customer list, diff it
+  // against what was in state right before the fetch to find the
+  // newly-created customer, and — if exactly one appeared (the user actually
+  // saved, and no concurrent creation elsewhere muddies which one is "the"
+  // new one) — auto-map it to the pending organization via the same
+  // handleOrgMappingChange path the manual dropdown uses. If the user
+  // cancelled (no new customer) or more than one new customer showed up, we
+  // just refresh the list and leave the selection to the user, per the same
+  // "never guess" principle used throughout PLUGIN_ARCHITECTURE.md.
+  const prevCustomerEditorTargetRef = useRef(customerEditorTarget);
+  useEffect(() => {
+    const groupKey = pendingCustomerCreationGroupKey;
+    if (prevCustomerEditorTargetRef.current !== null && customerEditorTarget === null && groupKey) {
+      const previousCustomers = customers;
+      void (async () => {
+        try {
+          const freshList = await invoke<Customer[]>("list_customers", { includeArchived: false });
+          setCustomers(freshList);
+          const previousIds = new Set(previousCustomers.map((c) => c.id));
+          const newlyCreated = freshList.filter((c) => !previousIds.has(c.id));
+          if (newlyCreated.length === 1) {
+            const sepIdx = groupKey.indexOf(":");
+            const connectionId = groupKey.slice(0, sepIdx);
+            const organizationId = groupKey.slice(sepIdx + 1);
+            const connection = connections.find((c) => c.id === connectionId);
+            const group = cachedSyncByConnection[connectionId]?.groups.find((g) => g.organization_id === organizationId);
+            if (connection && group) {
+              await handleOrgMappingChange(connection, group, String(newlyCreated[0].id));
+            }
+          }
+        } finally {
+          setPendingCustomerCreationGroupKey(null);
+        }
+      })();
+    }
+    prevCustomerEditorTargetRef.current = customerEditorTarget;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerEditorTarget]);
 
   async function refreshLocalSystems(customerId: number): Promise<System[]> {
     const list = await invoke<System[]>("list_systems", { customerId, includeArchived: false });
@@ -1147,6 +1201,7 @@ export default function NinjaPluginSection() {
                 // `value` prop won't change (the mapping itself didn't
                 // change), so nothing else would force this back on its own.
                 e.target.value = group.customer_id === null ? "" : String(group.customer_id);
+                setPendingCustomerCreationGroupKey(groupKey);
                 openCustomerEditor("new");
                 return;
               }

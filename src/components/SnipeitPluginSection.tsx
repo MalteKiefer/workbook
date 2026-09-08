@@ -360,10 +360,19 @@ function matchKeyForDevice(device: ExternalSystemDto): string {
 
 export default function SnipeitPluginSection() {
   const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
+  const customerEditorTarget = useAppStore((s) => s.customerEditorTarget);
 
   const [connections, setConnections] = useState<SnipeitConnectionDto[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
+
+  // Which company's Kunde-mapping select is waiting on the globally-mounted
+  // CustomerForm modal to finish creating a customer, keyed the same way as
+  // companyMapBusy/companyMapError below (`${connectionId}:${companyId}`).
+  // Set when the user picks "+ Neuen Kunden anlegen…"; consumed and cleared
+  // by the customerEditorTarget-closed effect further down, which then
+  // auto-maps the newly created customer to this company.
+  const [pendingCustomerCreationGroupKey, setPendingCustomerCreationGroupKey] = useState<string | null>(null);
 
   // Add-connection modal.
   const [addFormOpen, setAddFormOpen] = useState(false);
@@ -474,6 +483,55 @@ export default function SnipeitPluginSection() {
     reloadConnections();
     refreshCustomers();
   }, [reloadConnections, refreshCustomers]);
+
+  // CustomerForm is globally mounted and driven by the store (see
+  // CustomerListView.tsx for the same pattern) — this component has no
+  // onDone callback from it, so it detects "the customer editor just
+  // closed" by watching customerEditorTarget transition from non-null to
+  // null. When that happens right after the user picked "+ Neuen Kunden
+  // anlegen…" on one of the company selects below (tracked via
+  // pendingCustomerCreationGroupKey), re-fetch the customer list, diff it
+  // against the list from before the fetch to find the newly-created
+  // customer, and — if exactly one appeared — auto-map it to the company
+  // that was waiting, via the exact same handleCompanyMappingChange path
+  // the manual dropdown selection already uses. If the user cancelled
+  // instead of saving, no new customer will be found — the list is simply
+  // refreshed and the pending flag cleared, no error surfaced.
+  const prevCustomerEditorTargetRef = useRef(customerEditorTarget);
+  useEffect(() => {
+    if (prevCustomerEditorTargetRef.current !== null && customerEditorTarget === null && pendingCustomerCreationGroupKey) {
+      const groupKey = pendingCustomerCreationGroupKey;
+      const previousCustomers = customers;
+      void (async () => {
+        try {
+          const freshCustomers = await invoke<Customer[]>("list_customers", { includeArchived: false });
+          setCustomers(freshCustomers);
+          const previousIds = new Set(previousCustomers.map((c) => c.id));
+          const newlyCreated = freshCustomers.filter((c) => !previousIds.has(c.id));
+          if (newlyCreated.length === 1) {
+            const separatorIdx = groupKey.indexOf(":");
+            const connectionId = groupKey.slice(0, separatorIdx);
+            const companyId = groupKey.slice(separatorIdx + 1);
+            const connection = connections.find((c) => c.id === connectionId);
+            const group = cachedSyncByConnection[connectionId]?.groups.find((g) => g.company_id === companyId);
+            if (connection && group) {
+              await handleCompanyMappingChange(connection, group, String(newlyCreated[0].id));
+            }
+          }
+          // More than one new customer (rare — e.g. created elsewhere in the
+          // same window) can't be disambiguated: the list refresh above
+          // already covers that case, deliberately without guessing.
+        } catch {
+          // Best-effort auto-select; the manual 🔄 refresh button next to
+          // each select remains as a fallback.
+        } finally {
+          setPendingCustomerCreationGroupKey(null);
+        }
+      })();
+    }
+    prevCustomerEditorTargetRef.current = customerEditorTarget;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerEditorTarget, pendingCustomerCreationGroupKey, customers, connections, cachedSyncByConnection]);
 
   async function refreshLocalSystems(customerId: number): Promise<System[]> {
     const list = await invoke<System[]>("list_systems", { customerId, includeArchived: false });
@@ -1195,6 +1253,10 @@ export default function SnipeitPluginSection() {
                 // `value` prop won't change (the mapping itself didn't
                 // change), so nothing else would force this back on its own.
                 e.target.value = group.customer_id === null ? "" : String(group.customer_id);
+                // Remember which company is waiting so the
+                // customerEditorTarget-closed effect above can auto-map the
+                // newly created customer once the CustomerForm modal closes.
+                setPendingCustomerCreationGroupKey(groupKey);
                 openCustomerEditor("new");
                 return;
               }
