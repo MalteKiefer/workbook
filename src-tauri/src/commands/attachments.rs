@@ -140,11 +140,9 @@ pub fn cleanup_orphans(state: State<AppState>) -> Result<CleanupResult, AppError
     let mut removed_count = 0u32;
     let mut removed_bytes = 0u64;
     for file in stored {
-        if !referenced.contains(&file.sha256) {
-            if std::fs::remove_file(&file.absolute_path).is_ok() {
-                removed_count += 1;
-                removed_bytes += file.size_bytes;
-            }
+        if !referenced.contains(&file.sha256) && std::fs::remove_file(&file.absolute_path).is_ok() {
+            removed_count += 1;
+            removed_bytes += file.size_bytes;
         }
     }
     Ok(CleanupResult {

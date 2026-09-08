@@ -13,22 +13,17 @@ use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
 /// Tauri-Command als `"light"`/`"dark"`/`"system"` erscheinen statt in Rusts
 /// Standard-Schreibweise `Light`/`Dark`/`System` (dieselbe Konvention wie
 /// `db::entries::Category`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThemePreference {
     Light,
+    // Die App war bislang ausschließlich dunkel -- eine config.toml, die
+    // dieses Feld zum ersten Mal bekommt (bestehender Nutzer, altes
+    // Backup), darf sich dadurch NICHT optisch verändern. Nur eine
+    // explizite künftige Auswahl darf das Erscheinungsbild umstellen.
+    #[default]
     Dark,
     System,
-}
-
-impl Default for ThemePreference {
-    fn default() -> Self {
-        // Die App war bislang ausschließlich dunkel -- eine config.toml, die
-        // dieses Feld zum ersten Mal bekommt (bestehender Nutzer, altes
-        // Backup), darf sich dadurch NICHT optisch verändern. Nur eine
-        // explizite künftige Auswahl darf das Erscheinungsbild umstellen.
-        ThemePreference::Dark
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -168,6 +163,10 @@ impl Config {
 }
 
 #[cfg(test)]
+// Tests build fixtures by mutating a couple of fields on a `Config::default()`
+// binding; that reads clearer here than a full struct literal with
+// `..Default::default()` and would only get more brittle as fields are added.
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use tempfile::tempdir;

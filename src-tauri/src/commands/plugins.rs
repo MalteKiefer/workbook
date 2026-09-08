@@ -4,8 +4,8 @@
 //! eine gepoolte Verbindung/den Config-Mutex holen und in die eigentliche
 //! Logik (Plugin-Trait, `db::external_refs`, `Config`) durchreichen.
 //!
-//! Eine Ninja-"Verbindung" ist ein vom Nutzer angelegter Datensatz (Basis-URL
-//! + Zugangsdaten) für genau einen Ninja-Mandanten -- NICHT für genau einen
+//! Eine Ninja-"Verbindung" ist ein vom Nutzer angelegter Datensatz (Basis-URL +
+//! Zugangsdaten) für genau einen Ninja-Mandanten -- NICHT für genau einen
 //! lokalen Kunden. Ein Ninja-Mandant modelliert selbst mehrere
 //! "Organizations" (z. B. weil der Nutzer, der die Verbindung anlegt, selbst
 //! ein MSP ist und mehrere eigene Kunden als getrennte Organisationen in

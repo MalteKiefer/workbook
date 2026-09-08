@@ -17,8 +17,8 @@
 //!   (ein API-Key) hier direkt genau einem lokalen Kunden
 //!   (`LevelConnectionMeta.customer_id`) -- KEINE granulare
 //!   Organisations-Zuordnungsebene wie bei Ninja (`NinjaOrgMapping`) nötig.
-//! - **Geräteliste**: `GET {BASE_URL}/devices`, cursor-paginiert (`has_more`
-//!   + `starting_after`, verifiziert über
+//! - **Geräteliste**: `GET {BASE_URL}/devices`, cursor-paginiert (`has_more` +
+//!   `starting_after`, verifiziert über
 //!   <https://developers.level.io/reference/listdevices>). Diese Ebene
 //!   durchläuft alle Seiten intern (bis zu `MAX_PAGES` Seiten à
 //!   `PAGE_LIMIT` Geräten, als Schutz gegen eine sich falsch verhaltende

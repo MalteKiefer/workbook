@@ -357,6 +357,10 @@ fn backup_aside(path: &Path, bak_suffix: &str) -> Result<(), AppError> {
 }
 
 #[cfg(test)]
+// Test fixtures mutate a couple of fields on a `Config::default()` binding;
+// that reads clearer here than a full struct literal with
+// `..Default::default()` and would only get more brittle as fields are added.
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use tempfile::tempdir;

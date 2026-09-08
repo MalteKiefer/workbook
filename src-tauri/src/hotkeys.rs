@@ -11,9 +11,9 @@ pub fn register(app: &AppHandle, hotkeys: &HotkeyConfig) -> Result<(), AppError>
     let clipboard_screenshot =
         parse_shortcut(&hotkeys.clipboard_screenshot, "Zwischenablage-Screenshot");
 
-    let quick_capture_for_handler = quick_capture.clone();
-    let search_for_handler = search.clone();
-    let clipboard_for_handler = clipboard_screenshot.clone();
+    let quick_capture_for_handler = quick_capture;
+    let search_for_handler = search;
+    let clipboard_for_handler = clipboard_screenshot;
 
     app.plugin(
         tauri_plugin_global_shortcut::Builder::new()
