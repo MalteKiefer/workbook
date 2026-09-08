@@ -10,6 +10,7 @@ interface AppState {
   selectedSystemId: number | null;
   formOpen: boolean;
   editorTarget: "new" | number | null;
+  viewingEntryId: number | null;
   exportDialogOpen: boolean;
   customerEditorTarget: "new" | number | null;
   systemEditorTarget: "new" | number | null;
@@ -26,6 +27,8 @@ interface AppState {
   closeForm: () => void;
   openEntryEditor: (target: "new" | number) => void;
   closeEntryEditor: () => void;
+  openEntryDetail: (id: number) => void;
+  closeEntryDetail: () => void;
   openExportDialog: () => void;
   closeExportDialog: () => void;
   openCustomerEditor: (target: "new" | number) => void;
@@ -43,6 +46,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedSystemId: null,
   formOpen: false,
   editorTarget: null,
+  viewingEntryId: null,
   exportDialogOpen: false,
   customerEditorTarget: null,
   systemEditorTarget: null,
@@ -63,6 +67,8 @@ export const useAppStore = create<AppState>((set) => ({
   closeForm: () => set({ formOpen: false }),
   openEntryEditor: (target) => set({ editorTarget: target }),
   closeEntryEditor: () => set({ editorTarget: null }),
+  openEntryDetail: (id) => set({ viewingEntryId: id }),
+  closeEntryDetail: () => set({ viewingEntryId: null }),
   openExportDialog: () => set({ exportDialogOpen: true }),
   closeExportDialog: () => set({ exportDialogOpen: false }),
   openCustomerEditor: (target) => set({ customerEditorTarget: target }),

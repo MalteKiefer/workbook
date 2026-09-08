@@ -79,10 +79,12 @@ export default function JournalView() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [timestamps, setTimestamps] = useState<Record<number, string>>({});
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const formOpen = useAppStore((s) => s.formOpen);
   const openEntryEditor = useAppStore((s) => s.openEntryEditor);
+  const openEntryDetail = useAppStore((s) => s.openEntryDetail);
+  const openExportDialog = useAppStore((s) => s.openExportDialog);
+  const selectCustomer = useAppStore((s) => s.selectCustomer);
 
   useEffect(() => {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
@@ -111,7 +113,6 @@ export default function JournalView() {
     invoke<Entry[]>("list_entries", { filter }).then((result) => {
       setEntries(result);
       setSelectedIndex(0);
-      setExpandedId(null);
     });
   }, [customerId, systemId, category, tag, fromInput, toInput]);
 
@@ -156,21 +157,36 @@ export default function JournalView() {
         const entry = entries[selectedIndex];
         if (entry) {
           e.preventDefault();
-          setExpandedId((current) => (current === entry.id ? null : entry.id));
+          openEntryDetail(entry.id);
         }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [entries, selectedIndex, formOpen, openEntryEditor]);
+  }, [entries, selectedIndex, formOpen, openEntryEditor, openEntryDetail]);
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
         <h1 style={{ fontSize: "1.1rem" }}>Journal</h1>
-        <button className="btn-primary" onClick={() => openEntryEditor("new")}>
-          + Neuer Eintrag
-        </button>
+        <span style={{ display: "flex", gap: "0.5rem" }}>
+          <button
+            onClick={() => {
+              // ExportDialog seeds its Kunde field from the global
+              // selectedCustomerId, not from this view's own local `customerId`
+              // filter — sync it first so the Export button actually exports
+              // whatever the user is currently looking at here, rather than
+              // whatever customer happened to be globally selected last.
+              if (customerId !== "") selectCustomer(customerId);
+              openExportDialog();
+            }}
+          >
+            Exportieren
+          </button>
+          <button className="btn-primary" onClick={() => openEntryEditor("new")}>
+            + Neuer Eintrag
+          </button>
+        </span>
       </div>
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
         <select value={customerId} onChange={(e) => setCustomerId(e.target.value === "" ? "" : Number(e.target.value))}>
@@ -217,10 +233,12 @@ export default function JournalView() {
           <li
             key={entry.id}
             className="list-row"
+            onDoubleClick={() => openEntryDetail(entry.id)}
             style={{
               padding: "0.5rem 0.6rem",
               background: i === selectedIndex ? "var(--bg-selected)" : "transparent",
               borderBottom: "1px solid var(--border-subtle)",
+              cursor: "pointer",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
@@ -233,24 +251,7 @@ export default function JournalView() {
               <span>{CATEGORY_LABELS[entry.category] ?? entry.category}</span>
               <span>{entry.tags.join(", ")}</span>
             </div>
-            {expandedId === entry.id ? (
-              <pre
-                style={{
-                  whiteSpace: "pre-wrap",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.85rem",
-                  background: "var(--bg-surface)",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: "var(--radius-sm)",
-                  padding: "0.5rem",
-                  marginTop: "0.4rem",
-                }}
-              >
-                {entry.body_md}
-              </pre>
-            ) : (
-              <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{bodyPreview(entry.body_md)}</div>
-            )}
+            <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{bodyPreview(entry.body_md)}</div>
           </li>
         ))}
         {entries.length === 0 && (

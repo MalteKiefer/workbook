@@ -74,13 +74,38 @@ const CATEGORIES: { value: string; label: string }[] = [
   { value: "sonstiges", label: "Sonstiges" },
 ];
 
+// Plugin-sourced device known from a connected RMM/asset-management plugin
+// (NinjaOne, Level.io, Snipe-IT) for the selected customer that has no local
+// System linked to it yet. Backend reads already-cached plugin data (no
+// network call), so it's cheap to fetch alongside the local systems list.
+interface UnlinkedExternalSystemDto {
+  plugin: "ninja" | "level" | "snipeit";
+  connection_id: string;
+  external_id: string;
+  name: string;
+  hostname: string | null;
+  ip_address: string | null;
+}
+
+const PLUGIN_LABEL: Record<UnlinkedExternalSystemDto["plugin"], string> = {
+  ninja: "Ninja",
+  level: "Level",
+  snipeit: "Snipe-IT",
+};
+
 // System typeahead: a filterable dropdown over the already-fetched systems
 // list (filtering by name AND hostname, case-insensitive) instead of a plain
 // <select>, since a customer can have many systems and hostname is the
 // user-recognizable key in practice. A synthetic "clear" row is always first
 // so the field can always be reset back to "Kein System" from the keyboard
 // or a click, same as the old <select>'s empty option.
-type SystemRow = { kind: "clear" } | { kind: "system"; system: System };
+//
+// A third row kind surfaces devices known from a connected plugin but not
+// yet linked to any local System (see UnlinkedExternalSystemDto above) —
+// selecting one transparently creates the local System and links it, same
+// as picking "Als neues System anlegen und verknüpfen" in the plugin
+// sections (NinjaPluginSection.tsx etc.), just inline in this typeahead.
+type SystemRow = { kind: "clear" } | { kind: "system"; system: System } | { kind: "external"; device: UnlinkedExternalSystemDto };
 
 function systemLabel(system: System): string {
   return system.hostname ? `${system.name} — ${system.hostname}` : system.name;
@@ -97,11 +122,13 @@ export default function EntryEditor() {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [systems, setSystems] = useState<System[]>([]);
+  const [unlinkedExternalSystems, setUnlinkedExternalSystems] = useState<UnlinkedExternalSystemDto[]>([]);
   const [customerId, setCustomerId] = useState<number | "">("");
   const [systemId, setSystemId] = useState<number | "">("");
   const [systemQuery, setSystemQuery] = useState("");
   const [systemSuggestionsOpen, setSystemSuggestionsOpen] = useState(false);
   const [systemHighlightIndex, setSystemHighlightIndex] = useState(0);
+  const [systemCreateLinkBusy, setSystemCreateLinkBusy] = useState(false);
   const [title, setTitle] = useState("");
   const [bodyMd, setBodyMd] = useState("");
   const [category, setCategory] = useState("wartung");
@@ -124,6 +151,18 @@ export default function EntryEditor() {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
   }, []);
 
+  // Shared by the customer-change effect below and by the plugin-suggestion
+  // create+link handler's post-success refresh — refetches both the local
+  // systems list and the plugin-sourced unlinked-devices list for a customer.
+  // The latter is secondary/enhancement data: a failure there (no plugin
+  // connected, cache not warm yet) must not affect the local systems list.
+  const refreshSystemsForCustomer = useCallback((forCustomerId: number) => {
+    invoke<System[]>("list_systems", { customerId: forCustomerId, includeArchived: false }).then(setSystems);
+    invoke<UnlinkedExternalSystemDto[]>("list_unlinked_external_systems_for_customer", { customerId: forCustomerId })
+      .then(setUnlinkedExternalSystems)
+      .catch(() => setUnlinkedExternalSystems([]));
+  }, []);
+
   // Refetch systems whenever the customer changes. Deliberately does NOT
   // reset systemId here — this effect also fires when customerId is set
   // programmatically (new-mode default seeding, edit-mode load), and a reset
@@ -134,10 +173,11 @@ export default function EntryEditor() {
   useEffect(() => {
     if (customerId === "") {
       setSystems([]);
+      setUnlinkedExternalSystems([]);
       return;
     }
-    invoke<System[]>("list_systems", { customerId, includeArchived: false }).then(setSystems);
-  }, [customerId]);
+    refreshSystemsForCustomer(customerId);
+  }, [customerId, refreshSystemsForCustomer]);
 
   // Filtered dropdown rows for the System typeahead — recomputed as the user
   // types. The "clear" row is unfiltered/always present so "Kein System" stays
@@ -148,8 +188,18 @@ export default function EntryEditor() {
       q === ""
         ? systems
         : systems.filter((s) => s.name.toLowerCase().includes(q) || s.hostname.toLowerCase().includes(q));
-    return [{ kind: "clear" }, ...matches.map((system) => ({ kind: "system" as const, system }))];
-  }, [systems, systemQuery]);
+    const externalMatches =
+      q === ""
+        ? unlinkedExternalSystems
+        : unlinkedExternalSystems.filter(
+            (d) => d.name.toLowerCase().includes(q) || (d.hostname ?? "").toLowerCase().includes(q),
+          );
+    return [
+      { kind: "clear" },
+      ...matches.map((system) => ({ kind: "system" as const, system })),
+      ...externalMatches.map((device) => ({ kind: "external" as const, device })),
+    ];
+  }, [systems, unlinkedExternalSystems, systemQuery]);
 
   // Keep the input's displayed text in sync with the committed systemId
   // (initial load, edit-mode load, customer-change reset, or a fresh "new"
@@ -171,15 +221,66 @@ export default function EntryEditor() {
     setSystemHighlightIndex(0);
   }, [systemQuery, systemSuggestionsOpen]);
 
+  // Picking a plugin-sourced suggestion has no local System to point at yet —
+  // transparently create one (prefilled from the plugin device) and link it,
+  // then commit exactly as if an ordinary existing System had been picked.
+  // Mirrors NinjaPluginSection.tsx's (and the Level/Snipe-IT equivalents')
+  // "Als neues System anlegen und verknüpfen" create+link sequence.
+  async function selectExternalSystemRow(device: UnlinkedExternalSystemDto) {
+    if (customerId === "") return;
+    const custId = customerId;
+    const previousQuery = systemQuery;
+    setSystemSuggestionsOpen(false);
+    setSystemCreateLinkBusy(true);
+    setSystemQuery(`${device.name} — wird angelegt…`);
+    setError(null);
+    try {
+      const created = await invoke<System>("create_system", {
+        input: {
+          customer_id: custId,
+          name: device.name,
+          system_type: "",
+          hostname: device.hostname ?? "",
+          ip_address: device.ip_address ?? "",
+          notes: "",
+        },
+      });
+      const linkCommand =
+        device.plugin === "ninja" ? "link_system_to_ninja" : device.plugin === "level" ? "link_system_to_level" : "link_system_to_snipeit";
+      await invoke(linkCommand, {
+        systemId: created.id,
+        connectionId: device.connection_id,
+        externalId: device.external_id,
+      });
+      // Reflect the new System locally right away so the query-sync effect
+      // below can show it immediately, without depending on the best-effort
+      // refresh that follows succeeding.
+      setSystems((prev) => [...prev, created]);
+      setSystemId(created.id);
+      // Nice-to-have, not required for correctness above: refreshes both
+      // lists so a reopened dropdown shows this as a normal local System
+      // (not still listed as an unlinked plugin suggestion).
+      refreshSystemsForCustomer(custId);
+    } catch (e) {
+      setError(String(e));
+      setSystemQuery(previousQuery);
+    } finally {
+      setSystemCreateLinkBusy(false);
+    }
+  }
+
   function selectSystemRow(row: SystemRow) {
     if (row.kind === "clear") {
       setSystemId("");
       setSystemQuery("");
-    } else {
+      setSystemSuggestionsOpen(false);
+    } else if (row.kind === "system") {
       setSystemId(row.system.id);
       setSystemQuery(systemLabel(row.system));
+      setSystemSuggestionsOpen(false);
+    } else {
+      void selectExternalSystemRow(row.device);
     }
-    setSystemSuggestionsOpen(false);
   }
 
   function handleSystemKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -516,6 +617,7 @@ export default function EntryEditor() {
             System
             <input
               value={systemQuery}
+              disabled={systemCreateLinkBusy}
               onChange={(e) => {
                 setSystemQuery(e.target.value);
                 setSystemSuggestionsOpen(true);
@@ -546,36 +648,56 @@ export default function EntryEditor() {
                   zIndex: 10,
                 }}
               >
-                {filteredSystemRows.map((row, idx) => (
-                  <div
-                    key={row.kind === "clear" ? "clear" : `system-${row.system.id}`}
-                    onMouseEnter={() => setSystemHighlightIndex(idx)}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      selectSystemRow(row);
-                    }}
-                    style={{
-                      padding: "0.35rem 0.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      background: idx === systemHighlightIndex ? "var(--bg-selected)" : "transparent",
-                      color: row.kind === "clear" ? "var(--text-muted)" : "var(--text-primary)",
-                    }}
-                  >
-                    {row.kind === "clear" ? (
-                      "Kein System"
-                    ) : (
-                      <>
-                        {row.system.name}
-                        {row.system.hostname && (
-                          <span style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "0.85em" }}>
-                            {" "}— {row.system.hostname}
+                {filteredSystemRows.map((row, idx) => {
+                  const key =
+                    row.kind === "clear"
+                      ? "clear"
+                      : row.kind === "system"
+                        ? `system-${row.system.id}`
+                        : `external-${row.device.plugin}-${row.device.connection_id}-${row.device.external_id}`;
+                  return (
+                    <div
+                      key={key}
+                      onMouseEnter={() => setSystemHighlightIndex(idx)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        selectSystemRow(row);
+                      }}
+                      style={{
+                        padding: "0.35rem 0.5rem",
+                        cursor: "pointer",
+                        fontSize: "0.85rem",
+                        background: idx === systemHighlightIndex ? "var(--bg-selected)" : "transparent",
+                        color: row.kind === "clear" ? "var(--text-muted)" : "var(--text-primary)",
+                      }}
+                    >
+                      {row.kind === "clear" ? (
+                        "Kein System"
+                      ) : row.kind === "system" ? (
+                        <>
+                          {row.system.name}
+                          {row.system.hostname && (
+                            <span style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "0.85em" }}>
+                              {" "}— {row.system.hostname}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {row.device.name}
+                          {row.device.hostname && (
+                            <span style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "0.85em" }}>
+                              {" "}— {row.device.hostname}
+                            </span>
+                          )}
+                          <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", fontSize: "0.75em", marginLeft: "0.4rem" }}>
+                            · {PLUGIN_LABEL[row.device.plugin]}
                           </span>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
                 {filteredSystemRows.length === 1 && (
                   <div style={{ padding: "0.35rem 0.5rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>Keine Treffer</div>
                 )}

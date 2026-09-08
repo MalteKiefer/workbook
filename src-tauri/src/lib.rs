@@ -167,6 +167,7 @@ pub fn run() {
             commands::snipeit::link_system_to_snipeit,
             commands::snipeit::unlink_system_from_snipeit,
             commands::snipeit::get_snipeit_system_details,
+            commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

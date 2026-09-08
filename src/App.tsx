@@ -7,6 +7,7 @@ import SettingsView from "./components/SettingsView";
 import CommandPalette from "./components/CommandPalette";
 import ShortcutOverview from "./components/ShortcutOverview";
 import EntryEditor from "./components/EntryEditor";
+import EntryDetailModal from "./components/EntryDetailModal";
 import ExportDialog from "./components/ExportDialog";
 import CustomerForm from "./components/CustomerForm";
 import SystemForm from "./components/SystemForm";
@@ -73,6 +74,7 @@ export default function App() {
       <CommandPalette />
       <ShortcutOverview />
       <EntryEditor />
+      <EntryDetailModal />
       <ExportDialog />
       <CustomerForm />
       <SystemForm />

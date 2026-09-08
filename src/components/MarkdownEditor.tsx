@@ -33,6 +33,17 @@ const editorTheme = EditorView.theme({
     fontFamily: "var(--font-mono)",
     caretColor: "var(--text-primary)",
   },
+  // CodeMirror's `drawSelection()` extension (part of `basicSetup`) draws its
+  // own synthetic cursor as a `.cm-cursor` element instead of relying on the
+  // native caret — so the `caretColor` above never actually applies. Without
+  // an explicit border color here it falls back to CodeMirror's own default
+  // (a dark color), which is invisible against this app's dark editor
+  // background. `.cm-cursor-primary` covers the common single-cursor case;
+  // `.cm-cursor` covers secondary cursors from multi-selection.
+  "&.cm-focused .cm-cursor, .cm-cursor-primary, .cm-cursor": {
+    borderLeftColor: "var(--text-primary)",
+    borderLeftWidth: "2px",
+  },
   ".cm-gutters": {
     backgroundColor: "var(--bg-surface)",
     color: "var(--text-muted)",

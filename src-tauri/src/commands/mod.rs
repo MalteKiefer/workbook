@@ -3,6 +3,7 @@ pub mod backup;
 pub mod customers;
 pub mod entries;
 pub mod export;
+pub mod external_directory;
 pub mod level;
 pub mod plugins;
 pub mod quickcapture;
