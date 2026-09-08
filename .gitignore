@@ -1,19 +1,47 @@
 # Node / Frontend
 node_modules/
 dist/
+dist-ssr/
 *.tsbuildinfo
 vite.config.d.ts
 vite.config.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Rust
 src-tauri/target/
 src-tauri/gen/
+**/*.rs.bk
+*.pdb
 
-# Runtime data (never committed — see docs/superpowers/specs data layout)
+# Tauri bundler output (installers, if ever built outside src-tauri/target/)
+src-tauri/bundle/
+
+# Runtime data — never committed, this app's SQLite DB/WAL/config/plugin
+# cache live in the OS data dir (see src-tauri/src/config.rs), not here, but
+# ignore defensively in case a local dev run ever writes one into the repo.
 *.db
 *.db-wal
 *.db-shm
 *.db.bak-*
+config.toml
+plugin-cache/
 .smoke-test-data/
 smoke-test.log
 *.log
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets — never committed, this app's plugin credentials live in the OS
+# keyring exclusively (see docs/PLUGIN_ARCHITECTURE.md), never in a file, but
+# ignore defensively.
+.env
+.env.*
