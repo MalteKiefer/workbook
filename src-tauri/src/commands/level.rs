@@ -41,6 +41,19 @@ pub struct ExternalSystemDto {
     /// ID für diese Verbindung verknüpft ist (`external_refs`-Zeile mit
     /// passendem `plugin_id`/`external_id`), sonst `None`.
     pub linked_system_id: Option<i64>,
+    /// Levels rohe, nullable Gruppen-ID (`None` bedeutet "ungrouped", kein
+    /// Fehlerfall -- siehe `plugin::level`-Moduldokumentation, Abschnitt
+    /// "Gruppen"). Anders als bei Ninjas Organisationen gibt es dafür keine
+    /// separate Kunden-Zuordnungsebene -- reine Anzeige-Gruppierung, die das
+    /// Frontend (`LevelPluginSection.tsx`) aus der weiterhin flachen
+    /// Geräteliste bildet.
+    pub group_id: Option<String>,
+    /// Der über `plugin::level::build_group_lookup` serverseitig aufgelöste
+    /// Klartextname zu `group_id`. `None`, wenn `group_id` selbst `None` ist,
+    /// ODER wenn `group_id` gesetzt ist, aber keine passende Gruppe gefunden
+    /// wurde (z. B. eine inzwischen gelöschte Gruppe) -- das Frontend fällt
+    /// in letzterem Fall auf `Gruppe {group_id}` zurück.
+    pub group_name: Option<String>,
 }
 
 /// Momentaufnahme des letzten `sync_level_connection`-Laufs, unter
@@ -180,6 +193,8 @@ fn to_external_system_dto(device: LevelDevice, linked_system_id: Option<i64>) ->
         hostname: device.hostname,
         ip_address: device.ip_address,
         linked_system_id,
+        group_id: device.group_id,
+        group_name: device.group_name,
     }
 }
 
@@ -328,6 +343,37 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn to_external_system_dto_carries_group_fields_through() {
+        let device = LevelDevice {
+            external_id: "dev-1".to_string(),
+            name: "Server 01".to_string(),
+            hostname: Some("srv-01.local".to_string()),
+            ip_address: Some("10.0.0.5".to_string()),
+            group_id: Some("grp-1".to_string()),
+            group_name: Some("Werkstatt".to_string()),
+        };
+        let dto = to_external_system_dto(device, Some(3));
+        assert_eq!(dto.group_id.as_deref(), Some("grp-1"));
+        assert_eq!(dto.group_name.as_deref(), Some("Werkstatt"));
+        assert_eq!(dto.linked_system_id, Some(3));
+    }
+
+    #[test]
+    fn to_external_system_dto_leaves_group_fields_none_when_ungrouped() {
+        let device = LevelDevice {
+            external_id: "dev-2".to_string(),
+            name: "Server 02".to_string(),
+            hostname: None,
+            ip_address: None,
+            group_id: None,
+            group_name: None,
+        };
+        let dto = to_external_system_dto(device, None);
+        assert_eq!(dto.group_id, None);
+        assert_eq!(dto.group_name, None);
+    }
+
+    #[test]
     fn slugify_lowercases_and_collapses_separators() {
         assert_eq!(slugify("ACME  Kunde GmbH!!"), "acme-kunde-gmbh");
     }
@@ -375,6 +421,8 @@ mod tests {
             hostname: Some(format!("{id}.local")),
             ip_address: Some("10.0.0.5".to_string()),
             linked_system_id: Some(3),
+            group_id: Some("grp-1".to_string()),
+            group_name: Some("Werkstatt".to_string()),
         }
     }
 
@@ -390,6 +438,8 @@ mod tests {
         assert_eq!(loaded.devices.len(), 1);
         assert_eq!(loaded.devices[0].external_id, "dev-1");
         assert_eq!(loaded.devices[0].ip_address.as_deref(), Some("10.0.0.5"));
+        assert_eq!(loaded.devices[0].group_id.as_deref(), Some("grp-1"));
+        assert_eq!(loaded.devices[0].group_name.as_deref(), Some("Werkstatt"));
     }
 
     #[test]

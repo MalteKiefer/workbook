@@ -130,6 +130,23 @@ function sortByName<T extends { name: string }>(items: T[]): T[] {
   return items.slice().sort((a, b) => a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
 }
 
+// How many devices an expanded organization shows per page.
+const DEVICE_PAGE_SIZE = 10;
+
+// Slices `items` (already filtered/sorted) to one page of DEVICE_PAGE_SIZE,
+// clamping a possibly-stale stored page number into range — e.g. after the
+// text filter narrows the list, or after a resync shrinks/grows it — so
+// callers never need to worry about "page 4 of 1" themselves; they just
+// always render/act on `pageItems` and display `clampedPage`. Shared by
+// renderDeviceGroup (mouse) and the keydown handler (keyboard) so both
+// agree on what "the current page" contains.
+function paginateDevices<T>(items: T[], page: number): { pageItems: T[]; totalPages: number; clampedPage: number } {
+  const totalPages = Math.max(1, Math.ceil(items.length / DEVICE_PAGE_SIZE));
+  const clampedPage = Math.min(Math.max(page, 0), totalPages - 1);
+  const start = clampedPage * DEVICE_PAGE_SIZE;
+  return { pageItems: items.slice(start, start + DEVICE_PAGE_SIZE), totalPages, clampedPage };
+}
+
 const cardStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
@@ -235,6 +252,38 @@ function KeyHint({ label }: { label: string }) {
   );
 }
 
+// "◀ Zurück" / "Seite X von Y" / "Weiter ▶" — rendered under an expanded
+// organization's device list. Hides itself entirely when there's only one
+// page (e.g. the filter narrowed things down to a handful of matches), per
+// the "collapse or show 'Seite 1 von 1' sensibly" ask — hiding is the
+// cleaner of the two for this compact layout.
+function PaginationBar({
+  page,
+  totalPages,
+  onPrev,
+  onNext,
+}: {
+  page: number;
+  totalPages: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", justifyContent: "flex-end", padding: "0.2rem 0 0" }}>
+      <button type="button" disabled={page <= 0} onClick={onPrev} style={{ fontSize: "0.78rem", padding: "0.15rem 0.5rem" }}>
+        ◀ Zurück
+      </button>
+      <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>
+        Seite {page + 1} von {totalPages}
+      </span>
+      <button type="button" disabled={page >= totalPages - 1} onClick={onNext} style={{ fontSize: "0.78rem", padding: "0.15rem 0.5rem" }}>
+        Weiter ▶
+      </button>
+    </div>
+  );
+}
+
 function DeviceSummaryLine({ device }: { device: ExternalSystemDto }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -301,7 +350,25 @@ export default function NinjaPluginSection() {
   // Device text filter, keyed by `${connectionId}:${organizationId}`.
   const [deviceFilter, setDeviceFilter] = useState<Record<string, string>>({});
 
-  // Which organizations are expanded (collapsed by default — the user only
+  // Which organizations are expanded — collapsed by default (an
+  // organization renders as just a header row: name, Kunde-mapping select,
+  // and a device-count summary, per <PLUGIN_ARCHITECTURE-adjacent UX ask>
+  // "only show the organization, then I can expand it"). Keyed by
+  // `${connectionId}:${organizationId}`, same as everything else below.
+  // Deliberately NOT an accordion: multiple organizations can be expanded
+  // at once. Nothing else in this modal assumes only one org's devices are
+  // visible at a time (the keyboard nav below already scopes itself to a
+  // single "active" group regardless), so forcing a single-open accordion
+  // would only cost the user clicks with no corresponding benefit.
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set());
+
+  // Device-list pagination, 10 devices/page, keyed the same way
+  // (`${connectionId}:${organizationId}`); 0-based, so 0 means "Seite 1".
+  // Paginates over the exact same filtered/sorted list the keyboard nav
+  // below walks (see computeGroupDevices + paginateDevices), so "current
+  // page" means the same thing to the mouse and to j/k/Enter/l/u.
+  const [pageByGroup, setPageByGroup] = useState<Record<string, number>>({});
+
   // Keyboard navigation over the currently-open connection's device lists —
   // mirrors the j/k/Enter pattern used by CustomerListView.tsx/
   // SystemListView.tsx/JournalView.tsx. Each organization's "Nicht
@@ -310,7 +377,8 @@ export default function NinjaPluginSection() {
   // and `activeGroupKey` (`${connectionId}:${organizationId}`) says which
   // organization's list currently owns the keyboard highlight — only one
   // group is keyboard-active at a time; switching groups happens by
-  // focusing that group's filter input or hovering one of its rows.
+  // focusing that group's filter input, hovering one of its rows, or
+  // expanding it via its header.
   const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
   const [selectedIndexByGroup, setSelectedIndexByGroup] = useState<Record<string, number>>({});
 
@@ -496,6 +564,17 @@ export default function NinjaPluginSection() {
       // Prefer re-reading the cache afterward (authoritative, server-written
       // synced_at_utc) over building the timestamp from the client clock.
       await loadCachedSync(connection);
+      // The device list just changed underneath any expanded organization —
+      // stale page numbers after a resync would be confusing (e.g. sitting
+      // on "page 3" of a list that shrank to one page), so reset every one
+      // of this connection's organizations back to page 1.
+      setPageByGroup((prev) => {
+        const next = { ...prev };
+        for (const key of Object.keys(next)) {
+          if (key.startsWith(`${id}:`)) next[key] = 0;
+        }
+        return next;
+      });
     } catch (err) {
       setSyncError((prev) => ({ ...prev, [id]: String(err) }));
     } finally {
@@ -720,17 +799,25 @@ export default function NinjaPluginSection() {
         : undefined;
       if (!activeGroup) return;
       const { groupKey, navItems } = computeGroupDevices(connection.id, activeGroup);
+      // A collapsed organization shows no rows at all, so there's nothing
+      // for j/k/Enter/l/u to act on — and critically, without this guard
+      // Enter would silently create-and-link (or toggle details on) a
+      // device the user can't even see.
+      if (!expandedGroupKeys.has(groupKey)) return;
       if (navItems.length === 0) return;
-      const index = Math.min(selectedIndexByGroup[groupKey] ?? 0, navItems.length - 1);
+      const rawPage = pageByGroup[groupKey] ?? 0;
+      const { pageItems, totalPages, clampedPage } = paginateDevices(navItems, rawPage);
+      if (pageItems.length === 0) return;
+      const index = Math.min(selectedIndexByGroup[groupKey] ?? 0, pageItems.length - 1);
 
       if (e.key === "j" || e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndexByGroup((prev) => ({ ...prev, [groupKey]: Math.min(index + 1, navItems.length - 1) }));
+        setSelectedIndexByGroup((prev) => ({ ...prev, [groupKey]: Math.min(index + 1, pageItems.length - 1) }));
       } else if (e.key === "k" || e.key === "ArrowUp") {
         e.preventDefault();
         setSelectedIndexByGroup((prev) => ({ ...prev, [groupKey]: Math.max(index - 1, 0) }));
       } else if (e.key === "Enter") {
-        const item = navItems[index];
+        const item = pageItems[index];
         if (item) {
           e.preventDefault();
           if (item.kind === "unlinked") {
@@ -740,23 +827,49 @@ export default function NinjaPluginSection() {
           }
         }
       } else if (e.key === "l") {
-        const item = navItems[index];
+        const item = pageItems[index];
         if (item && item.kind === "unlinked") {
           e.preventDefault();
           openLinkPicker(connection, activeGroup, item.device);
         }
       } else if (e.key === "u") {
-        const item = navItems[index];
+        const item = pageItems[index];
         if (item && item.kind === "linked") {
           e.preventDefault();
           void handleUnlink(connection, item.device);
+        }
+      } else if (e.key === "ArrowRight") {
+        // Bonus: page forward without reaching for the mouse. Not one of
+        // the required bindings — j/k/Enter/l/u still clamp at the page
+        // edge as before — but ArrowLeft/ArrowRight were unused, so paging
+        // this way costs nothing.
+        if (clampedPage < totalPages - 1) {
+          e.preventDefault();
+          setPageByGroup((prev) => ({ ...prev, [groupKey]: clampedPage + 1 }));
+          setSelectedIndexByGroup((prev) => ({ ...prev, [groupKey]: 0 }));
+        }
+      } else if (e.key === "ArrowLeft") {
+        if (clampedPage > 0) {
+          e.preventDefault();
+          setPageByGroup((prev) => ({ ...prev, [groupKey]: clampedPage - 1 }));
+          setSelectedIndexByGroup((prev) => ({ ...prev, [groupKey]: 0 }));
         }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openConnectionId, addFormOpen, connections, cachedSyncByConnection, activeGroupKey, selectedIndexByGroup, deviceFilter]);
+  }, [
+    openConnectionId,
+    addFormOpen,
+    connections,
+    cachedSyncByConnection,
+    activeGroupKey,
+    selectedIndexByGroup,
+    deviceFilter,
+    expandedGroupKeys,
+    pageByGroup,
+  ]);
 
   // Default/track which group is keyboard-active: keep the current one if
   // it's still present, otherwise fall back to the first group that has any
@@ -908,7 +1021,7 @@ export default function NinjaPluginSection() {
   }
 
   function renderDeviceGroup(connection: NinjaConnectionDto, group: NinjaOrgDeviceGroupDto, isFirstFilterable: boolean) {
-    const { groupKey, filterText, filteredDevices, isMapped, linked, unlinked } = computeGroupDevices(
+    const { groupKey, filterText, filteredDevices, isMapped, linked, unlinked, navItems } = computeGroupDevices(
       connection.id,
       group,
     );
@@ -916,13 +1029,71 @@ export default function NinjaPluginSection() {
     const mapKey = groupKey;
     const mapBusyFlag = orgMapBusy[mapKey] ?? false;
     const mapErr = orgMapError[mapKey] ?? null;
-    const navLength = unlinked.length + linked.length;
-    const rawSelectedIndex = selectedIndexByGroup[groupKey] ?? 0;
-    const effectiveSelectedIndex = navLength === 0 ? -1 : Math.min(rawSelectedIndex, navLength - 1);
     const isGroupActive = activeGroupKey === groupKey;
+    const isExpanded = expandedGroupKeys.has(groupKey);
+    const totalDeviceCount = group.devices.length;
+    const linkedDeviceCount = group.devices.filter((d) => d.linked_system_id !== null).length;
+
+    // Paginate the exact list the keyboard handler walks (navItems, once
+    // mapped) — or the flat filtered list for a not-yet-mapped organization,
+    // which has no linked/unlinked split and isn't keyboard-navigable.
+    const rawPage = pageByGroup[groupKey] ?? 0;
+    let pageItems: { device: ExternalSystemDto; kind: "unlinked" | "linked" }[] = [];
+    let unmappedPageItems: ExternalSystemDto[] = [];
+    let totalPages = 1;
+    let clampedPage = 0;
+    if (isMapped) {
+      const paged = paginateDevices(navItems, rawPage);
+      pageItems = paged.pageItems;
+      totalPages = paged.totalPages;
+      clampedPage = paged.clampedPage;
+    } else if (filteredDevices.length > 0) {
+      const paged = paginateDevices(filteredDevices, rawPage);
+      unmappedPageItems = paged.pageItems;
+      totalPages = paged.totalPages;
+      clampedPage = paged.clampedPage;
+    }
+    const rawSelectedIndex = selectedIndexByGroup[groupKey] ?? 0;
+    const effectiveSelectedIndex = pageItems.length === 0 ? -1 : Math.min(rawSelectedIndex, pageItems.length - 1);
+
+    // Split this page's combined unlinked+linked slice back into the two
+    // visually-separated sections below, keeping each device's
+    // page-relative index (0..pageItems.length-1) — the same index space
+    // the keyboard handler uses, so hover/click and j/k/Enter/l/u agree on
+    // "which row is highlighted".
+    const pageUnlinked: { device: ExternalSystemDto; navIdx: number }[] = [];
+    const pageLinked: { device: ExternalSystemDto; navIdx: number }[] = [];
+    pageItems.forEach((item, navIdx) => {
+      if (item.kind === "unlinked") pageUnlinked.push({ device: item.device, navIdx });
+      else pageLinked.push({ device: item.device, navIdx });
+    });
+
     function selectRow(navIdx: number) {
       setActiveGroupKey(groupKey);
       setSelectedIndexByGroup((prev) => ({ ...prev, [groupKey]: navIdx }));
+    }
+    function toggleExpanded() {
+      setExpandedGroupKeys((prev) => {
+        const next = new Set(prev);
+        if (next.has(groupKey)) {
+          next.delete(groupKey);
+        } else {
+          next.add(groupKey);
+        }
+        return next;
+      });
+      if (!isExpanded) {
+        // Newly expanding: always start at the top, and make this the
+        // keyboard-active group so j/k/Enter work immediately without an
+        // extra click into the list.
+        setPageByGroup((prev) => ({ ...prev, [groupKey]: 0 }));
+        setActiveGroupKey(groupKey);
+      }
+    }
+    function goToPage(nextPage: number) {
+      setPageByGroup((prev) => ({ ...prev, [groupKey]: nextPage }));
+      setSelectedIndexByGroup((prev) => ({ ...prev, [groupKey]: 0 }));
+      setActiveGroupKey(groupKey);
     }
 
     return (
@@ -937,7 +1108,31 @@ export default function NinjaPluginSection() {
           gap: "0.4rem",
         }}
       >
-        <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{group.organization_name}</div>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={isExpanded}
+          onClick={toggleExpanded}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleExpanded();
+            }
+          }}
+          style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", userSelect: "none" }}
+        >
+          <span
+            aria-hidden="true"
+            style={{ fontSize: "0.75rem", color: "var(--text-secondary)", width: "0.9em", display: "inline-block", textAlign: "center" }}
+          >
+            {isExpanded ? "▾" : "▸"}
+          </span>
+          <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{group.organization_name}</span>
+          <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>
+            {totalDeviceCount} Gerät{totalDeviceCount === 1 ? "" : "e"}
+            {isMapped && `, ${linkedDeviceCount} verknüpft`}
+          </span>
+        </div>
 
         <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
           <span style={sectionLabelStyle}>Kunde</span>
@@ -978,170 +1173,201 @@ export default function NinjaPluginSection() {
         </div>
         {mapErr && <ErrorText>{mapErr}</ErrorText>}
 
-        {!isMapped && (
-          <p style={mutedStyle}>
-            Diese Organisation ist noch keinem Kunden zugeordnet — oben zuordnen, um Geräte zu verknüpfen.
-          </p>
-        )}
-        {group.devices.length === 0 && <p style={mutedStyle}>Keine Geräte in dieser Organisation.</p>}
-        {group.devices.length > 0 && (
-          <input
-            ref={isFirstFilterable ? firstFilterInputRef : undefined}
-            value={filterText}
-            onChange={(e) => setDeviceFilter((prev) => ({ ...prev, [groupKey]: e.target.value }))}
-            onFocus={() => setActiveGroupKey(groupKey)}
-            placeholder={`Geräte filtern (${group.devices.length})…`}
-            style={{ maxWidth: "20rem" }}
-          />
-        )}
-
-        {!isMapped &&
-          filteredDevices.map((device) => (
-            <div key={device.external_id} style={rowStyle}>
-              <DeviceSummaryLine device={device} />
-            </div>
-          ))}
-
-        {isMapped && (
+        {isExpanded && (
           <>
-            <div>
-              <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
-              {unlinked.length === 0 && <p style={mutedStyle}>Keine offenen Geräte.</p>}
-              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                {unlinked.map((device, i) => {
-                  const key = `${connection.id}:${device.external_id}`;
-                  const navIdx = i;
-                  const isSelected = isGroupActive && navIdx === effectiveSelectedIndex;
-                  const pickerOpen = linkPickerKey === key;
-                  const busyLink = linkBusy[key] ?? false;
-                  const busyCreate = createLinkBusy[key] ?? false;
-                  const rowErr = deviceError[key] ?? null;
-                  return (
-                    <li key={device.external_id} style={{ borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)" }}>
-                      <div
-                        className="list-row"
-                        role="option"
-                        aria-selected={isSelected}
-                        onMouseEnter={() => selectRow(navIdx)}
-                        onClick={() => selectRow(navIdx)}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          gap: "0.5rem",
-                          flexWrap: "wrap",
-                          padding: "0.4rem 0.6rem",
-                          background: isSelected ? "var(--bg-selected)" : "transparent",
-                        }}
-                      >
-                        <DeviceSummaryLine device={device} />
-                        <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
-                          <button type="button" disabled={busyCreate} onClick={() => void createAndLink(connection, group, device)}>
-                            {busyCreate ? "Lege an…" : "Neu anlegen"}
-                          </button>
-                          <KeyHint label="Enter" />
-                          <button type="button" disabled={busyCreate} onClick={() => openLinkPicker(connection, group, device)}>
-                            Verknüpfen…
-                          </button>
-                          <KeyHint label="l" />
-                        </span>
-                      </div>
-                      {pickerOpen && (
-                        <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", padding: "0.3rem 0.6rem 0" }}>
-                          <select
-                            value={linkPickerSelection}
-                            onChange={(e) => setLinkPickerSelection(e.target.value === "" ? "" : Number(e.target.value))}
-                            autoFocus
-                          >
-                            <option value="">System wählen…</option>
-                            {sortByName(localSystems).map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                                {s.hostname ? ` — ${s.hostname}` : ""}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            disabled={linkPickerSelection === "" || busyLink}
-                            onClick={() => void confirmLink(connection, device)}
-                          >
-                            {busyLink ? "Verknüpfe…" : "Verknüpfen"}
-                          </button>
-                          <button type="button" onClick={() => setLinkPickerKey(null)}>
-                            Abbrechen
-                          </button>
-                        </div>
-                      )}
-                      {rowErr && (
-                        <div style={{ padding: "0 0.6rem" }}>
-                          <ErrorText>{rowErr}</ErrorText>
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+            {!isMapped && (
+              <p style={mutedStyle}>
+                Diese Organisation ist noch keinem Kunden zugeordnet — oben zuordnen, um Geräte zu verknüpfen.
+              </p>
+            )}
+            {group.devices.length === 0 && <p style={mutedStyle}>Keine Geräte in dieser Organisation.</p>}
+            {group.devices.length > 0 && (
+              <input
+                ref={isFirstFilterable ? firstFilterInputRef : undefined}
+                value={filterText}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setDeviceFilter((prev) => ({ ...prev, [groupKey]: value }));
+                  // A filter that narrows 50 matches down to 3 shouldn't
+                  // leave the user stranded on "page 4 of 1" — restart at
+                  // the top whenever the search text itself changes.
+                  setPageByGroup((prev) => ({ ...prev, [groupKey]: 0 }));
+                }}
+                onFocus={() => setActiveGroupKey(groupKey)}
+                placeholder={`Geräte filtern (${group.devices.length})…`}
+                style={{ maxWidth: "20rem" }}
+              />
+            )}
 
-            <div>
-              <div style={sectionLabelStyle}>Bereits verknüpft ({linked.length})</div>
-              {linked.length === 0 && <p style={mutedStyle}>Keine verknüpften Geräte.</p>}
-              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                {linked.map((device, i) => {
-                  const key = `${connection.id}:${device.external_id}`;
-                  const navIdx = unlinked.length + i;
-                  const isSelected = isGroupActive && navIdx === effectiveSelectedIndex;
-                  const detailsIsOpen = detailsOpenKey === key;
-                  const busyUnlink = unlinkBusy[key] ?? false;
-                  const rowErr = deviceError[key] ?? null;
-                  const localSystem = localSystems.find((s) => s.id === device.linked_system_id);
-                  return (
-                    <li key={device.external_id} style={{ borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)" }}>
-                      <div
-                        className="list-row"
-                        role="option"
-                        aria-selected={isSelected}
-                        onMouseEnter={() => selectRow(navIdx)}
-                        onClick={() => selectRow(navIdx)}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          gap: "0.5rem",
-                          flexWrap: "wrap",
-                          padding: "0.4rem 0.6rem",
-                          background: isSelected ? "var(--bg-selected)" : "transparent",
-                        }}
-                      >
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
-                          <DeviceSummaryLine device={device} />
-                          {localSystem && (
-                            <span style={{ color: "var(--text-muted)", fontSize: "0.8em" }}>· lokal: {localSystem.name}</span>
+            {!isMapped && unmappedPageItems.length > 0 && (
+              <>
+                {unmappedPageItems.map((device) => (
+                  <div key={device.external_id} style={rowStyle}>
+                    <DeviceSummaryLine device={device} />
+                  </div>
+                ))}
+                <PaginationBar
+                  page={clampedPage}
+                  totalPages={totalPages}
+                  onPrev={() => goToPage(Math.max(0, clampedPage - 1))}
+                  onNext={() => goToPage(Math.min(totalPages - 1, clampedPage + 1))}
+                />
+              </>
+            )}
+
+            {isMapped && (
+              <>
+                <div>
+                  <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
+                  {unlinked.length === 0 && <p style={mutedStyle}>Keine offenen Geräte.</p>}
+                  {unlinked.length > 0 && pageUnlinked.length === 0 && (
+                    <p style={mutedStyle}>Keine offenen Geräte auf dieser Seite.</p>
+                  )}
+                  <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                    {pageUnlinked.map(({ device, navIdx }, i) => {
+                      const key = `${connection.id}:${device.external_id}`;
+                      const isSelected = isGroupActive && navIdx === effectiveSelectedIndex;
+                      const pickerOpen = linkPickerKey === key;
+                      const busyLink = linkBusy[key] ?? false;
+                      const busyCreate = createLinkBusy[key] ?? false;
+                      const rowErr = deviceError[key] ?? null;
+                      return (
+                        <li key={device.external_id} style={{ borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)" }}>
+                          <div
+                            className="list-row"
+                            role="option"
+                            aria-selected={isSelected}
+                            onMouseEnter={() => selectRow(navIdx)}
+                            onClick={() => selectRow(navIdx)}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                              flexWrap: "wrap",
+                              padding: "0.4rem 0.6rem",
+                              background: isSelected ? "var(--bg-selected)" : "transparent",
+                            }}
+                          >
+                            <DeviceSummaryLine device={device} />
+                            <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+                              <button type="button" disabled={busyCreate} onClick={() => void createAndLink(connection, group, device)}>
+                                {busyCreate ? "Lege an…" : "Neu anlegen"}
+                              </button>
+                              <KeyHint label="Enter" />
+                              <button type="button" disabled={busyCreate} onClick={() => openLinkPicker(connection, group, device)}>
+                                Verknüpfen…
+                              </button>
+                              <KeyHint label="l" />
+                            </span>
+                          </div>
+                          {pickerOpen && (
+                            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", padding: "0.3rem 0.6rem 0" }}>
+                              <select
+                                value={linkPickerSelection}
+                                onChange={(e) => setLinkPickerSelection(e.target.value === "" ? "" : Number(e.target.value))}
+                                autoFocus
+                              >
+                                <option value="">System wählen…</option>
+                                {sortByName(localSystems).map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name}
+                                    {s.hostname ? ` — ${s.hostname}` : ""}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                disabled={linkPickerSelection === "" || busyLink}
+                                onClick={() => void confirmLink(connection, device)}
+                              >
+                                {busyLink ? "Verknüpfe…" : "Verknüpfen"}
+                              </button>
+                              <button type="button" onClick={() => setLinkPickerKey(null)}>
+                                Abbrechen
+                              </button>
+                            </div>
                           )}
-                        </span>
-                        <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
-                          <button type="button" onClick={() => void toggleDetails(connection, group, device)}>
-                            {detailsIsOpen ? "Details ausblenden" : "Details/Aktualisieren"}
-                          </button>
-                          <KeyHint label="Enter" />
-                          <button type="button" disabled={busyUnlink} onClick={() => void handleUnlink(connection, device)}>
-                            {busyUnlink ? "Entferne…" : "Entfernen"}
-                          </button>
-                          <KeyHint label="u" />
-                        </span>
-                      </div>
-                      {rowErr && (
-                        <div style={{ padding: "0 0.6rem" }}>
-                          <ErrorText>{rowErr}</ErrorText>
-                        </div>
-                      )}
-                      {detailsIsOpen && renderDetailsPanel(group, device, key)}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+                          {rowErr && (
+                            <div style={{ padding: "0 0.6rem" }}>
+                              <ErrorText>{rowErr}</ErrorText>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+
+                <div>
+                  <div style={sectionLabelStyle}>Bereits verknüpft ({linked.length})</div>
+                  {linked.length === 0 && <p style={mutedStyle}>Keine verknüpften Geräte.</p>}
+                  {linked.length > 0 && pageLinked.length === 0 && (
+                    <p style={mutedStyle}>Keine verknüpften Geräte auf dieser Seite.</p>
+                  )}
+                  <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                    {pageLinked.map(({ device, navIdx }, i) => {
+                      const key = `${connection.id}:${device.external_id}`;
+                      const isSelected = isGroupActive && navIdx === effectiveSelectedIndex;
+                      const detailsIsOpen = detailsOpenKey === key;
+                      const busyUnlink = unlinkBusy[key] ?? false;
+                      const rowErr = deviceError[key] ?? null;
+                      const localSystem = localSystems.find((s) => s.id === device.linked_system_id);
+                      return (
+                        <li key={device.external_id} style={{ borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)" }}>
+                          <div
+                            className="list-row"
+                            role="option"
+                            aria-selected={isSelected}
+                            onMouseEnter={() => selectRow(navIdx)}
+                            onClick={() => selectRow(navIdx)}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                              flexWrap: "wrap",
+                              padding: "0.4rem 0.6rem",
+                              background: isSelected ? "var(--bg-selected)" : "transparent",
+                            }}
+                          >
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                              <DeviceSummaryLine device={device} />
+                              {localSystem && (
+                                <span style={{ color: "var(--text-muted)", fontSize: "0.8em" }}>· lokal: {localSystem.name}</span>
+                              )}
+                            </span>
+                            <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+                              <button type="button" onClick={() => void toggleDetails(connection, group, device)}>
+                                {detailsIsOpen ? "Details ausblenden" : "Details/Aktualisieren"}
+                              </button>
+                              <KeyHint label="Enter" />
+                              <button type="button" disabled={busyUnlink} onClick={() => void handleUnlink(connection, device)}>
+                                {busyUnlink ? "Entferne…" : "Entfernen"}
+                              </button>
+                              <KeyHint label="u" />
+                            </span>
+                          </div>
+                          {rowErr && (
+                            <div style={{ padding: "0 0.6rem" }}>
+                              <ErrorText>{rowErr}</ErrorText>
+                            </div>
+                          )}
+                          {detailsIsOpen && renderDetailsPanel(group, device, key)}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+
+                <PaginationBar
+                  page={clampedPage}
+                  totalPages={totalPages}
+                  onPrev={() => goToPage(Math.max(0, clampedPage - 1))}
+                  onNext={() => goToPage(Math.min(totalPages - 1, clampedPage + 1))}
+                />
+              </>
+            )}
           </>
         )}
       </div>

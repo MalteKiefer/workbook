@@ -19,9 +19,26 @@ import Modal from "./Modal";
 // docs — the API operates at account level, no org/site filtering exists),
 // so a Level connection maps 1:1 to exactly one local Kunde
 // (`customer_id` lives directly on the connection). No org-mapping UI, no
-// per-organization device grouping — devices are a single flat list per
-// connection, with a text filter above it since a real Level account can
-// have hundreds of devices once fully paginated.
+// per-organization customer assignment needed.
+//
+// Level DOES have a hierarchical "Groups" concept within one account, and
+// each synced device carries a `group_id`/`group_name` (see
+// plugin::level::LevelDevice on the Rust side — resolved server-side, but
+// the grouping/pagination of the *display* is a pure frontend concern, same
+// division of labour as Ninja's organization grouping). The device list
+// below is grouped by Level group, client-side, from the same flat
+// `ExternalSystemDto[]` the backend already returns — no separate
+// "list groups" call, no per-group customer mapping (unlike Ninja's
+// organizations, a Level group isn't its own tenant, so there's nothing to
+// map to a Kunde). Groups render collapsed by default (click a header to
+// expand); an expanded group's devices are paginated 10 per page, with the
+// single connection-wide filter box narrowing the device set *before*
+// pagination — see getDeviceGroupsList/getGroupPageInfo below. Groups can be
+// expanded independently of one another (not an accordion) — the same
+// "which group currently owns j/k/Enter/l/u" ambiguity that would create is
+// resolved via `activeGroupKey`, updated on hover/click/pagination within a
+// group, mirroring how NinjaPluginSection.tsx tracks the keyboard-active
+// organization.
 //
 // Page layout: the connections list stays inline (identity + two actions
 // per row); both the add-connection form and the per-connection device
@@ -40,6 +57,14 @@ interface ExternalSystemDto {
   hostname: string | null;
   ip_address: string | null;
   linked_system_id: number | null;
+  // Level's group concept (see plugin::level module docs): `group_id` is
+  // Level's raw, nullable field (`null` means "ungrouped", not an error).
+  // `group_name` is the server-resolved plain-text name for it — `null`
+  // when `group_id` itself is `null`, OR when `group_id` is set but no
+  // matching group was found (e.g. a since-deleted group), in which case
+  // the UI falls back to `Gruppe ${group_id}` (see groupLabelFor below).
+  group_id: string | null;
+  group_name: string | null;
 }
 
 interface CachedLevelSyncDto {
@@ -126,6 +151,100 @@ function localTimeZone(): string {
 // of the free-text filter above the list.
 function sortDevicesByName(devices: ExternalSystemDto[]): ExternalSystemDto[] {
   return devices.slice().sort((a, b) => a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
+}
+
+// Group-by-Level-group display: collapsed-by-default groups, 10 devices per
+// page within an expanded one — mirrors the org-grouping/pagination
+// conventions NinjaPluginSection.tsx applies to organizations, adapted for
+// Level's simpler "just a display grouping, no per-group Kunde mapping"
+// shape (see the module doc comment above).
+const GROUP_PAGE_SIZE = 10;
+
+// Sentinel group key for devices with `group_id === null` ("ungrouped" per
+// Level's own docs — a legitimate case, not an error). Never collides with a
+// real Level group id (those come back as opaque API-assigned strings).
+const UNGROUPED_GROUP_KEY = "__ungrouped__";
+
+interface DeviceGroup {
+  groupKey: string;
+  label: string;
+  devices: ExternalSystemDto[];
+}
+
+// The label spec from the task: group_name when resolved, "Gruppe
+// {group_id}" when the id is set but unresolved (a since-deleted group —
+// see ExternalSystemDto's doc comment), "Ohne Gruppe" for the null case.
+function groupLabelFor(device: ExternalSystemDto): string {
+  if (device.group_id === null) return "Ohne Gruppe";
+  return device.group_name ?? `Gruppe ${device.group_id}`;
+}
+
+// The full, stable key identifying one group's UI state (expanded/page)
+// across renders — connection-scoped, since group ids from different Level
+// accounts could otherwise collide.
+function fullGroupKey(connectionId: string, groupKey: string): string {
+  return `${connectionId}:${groupKey}`;
+}
+
+// Buckets an already filtered+sorted device list by group_id, sorted by
+// display label (German collation) — with "Ohne Gruppe" always last,
+// regardless of where it would otherwise sort alphabetically, since it
+// isn't really a "named" group (see groupLabelFor).
+function buildDeviceGroups(devices: ExternalSystemDto[]): DeviceGroup[] {
+  const byKey = new Map<string, DeviceGroup>();
+  for (const device of devices) {
+    const groupKey = device.group_id ?? UNGROUPED_GROUP_KEY;
+    let group = byKey.get(groupKey);
+    if (!group) {
+      group = { groupKey, label: groupLabelFor(device), devices: [] };
+      byKey.set(groupKey, group);
+    }
+    group.devices.push(device);
+  }
+  const groups = Array.from(byKey.values());
+  groups.sort((a, b) => {
+    if (a.groupKey === UNGROUPED_GROUP_KEY) return b.groupKey === UNGROUPED_GROUP_KEY ? 0 : 1;
+    if (b.groupKey === UNGROUPED_GROUP_KEY) return -1;
+    return a.label.localeCompare(b.label, "de", { sensitivity: "base" });
+  });
+  return groups;
+}
+
+// Splits one group's (filtered+sorted) devices into "unlinked"/"linked",
+// exactly like the flat connection-wide split this replaces.
+function splitLinked(devices: ExternalSystemDto[]): { unlinked: ExternalSystemDto[]; linked: ExternalSystemDto[] } {
+  return {
+    unlinked: devices.filter((d) => d.linked_system_id === null),
+    linked: devices.filter((d) => d.linked_system_id !== null),
+  };
+}
+
+// One group's devices as a single flat, keyboard-navigable list (unlinked
+// first, then linked — matching the two subsections' top-to-bottom visual
+// order), analogous to the old connection-wide getCombinedDeviceRows.
+function combineGroupRows(devices: ExternalSystemDto[]): { kind: "unlinked" | "linked"; device: ExternalSystemDto }[] {
+  const { unlinked, linked } = splitLinked(devices);
+  return [
+    ...unlinked.map((device) => ({ kind: "unlinked" as const, device })),
+    ...linked.map((device) => ({ kind: "linked" as const, device })),
+  ];
+}
+
+interface GroupPageInfo {
+  totalPages: number;
+  page: number;
+  pageRows: { kind: "unlinked" | "linked"; device: ExternalSystemDto }[];
+}
+
+// Slices one group's combined rows down to the current 10-per-page window,
+// clamping a stale/out-of-range page index (e.g. after the filter shrank the
+// group) back into range rather than showing a blank page.
+function getGroupPageInfo(devices: ExternalSystemDto[], requestedPage: number): GroupPageInfo {
+  const combined = combineGroupRows(devices);
+  const totalPages = Math.max(1, Math.ceil(combined.length / GROUP_PAGE_SIZE));
+  const page = Math.min(Math.max(requestedPage, 0), totalPages - 1);
+  const start = page * GROUP_PAGE_SIZE;
+  return { totalPages, page, pageRows: combined.slice(start, start + GROUP_PAGE_SIZE) };
 }
 
 const cardStyle: CSSProperties = {
@@ -258,16 +377,34 @@ export default function LevelPluginSection() {
 
   const [removeBusy, setRemoveBusy] = useState<Record<string, boolean>>({});
 
-  // Device text filter, keyed by connection id (Level has no org grouping,
-  // so one filter box per connection rather than per group).
+  // Device text filter, keyed by connection id — one filter box per
+  // connection (Level groups are a display grouping, not a separate
+  // per-group tenant like Ninja's organizations, so a single connection-wide
+  // filter narrows every group's devices at once).
   const [deviceFilter, setDeviceFilter] = useState<Record<string, string>>({});
-
-  // Keyboard-highlighted row within the device modal's combined, flat,
-  // filtered+sorted device list (unlinked rows first, then linked rows —
-  // see getCombinedDeviceRows), keyed by connection id. Mirrors the
-  // selectedIndex pattern from CustomerListView.tsx/SystemListView.tsx.
-  const [deviceSelectedIndex, setDeviceSelectedIndex] = useState<Record<string, number>>({});
   const deviceFilterInputRef = useRef<HTMLInputElement>(null);
+
+  // Which groups are expanded (collapsed by default), and which page each
+  // expanded group is showing — both keyed by fullGroupKey
+  // (`${connectionId}:${groupKey}`) so state from different connections (or
+  // a previous sync's now-gone groups) never collides. Groups expand
+  // independently of one another rather than as an accordion (see the
+  // module doc comment) — the user can compare devices across groups
+  // without losing one group's page position by opening another.
+  const [groupExpanded, setGroupExpanded] = useState<Record<string, boolean>>({});
+  const [groupPage, setGroupPage] = useState<Record<string, number>>({});
+
+  // Which group currently owns j/k/Enter/l/u — since groups can be
+  // independently expanded, at most one group's *page* of rows is the
+  // keyboard-navigation target at a time. Updated on hover/click of a row or
+  // its group's pagination controls, and when a group is expanded. Mirrors
+  // NinjaPluginSection.tsx's activeGroupKey for the same reason: an
+  // "expand this org" UI needs to know which org's list Enter/l/u should
+  // act on. groupSelectedIndex is the highlighted row's index *within the
+  // active group's current page* (0..9), not a connection-wide index —
+  // pagination means "the list" is only ever the current page.
+  const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
+  const [groupSelectedIndex, setGroupSelectedIndex] = useState<Record<string, number>>({});
 
   // Local systems cache, keyed by customer id — used both for the "link to
   // existing system" picker and for the compare/adopt panel.
@@ -368,7 +505,7 @@ export default function LevelPluginSection() {
     setOpenConnectionId(connection.id);
     setLinkPickerKey(null);
     setDetailsOpenKey(null);
-    setDeviceSelectedIndex((prev) => ({ ...prev, [connection.id]: 0 }));
+    setActiveGroupKey(null);
     void loadCachedSync(connection);
   }
 
@@ -391,23 +528,55 @@ export default function LevelPluginSection() {
     return sortDevicesByName(filtered);
   }
 
-  function getDeviceGroups(connectionId: string): { unlinked: ExternalSystemDto[]; linked: ExternalSystemDto[] } {
-    const sorted = getFilteredDevices(connectionId);
-    return {
-      unlinked: sorted.filter((d) => d.linked_system_id === null),
-      linked: sorted.filter((d) => d.linked_system_id !== null),
-    };
+  // The filtered+sorted device list, bucketed into groups (see
+  // buildDeviceGroups) — the single source of truth both renderDeviceModal
+  // and the keyboard-navigation effect below walk, so they can never
+  // disagree about which groups/devices are currently visible.
+  function getDeviceGroupsList(connectionId: string): DeviceGroup[] {
+    return buildDeviceGroups(getFilteredDevices(connectionId));
   }
 
-  // The single flat keyboard-navigable list backing deviceSelectedIndex:
-  // unlinked rows first, then linked rows, matching the two groups' visual
-  // top-to-bottom order in the modal.
-  function getCombinedDeviceRows(connectionId: string): { group: "unlinked" | "linked"; device: ExternalSystemDto }[] {
-    const { unlinked, linked } = getDeviceGroups(connectionId);
-    return [
-      ...unlinked.map((device) => ({ group: "unlinked" as const, device })),
-      ...linked.map((device) => ({ group: "linked" as const, device })),
-    ];
+  // Resets every one of this connection's groups back to page 1 — used
+  // whenever the filter text changes (a new filter invalidates whatever
+  // page each group was on) and after a resync (device set may have
+  // changed entirely).
+  function resetAllGroupPages(connectionId: string) {
+    const prefix = `${connectionId}:`;
+    setGroupPage((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        if (key.startsWith(prefix)) next[key] = 0;
+      }
+      return next;
+    });
+  }
+
+  // Expanding a group always resets it to page 1 (whether it was already on
+  // a later page from a previous expand, or freshly opened) and makes it
+  // the keyboard-navigation target; collapsing just closes it.
+  function toggleGroupExpanded(connectionId: string, group: DeviceGroup) {
+    const key = fullGroupKey(connectionId, group.groupKey);
+    setGroupExpanded((prev) => {
+      const nowExpanded = !prev[key];
+      return { ...prev, [key]: nowExpanded };
+    });
+    setGroupPage((prev) => ({ ...prev, [key]: 0 }));
+    setGroupSelectedIndex((prev) => ({ ...prev, [key]: 0 }));
+    setActiveGroupKey(key);
+  }
+
+  // Selecting a row (hover or click) both highlights it and makes its group
+  // the keyboard-navigation target — mirrors the selectRow helper
+  // NinjaPluginSection.tsx uses for the same activeGroupKey pattern.
+  function selectGroupRow(fullKey: string, rowIndex: number) {
+    setActiveGroupKey(fullKey);
+    setGroupSelectedIndex((prev) => ({ ...prev, [fullKey]: rowIndex }));
+  }
+
+  function changeGroupPage(fullKey: string, nextPage: number) {
+    setActiveGroupKey(fullKey);
+    setGroupPage((prev) => ({ ...prev, [fullKey]: Math.max(nextPage, 0) }));
+    setGroupSelectedIndex((prev) => ({ ...prev, [fullKey]: 0 }));
   }
 
   // Auto-focus the device filter input once the modal is open and its cache
@@ -431,6 +600,14 @@ export default function LevelPluginSection() {
   // Gated by isTypingTarget exactly like CustomerListView.tsx, so typing in
   // the filter input (or the link-picker's <select>, which autofocuses when
   // opened) never triggers row actions.
+  //
+  // Operates on whichever group activeGroupKey names — and only that
+  // group's *current page* of rows (pageRows), never the group's full
+  // device list: with pagination, "the list the user sees" really is just
+  // those <=10 rows. j/k clamp at that page's boundaries rather than
+  // auto-advancing to the next/previous page — simple, predictable, and
+  // matches the equivalent clamp-don't-page-flip behavior specified for
+  // NinjaPluginSection.tsx's own org-grouped pagination.
   useEffect(() => {
     if (openConnectionId === null) return;
     const found = connections.find((c) => c.id === openConnectionId);
@@ -441,42 +618,41 @@ export default function LevelPluginSection() {
     function onKeyDown(e: KeyboardEvent) {
       if (isTypingTarget(document.activeElement)) return;
       if (linkPickerKey !== null) return; // let the inline link-picker sub-form own its own keys
+      if (activeGroupKey === null || !activeGroupKey.startsWith(`${activeConnectionId}:`)) return;
+      if (!groupExpanded[activeGroupKey]) return; // a collapsed group has no visible rows to act on
 
-      const rows = getCombinedDeviceRows(activeConnectionId);
-      if (rows.length === 0) return;
-      const idx = deviceSelectedIndex[activeConnectionId] ?? 0;
+      const groupKey = activeGroupKey.slice(activeConnectionId.length + 1);
+      const group = getDeviceGroupsList(activeConnectionId).find((g) => g.groupKey === groupKey);
+      if (!group) return;
+      const { pageRows } = getGroupPageInfo(group.devices, groupPage[activeGroupKey] ?? 0);
+      if (pageRows.length === 0) return;
+      const idx = Math.min(groupSelectedIndex[activeGroupKey] ?? 0, pageRows.length - 1);
 
       if (e.key === "j" || e.key === "ArrowDown") {
         e.preventDefault();
-        setDeviceSelectedIndex((prev) => ({
-          ...prev,
-          [activeConnectionId]: Math.min((prev[activeConnectionId] ?? 0) + 1, rows.length - 1),
-        }));
+        setGroupSelectedIndex((prev) => ({ ...prev, [activeGroupKey]: Math.min(idx + 1, pageRows.length - 1) }));
       } else if (e.key === "k" || e.key === "ArrowUp") {
         e.preventDefault();
-        setDeviceSelectedIndex((prev) => ({
-          ...prev,
-          [activeConnectionId]: Math.max((prev[activeConnectionId] ?? 0) - 1, 0),
-        }));
+        setGroupSelectedIndex((prev) => ({ ...prev, [activeGroupKey]: Math.max(idx - 1, 0) }));
       } else if (e.key === "Enter") {
-        const row = rows[idx];
+        const row = pageRows[idx];
         if (row) {
           e.preventDefault();
-          if (row.group === "unlinked") {
+          if (row.kind === "unlinked") {
             void createAndLink(connection, row.device);
           } else {
             void toggleDetails(connection, row.device);
           }
         }
       } else if (e.key === "l") {
-        const row = rows[idx];
-        if (row && row.group === "unlinked") {
+        const row = pageRows[idx];
+        if (row && row.kind === "unlinked") {
           e.preventDefault();
           openLinkPicker(connection, row.device);
         }
       } else if (e.key === "u") {
-        const row = rows[idx];
-        if (row && row.group === "linked") {
+        const row = pageRows[idx];
+        if (row && row.kind === "linked") {
           e.preventDefault();
           void handleUnlink(connection, row.device);
         }
@@ -485,7 +661,19 @@ export default function LevelPluginSection() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openConnectionId, connections, deviceSelectedIndex, linkPickerKey, cachedSyncByConnection, deviceFilter, localSystemsByCustomer, detailsOpenKey]);
+  }, [
+    openConnectionId,
+    connections,
+    activeGroupKey,
+    groupExpanded,
+    groupPage,
+    groupSelectedIndex,
+    linkPickerKey,
+    cachedSyncByConnection,
+    deviceFilter,
+    localSystemsByCustomer,
+    detailsOpenKey,
+  ]);
 
   function closeAddForm() {
     setAddFormOpen(false);
@@ -578,6 +766,10 @@ export default function LevelPluginSection() {
       const devices = await invoke<ExternalSystemDto[]>("sync_level_connection", { connectionId: id });
       const count = Array.isArray(devices) ? devices.length : 0;
       setSyncStatus((prev) => ({ ...prev, [id]: `${count} Gerät(e) gefunden.` }));
+      // The device set (and therefore every group's page count) may have
+      // changed entirely — reset every group's page back to 1 rather than
+      // risk showing a stale, now out-of-range page.
+      resetAllGroupPages(id);
       // Prefer re-reading the cache afterward (authoritative, server-written
       // synced_at_utc) over building the timestamp from the client clock.
       await loadCachedSync(connection);
@@ -860,12 +1052,10 @@ export default function LevelPluginSection() {
     const cacheBusyFlag = cacheBusy[connection.id] ?? false;
     const cacheErr = cacheError[connection.id] ?? null;
     const syncedDisplay = syncedAtDisplay[connection.id];
-    const localSystems = localSystemsByCustomer[connection.customer_id] ?? [];
 
     const filterText = deviceFilter[connection.id] ?? "";
     const allDevices = cached?.devices ?? [];
-    const { unlinked, linked } = getDeviceGroups(connection.id);
-    const selectedIdx = deviceSelectedIndex[connection.id] ?? 0;
+    const groups = getDeviceGroupsList(connection.id);
 
     return (
       <Modal onClose={closeDeviceModal}>
@@ -908,35 +1098,90 @@ export default function LevelPluginSection() {
               value={filterText}
               onChange={(e) => {
                 setDeviceFilter((prev) => ({ ...prev, [connection.id]: e.target.value }));
-                setDeviceSelectedIndex((prev) => ({ ...prev, [connection.id]: 0 }));
+                resetAllGroupPages(connection.id);
               }}
               placeholder={`Geräte filtern (${allDevices.length})…`}
               style={{ maxWidth: "20rem" }}
             />
           )}
           {cached && allDevices.length === 0 && <p style={mutedStyle}>Keine Geräte im Cache.</p>}
+          {cached && allDevices.length > 0 && groups.length === 0 && <p style={mutedStyle}>Keine Geräte gefunden.</p>}
 
-          {cached && allDevices.length > 0 && (
-            <>
+          {cached && groups.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {groups.map((group) => renderDeviceGroup(connection, group))}
+            </div>
+          )}
+        </div>
+      </Modal>
+    );
+  }
+
+  // One collapsed-by-default group: a clickable header (chevron, group
+  // label, device count) and — once expanded — that group's devices, using
+  // the exact same compact row rendering the flat list used before
+  // (unlinked-then-linked sections, keyboard hints, link-picker, compare-
+  // and-adopt details panel), just narrowed down to the current 10-device
+  // page. A subsection is only rendered when either it's genuinely empty
+  // group-wide (so the "keine Geräte" message actually shows) or the
+  // current page has at least one row in it — avoids an empty "Nicht
+  // verknüpft (3)" header on a page that happens to only contain linked
+  // devices.
+  function renderDeviceGroup(connection: LevelConnectionDto, group: DeviceGroup) {
+    const key = fullGroupKey(connection.id, group.groupKey);
+    const expanded = groupExpanded[key] ?? false;
+    const localSystems = localSystemsByCustomer[connection.customer_id] ?? [];
+    const { unlinked, linked } = splitLinked(group.devices);
+    const { totalPages, page, pageRows } = getGroupPageInfo(group.devices, groupPage[key] ?? 0);
+    const selectedIdx = groupSelectedIndex[key] ?? 0;
+    const unlinkedOnPage = pageRows.filter((r) => r.kind === "unlinked").map((r) => r.device);
+    const linkedOnPage = pageRows.filter((r) => r.kind === "linked").map((r) => r.device);
+
+    return (
+      <div key={group.groupKey} style={{ border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
+        <div
+          role="button"
+          aria-expanded={expanded}
+          onClick={() => toggleGroupExpanded(connection.id, group)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            padding: "0.5rem 0.7rem",
+            background: "var(--bg-elevated)",
+            cursor: "pointer",
+            userSelect: "none",
+          }}
+        >
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "var(--text-muted)", width: "1rem", textAlign: "center" }}>
+            {expanded ? "▾" : "▸"}
+          </span>
+          <span style={{ fontWeight: 600, flex: 1 }}>{group.label}</span>
+          <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{group.devices.length} Gerät(e)</span>
+        </div>
+
+        {expanded && (
+          <div style={{ padding: "0.6rem 0.7rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {(unlinked.length === 0 || unlinkedOnPage.length > 0) && (
               <div>
                 <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
                 {unlinked.length === 0 && <p style={mutedStyle}>Keine offenen Geräte.</p>}
-                {unlinked.map((device, i) => {
-                  const key = `${connection.id}:${device.external_id}`;
+                {unlinkedOnPage.map((device, i) => {
+                  const rowKey = `${connection.id}:${device.external_id}`;
                   const rowIndex = i;
                   const isSelected = rowIndex === selectedIdx;
-                  const pickerOpen = linkPickerKey === key;
-                  const busyLink = linkBusy[key] ?? false;
-                  const busyCreate = createLinkBusy[key] ?? false;
-                  const rowErr = deviceError[key] ?? null;
+                  const pickerOpen = linkPickerKey === rowKey;
+                  const busyLink = linkBusy[rowKey] ?? false;
+                  const busyCreate = createLinkBusy[rowKey] ?? false;
+                  const rowErr = deviceError[rowKey] ?? null;
                   return (
                     <div key={device.external_id}>
                       <div
                         className="list-row"
                         role="option"
                         aria-selected={isSelected}
-                        onMouseEnter={() => setDeviceSelectedIndex((prev) => ({ ...prev, [connection.id]: rowIndex }))}
-                        onClick={() => setDeviceSelectedIndex((prev) => ({ ...prev, [connection.id]: rowIndex }))}
+                        onMouseEnter={() => selectGroupRow(key, rowIndex)}
+                        onClick={() => selectGroupRow(key, rowIndex)}
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
@@ -1011,17 +1256,19 @@ export default function LevelPluginSection() {
                   );
                 })}
               </div>
+            )}
 
+            {(linked.length === 0 || linkedOnPage.length > 0) && (
               <div>
                 <div style={sectionLabelStyle}>Bereits verknüpft ({linked.length})</div>
                 {linked.length === 0 && <p style={mutedStyle}>Keine verknüpften Geräte.</p>}
-                {linked.map((device, i) => {
-                  const key = `${connection.id}:${device.external_id}`;
-                  const rowIndex = unlinked.length + i;
+                {linkedOnPage.map((device, i) => {
+                  const rowKey = `${connection.id}:${device.external_id}`;
+                  const rowIndex = unlinkedOnPage.length + i;
                   const isSelected = rowIndex === selectedIdx;
-                  const detailsIsOpen = detailsOpenKey === key;
-                  const busyUnlink = unlinkBusy[key] ?? false;
-                  const rowErr = deviceError[key] ?? null;
+                  const detailsIsOpen = detailsOpenKey === rowKey;
+                  const busyUnlink = unlinkBusy[rowKey] ?? false;
+                  const rowErr = deviceError[rowKey] ?? null;
                   const localSystem = localSystems.find((s) => s.id === device.linked_system_id);
                   return (
                     <div key={device.external_id}>
@@ -1029,8 +1276,8 @@ export default function LevelPluginSection() {
                         className="list-row"
                         role="option"
                         aria-selected={isSelected}
-                        onMouseEnter={() => setDeviceSelectedIndex((prev) => ({ ...prev, [connection.id]: rowIndex }))}
-                        onClick={() => setDeviceSelectedIndex((prev) => ({ ...prev, [connection.id]: rowIndex }))}
+                        onMouseEnter={() => selectGroupRow(key, rowIndex)}
+                        onClick={() => selectGroupRow(key, rowIndex)}
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
@@ -1078,15 +1325,29 @@ export default function LevelPluginSection() {
                         </span>
                       </div>
                       {rowErr && <div style={{ padding: "0 0.6rem" }}><ErrorText>{rowErr}</ErrorText></div>}
-                      {detailsIsOpen && renderDetailsPanel(connection, device, key)}
+                      {detailsIsOpen && renderDetailsPanel(connection, device, rowKey)}
                     </div>
                   );
                 })}
               </div>
-            </>
-          )}
-        </div>
-      </Modal>
+            )}
+
+            {totalPages > 1 && (
+              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "0.6rem", paddingTop: "0.2rem" }}>
+                <button type="button" disabled={page === 0} onClick={() => changeGroupPage(key, page - 1)}>
+                  ◀ Zurück
+                </button>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                  Seite {page + 1} von {totalPages}
+                </span>
+                <button type="button" disabled={page >= totalPages - 1} onClick={() => changeGroupPage(key, page + 1)}>
+                  Weiter ▶
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     );
   }
 
