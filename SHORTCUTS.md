@@ -1,170 +1,181 @@
-# Tastaturbelegung — Wartungsdoku
+# Keyboard Shortcuts: Wartungsdoku
 
-Wartungsdoku ist auf vollständige Tastaturbedienung ausgelegt. Diese Datei listet die
-**tatsächlich implementierte** Tastaturbelegung, gruppiert nach dem Bereich, in dem sie
-aktiv ist — verifiziert gegen den aktuellen Quellcode (nicht nur gegen die
-Design-Spezifikation, siehe `docs/superpowers/specs/2026-09-07-wartungsdoku-design.md`).
-Wo Implementierung und Spec-Entwurf auseinanderlaufen, ist das unten explizit vermerkt.
+Wartungsdoku is designed for full keyboard operation. This file lists the
+**actually implemented** shortcuts, grouped by the area where they are
+active, verified against the current source code (not just the design
+spec, see `docs/superpowers/specs/2026-09-07-wartungsdoku-design.md`).
+Where the implementation and the spec draft diverge, that is called out
+explicitly below.
 
-## Globale Hotkeys (systemweit)
+## Global hotkeys (system wide)
 
-Systemweit aktiv — auch wenn Wartungsdoku keinen Fokus hat oder nur im Tray liegt.
-Registrierung über `tauri-plugin-global-shortcut` in `src-tauri/src/hotkeys.rs`, Defaults
-aus `HotkeyConfig` in `src-tauri/src/config.rs`. **Alle drei sind in `config.toml`
-(Abschnitt `[hotkeys]`) frei änderbar.**
+Active across the whole system, even while Wartungsdoku has no focus or
+sits only in the tray. Registered via `tauri-plugin-global-shortcut` in
+`src-tauri/src/hotkeys.rs`, defaults from `HotkeyConfig` in
+`src-tauri/src/config.rs`. **All three can be freely changed in
+`config.toml`** (the `[hotkeys]` section).
 
-| Taste (Default) | Wirkung |
+| Key (default) | Effect |
 |---|---|
-| `Strg+Alt+Leertaste` | Schnellerfassungsfenster öffnen |
-| `Strg+Alt+F` | Hauptfenster anzeigen und fokussieren. **Hinweis:** Das öffnet aktuell *keine* eigene Such-Oberfläche — es zeigt schlicht das Hauptfenster (`window::show_and_focus_main`). Volltextsuche findet dort über die Command Palette (`Strg+K`) statt. |
-| `Strg+Alt+S` | Bild aus der Zwischenablage lesen und die Schnellerfassung mit bereits eingefügtem Screenshot öffnen |
+| `Ctrl+Alt+Space` | Open the quick capture window |
+| `Ctrl+Alt+F` | Show and focus the main window. **Note:** this currently opens no dedicated search UI of its own, it just shows the main window (`window::show_and_focus_main`). Full text search happens there via the Command Palette (`Ctrl+K`). |
+| `Ctrl+Alt+S` | Read an image from the clipboard and open quick capture with it already attached as a screenshot |
 
-Siehe auch [Plattformhinweise](#plattformhinweise) — unter Wayland funktionieren diese
-drei Hotkeys nicht zuverlässig.
+See also [Platform notes](#platform-notes): these three hotkeys do not work
+reliably under Wayland.
 
-## Hauptfenster
+## Main window
 
-App-weit im Hauptfenster aktiv, registriert in `src/hooks/useGlobalHotkeys.ts`.
+Active app wide in the main window, registered in
+`src/hooks/useGlobalHotkeys.ts`.
 
-| Taste | Wirkung | Aktiv auch in Textfeldern? |
+| Key | Effect | Also active in text fields? |
 |---|---|---|
-| `Strg+N` | Schnellerfassungsfenster mit aktuellem Kunden-/System-Kontext öffnen (`open_quick_capture_with_context`) | Ja |
-| `Esc` | Offenes Formular/Overlay schließen; ist keines offen und die aktuelle Ansicht ist die Systemliste, geht es zurück zur Kundenliste | Ja |
-| `g` dann `c` | Zu Kundenliste | Nein |
-| `g` dann `s` | Zu Systemliste des aktuellen Kunden (nur wenn ein Kunde ausgewählt ist) | Nein |
-| `g` dann `j` | Zum Journal | Nein |
+| `Ctrl+N` | Open the quick capture window with the current customer/system context (`open_quick_capture_with_context`) | Yes |
+| `Esc` | Close an open form or overlay; if none is open and the current view is the system list, go back to the customer list | Yes |
+| `g` then `c` | Go to customer list | No |
+| `g` then `s` | Go to the current customer's system list (only if a customer is selected) | No |
+| `g` then `j` | Go to the journal | No |
 
-`Esc` und `Strg+N` lösen laut Code auch dann aus, wenn ein Eingabefeld fokussiert ist —
-alle anderen Bindings in dieser Tabelle (die `g`-Sequenzen) werden unterdrückt, solange
-ein Textfeld fokussiert ist oder Strg/Alt/Cmd gehalten wird. Eine begonnene `g`-Sequenz
-verfällt nach 800 ms ohne zweiten Tastendruck.
+Per the code, `Esc` and `Ctrl+N` also fire even while an input field is
+focused. Every other binding in this table (the `g` sequences) is
+suppressed while a text field is focused or Ctrl, Alt or Cmd is held. A
+started `g` sequence expires after 800 ms without a second keypress.
 
-**Wichtige Feinheit:** `Strg+N` öffnet immer das separate Schnellerfassungsfenster, nicht
-den im Hauptfenster eingebetteten Eintrags-Editor (siehe [Eintrags-Editor](#eintrags-editor-hauptfenster)
-unten für den zweiten, eigenständigen Weg, einen neuen Eintrag anzulegen).
+**Important nuance:** `Ctrl+N` always opens the separate quick capture
+window, not the entry editor embedded in the main window. See
+[Entry editor](#entry-editor-main-window-srccomponentsentryeditortsx) below
+for the second, separate way to create a new entry.
 
-## Command Palette (`Strg+K`)
+## Command Palette (`Ctrl+K`)
 
-`Strg+K` öffnet/schließt die Command Palette (`src/components/CommandPalette.tsx`) und ist
-**immer aktiv**, auch während ein Textfeld fokussiert ist (eigener Capture-Phase-Listener
-mit `stopPropagation`, läuft vor allen anderen Tastatur-Handlern).
+`Ctrl+K` opens or closes the Command Palette
+(`src/components/CommandPalette.tsx`) and is **always active**, even while
+a text field is focused (its own capture phase listener with
+`stopPropagation`, runs before every other keyboard handler).
 
-| Taste | Wirkung |
+| Key | Effect |
 |---|---|
-| `Strg+K` | Palette öffnen bzw. schließen |
-| `Pfeil ↓` | Nächsten Treffer auswählen |
-| `Pfeil ↑` | Vorherigen Treffer auswählen |
-| `Enter` | Ausgewählten Eintrag ausführen (Befehl, Kunde/System oder Volltext-Treffer) |
-| `Esc` | Palette schließen |
+| `Ctrl+K` | Open or close the palette |
+| `Arrow Down` | Select the next hit |
+| `Arrow Up` | Select the previous hit |
+| `Enter` | Run the selected item (command, customer/system, or full text hit) |
+| `Esc` | Close the palette |
 
-Bei leerer Eingabe zeigt die Palette statische Befehle (u. a. "Neuer Eintrag", "Zu
-Kundenliste", "Zu Systemliste", "Zum Journal", "Anhänge bereinigen"); ab dem ersten
-Zeichen kommen serverseitige Treffer aus Verzeichnis-Suche (Kunden/Systeme) und
-Volltextsuche (Einträge) hinzu. Der Befehl "Neuer Eintrag" zeigt in der Palette den Hinweis
-`Strg+N` an, öffnet bei Auswahl aber den Eintrags-Editor im Hauptfenster
-(`openEntryEditor("new")`) — nicht dasselbe Fenster, das die globale `Strg+N`-Taste öffnet
-(siehe Hinweis oben).
+With empty input, the palette shows static commands, including "New
+entry", "Go to customer list", "Go to system list", "Go to journal" and
+"Clean up attachments"; from the first character on, server side hits from
+directory search (customers/systems) and full text search (entries) are
+added. The "New entry" command shows the `Ctrl+N` hint in the palette but,
+when selected, opens the entry editor in the main window
+(`openEntryEditor("new")`), not the same window the global `Ctrl+N` key
+opens (see the note above). Selecting a full text entry hit opens that
+entry's read only detail view directly (`openEntryDetail`), the same one
+reachable by double clicking a row in the journal.
 
-## Ansichts-spezifische Tasten
+## View specific keys
 
-Die folgenden Bindings sind jeweils nur lokal in ihrer Ansicht aktiv, und nur wenn kein
-Formular offen ist und kein Textfeld fokussiert ist.
+The following bindings are each only active locally within their own view,
+and only while no form is open and no text field is focused.
 
-### Kundenliste (`src/components/CustomerListView.tsx`)
+### Customer list (`src/components/CustomerListView.tsx`)
 
-| Taste | Wirkung |
+| Key | Effect |
 |---|---|
-| `j` | Nächsten Kunden auswählen |
-| `k` | Vorherigen Kunden auswählen |
-| `Enter` | Zum ausgewählten Kunden navigieren (dessen Systemliste öffnen) |
-| `e` | Ausgewählten Kunden bearbeiten (Formular öffnen) |
+| `j` | Select the next customer |
+| `k` | Select the previous customer |
+| `Enter` | Navigate to the selected customer (open their system list) |
+| `e` | Edit the selected customer (open the form) |
 
-### Systemliste (`src/components/SystemListView.tsx`)
+### System list (`src/components/SystemListView.tsx`)
 
-| Taste | Wirkung |
+| Key | Effect |
 |---|---|
-| `j` | Nächstes System auswählen |
-| `k` | Vorheriges System auswählen |
-| `e` | Ausgewähltes System bearbeiten (Formular öffnen) |
-| `Enter` | *Nicht gebunden* — anders als in der Kundenliste gibt es hier keine Navigation in eine weitere Ebene, `Enter` hat aktuell keine Wirkung |
+| `j` | Select the next system |
+| `k` | Select the previous system |
+| `e` | Edit the selected system (open the form) |
+| `Enter` | Not bound. Unlike the customer list, there is no further level to navigate into here; `Enter` currently does nothing |
 
 ### Journal (`src/components/JournalView.tsx`)
 
-| Taste | Wirkung |
+| Key | Effect |
 |---|---|
-| `j` | Nächsten Eintrag auswählen |
-| `k` | Vorherigen Eintrag auswählen |
-| `Enter` | Inline-Rohtext-Vorschau des ausgewählten Eintrags ein-/ausklappen (wechselt zwischen gekürzter Vorschau und dem vollständigen `body_md` als Rohtext, *ohne* etwas zu öffnen) |
-| `e` | Ausgewählten Eintrag im vollständigen Eintrags-Editor öffnen |
+| `j` | Select the next entry |
+| `k` | Select the previous entry |
+| `Enter` | Open the selected entry in its read only detail view (`EntryDetailModal`), with an "Edit" button to switch to editing. Double clicking a row does the same. |
+| `e` | Open the selected entry directly in the full entry editor |
 
-`Enter` und `e` tun in dieser Ansicht **nicht** dasselbe: `Enter` bleibt in der Liste und
-blendet nur eine Vorschau ein, `e` öffnet den echten Editor.
+`Enter` and `e` do **not** do the same thing in this view: `Enter` opens a
+read only view of the entry, `e` opens the actual editor directly.
 
-## Eintrags-Editor (Hauptfenster, `src/components/EntryEditor.tsx`)
+## Entry editor (main window, `src/components/EntryEditor.tsx`)
 
-Der Editor ist ein Modal im Hauptfenster für neue oder bestehende Einträge. Geöffnet wird
-er über den Command-Palette-Befehl "Neuer Eintrag", über `e` im Journal, oder über die
-Buttons "+ Neuer Eintrag" / "Bearbeiten" in den jeweiligen Ansichten — **nicht** über die
-globale `Strg+N`-Taste (die öffnet stattdessen die Schnellerfassung, siehe oben).
+The editor is a modal in the main window for new or existing entries.
+Opened via the Command Palette's "New entry" command, via `e` in the
+journal or the entry detail view, or via the "+ New entry" / "Edit"
+buttons in the relevant views. Not via the global `Ctrl+N` key (that opens
+quick capture instead, see above).
 
-| Taste | Wirkung |
+| Key | Effect |
 |---|---|
-| `Strg+S` | Eintrag speichern (legt neu an oder aktualisiert, je nach Kontext) — nur aktiv, während der Editor offen ist |
-| `Esc` | Editor verwerfen/schließen — läuft über die globale `Esc`-Behandlung in `useGlobalHotkeys.ts` (gemeinsamer `formOpen`-Zustand), nicht über einen eigenen Listener im Editor |
+| `Ctrl+S` | Save the entry (creates or updates, depending on context); only active while the editor is open |
+| `Esc` | Discard/close the editor. Goes through the global `Esc` handling in `useGlobalHotkeys.ts` (shared `formOpen` state), not a dedicated listener in the editor itself |
 
-## Schnellerfassungsfenster (separates Fenster, `src/quick-capture/QuickCapture.tsx`)
+## Quick capture window (separate window, `src/quick-capture/QuickCapture.tsx`)
 
-Eigenständiges, kompaktes Fenster — **nicht** das Hauptfenster. Geöffnet per globalem
-Hotkey, per `Strg+N` im Hauptfenster, oder per CLI-Flag (`--quick-capture`). Das Titelfeld
-wird beim Öffnen automatisch fokussiert.
+A standalone, compact window, not the main window. Opened via the global
+hotkey, via `Ctrl+N` in the main window, or via a CLI flag
+(`--quick-capture`). The title field is focused automatically when it
+opens.
 
-| Taste | Wirkung |
+| Key | Effect |
 |---|---|
-| `Strg+V` | Bild aus der Zwischenablage einfügen — wird als Anhang vorgemerkt und als Markdown-Referenz an der Cursorposition eingefügt |
-| `Strg+S` | Eintrag speichern und Fenster schließen |
-| `Esc` | Entwurf verwerfen und Fenster schließen |
+| `Ctrl+V` | Paste an image from the clipboard; queued as an attachment and inserted as a Markdown reference at the cursor position |
+| `Ctrl+S` | Save the entry and close the window |
+| `Esc` | Discard the draft and close the window |
 
-## Shortcut-Übersicht (`?`)
+## Shortcut overview (`?`)
 
-`?` öffnet eine In-App-Übersicht der Tastaturbelegung
+`?` opens an in app overview of the keyboard shortcuts
 (`src/components/ShortcutOverview.tsx`).
 
-| Taste | Wirkung |
+| Key | Effect |
 |---|---|
-| `?` | Shortcut-Übersicht öffnen — nur außerhalb von Textfeldern, ohne Strg/Alt/Cmd |
-| `Esc` | Übersicht schließen |
+| `?` | Open the shortcut overview; only outside text fields, without Ctrl, Alt or Cmd |
+| `Esc` | Close the overview |
 
-> **Hinweis:** Die in der App unter `?` angezeigte Tabelle ist eine statische Kopie der
-> ursprünglichen Spec-Tabelle und wurde nicht an jede seither entstandene
-> Implementierungs-Feinheit angepasst — sie listet z. B. `/` weiterhin als "Suche
-> fokussieren", obwohl diese Taste bewusst nicht gebunden ist (siehe unten), und
-> unterscheidet nicht zwischen den je Ansicht leicht unterschiedlichen `Enter`/`e`-
-> Verhalten oben. Diese Datei (`SHORTCUTS.md`) ist die gegen den Code verifizierte
-> Referenz.
+> **Note:** The table shown in app under `?` is a static copy of the
+> original spec table and has not been kept in sync with every
+> implementation detail since. For example it still lists `/` as "focus
+> search", even though that key is deliberately unbound (see below), and it
+> does not distinguish the slightly different `Enter`/`e` behavior per view
+> described above. This file (`SHORTCUTS.md`) is the reference, verified
+> against the code.
 
-## Noch nicht gebunden
+## Not yet bound
 
-| Taste | Status |
+| Key | Status |
 |---|---|
-| `/` | **Noch nicht gebunden.** Die Spec sieht `/` zum Fokussieren einer Sucheingabe vor. Mangels eines einzigen, global eindeutigen Sucheingabefelds wurde die Bindung in Phase 4d bewusst zurückgestellt (siehe `docs/superpowers/plans/2026-09-07-wartungsdoku-plan-phase4d.md`). Volltextsuche ist heute über die Command Palette (`Strg+K`) erreichbar. |
+| `/` | Not yet bound. The spec calls for `/` to focus a search input. For lack of a single, globally unambiguous search field, this binding was deliberately deferred in phase 4d (see `docs/superpowers/plans/2026-09-07-wartungsdoku-plan-phase4d.md`). Full text search is reachable today via the Command Palette (`Ctrl+K`). |
 
-## Plattformhinweise
+## Platform notes
 
-- **Windows und Linux/X11:** Die globalen Hotkeys oben werden direkt vom Betriebssystem
-  über `tauri-plugin-global-shortcut` registriert.
-- **Linux/Wayland:** Globale Hotkey-Registrierung ist dort nur über das XDG-Portal
-  `org.freedesktop.portal.GlobalShortcuts` möglich, das nicht auf jedem Compositor
-  verfügbar ist. Fehlt es, funktionieren die drei globalen Hotkeys oben nicht
-  zuverlässig. Als Fallback — unter Wayland ebenso wie unter X11/Windows, etwa für
-  eigene Tastenkombinationen über Drittwerkzeuge — stehen die CLI-Flags
-  `wartungsdoku --quick-capture` und `wartungsdoku --search` bereit
-  (`src-tauri/src/cli.rs`), unabhängig von der Portal-Verfügbarkeit immer implementiert.
-  `--search` zeigt wie `Strg+Alt+F` nur das Hauptfenster, ohne eigene Such-UI.
-- **Fenster-Kontexterfassung** (Titel des zuvor aktiven Fensters als Notiz übernehmen,
-  standardmäßig deaktiviert) ist unter Windows und Linux/X11 implementiert
-  (`src-tauri/src/context_capture/`), unter Wayland nicht verfügbar und wird dort
-  bewusst als nicht unterstützt gemeldet statt stillschweigend übersprungen. Der
-  X11-Pfad wurde auf einer Windows-Entwicklungsmaschine geschrieben und dort nie
-  kompiliert — die Datei `src-tauri/src/context_capture/x11.rs` weist selbst darauf hin
-  (`NOT COMPILED OR TESTED ON THIS HOST`); vor produktivem Linux-Einsatz sollte das
-  einmal real geprüft werden.
+- **Windows and Linux/X11:** The global hotkeys above are registered
+  directly with the operating system via `tauri-plugin-global-shortcut`.
+- **Linux/Wayland:** Global hotkey registration there is only possible via
+  the XDG portal `org.freedesktop.portal.GlobalShortcuts`, which is not
+  available on every compositor. Where it is missing, the three global
+  hotkeys above do not work reliably. As a fallback, under Wayland as well
+  as under X11/Windows, for example to bind your own key combinations via
+  third party tools, the CLI flags `wartungsdoku --quick-capture` and
+  `wartungsdoku --search` are always available (`src-tauri/src/cli.rs`),
+  independent of portal availability. `--search`, like `Ctrl+Alt+F`, only
+  shows the main window, without a dedicated search UI.
+- **Window context capture** (taking over the title of the previously
+  active window as a note, disabled by default) is implemented on Windows
+  and Linux/X11 (`src-tauri/src/context_capture/`), unavailable on Wayland
+  and deliberately reported there as unsupported rather than silently
+  skipped. The X11 path was written on a Windows development machine and
+  never compiled there; the file `src-tauri/src/context_capture/x11.rs`
+  says so itself (`NOT COMPILED OR TESTED ON THIS HOST`). It should be
+  verified for real before production use on Linux.
