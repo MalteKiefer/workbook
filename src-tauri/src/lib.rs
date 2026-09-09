@@ -195,6 +195,15 @@ pub fn run() {
             commands::snipeit::link_system_to_snipeit,
             commands::snipeit::unlink_system_from_snipeit,
             commands::snipeit::get_snipeit_system_details,
+            commands::iru::test_iru_connection,
+            commands::iru::list_iru_connections,
+            commands::iru::add_iru_connection,
+            commands::iru::remove_iru_connection,
+            commands::iru::sync_iru_connection,
+            commands::iru::get_cached_iru_sync,
+            commands::iru::link_system_to_iru,
+            commands::iru::unlink_system_from_iru,
+            commands::iru::get_iru_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())
