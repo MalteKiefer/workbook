@@ -15,7 +15,7 @@ use std::path::Path;
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use argon2::Argon2;
-use rand::RngCore;
+use rand::Rng;
 
 use crate::error::AppError;
 
@@ -46,9 +46,9 @@ pub fn encrypt_file(src: &Path, dest: &Path, passphrase: &str) -> Result<(), App
     let plaintext = std::fs::read(src)?;
 
     let mut salt = [0u8; SALT_LEN];
-    rand::thread_rng().fill_bytes(&mut salt);
+    rand::rng().fill_bytes(&mut salt);
     let mut nonce_bytes = [0u8; NONCE_LEN];
-    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    rand::rng().fill_bytes(&mut nonce_bytes);
 
     let key_bytes = derive_key(passphrase, &salt)?;
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
