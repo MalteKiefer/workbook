@@ -68,6 +68,7 @@ export default function CommandPalette() {
   const selectCustomer = useAppStore((s) => s.selectCustomer);
   const selectSystem = useAppStore((s) => s.selectSystem);
   const openEntryEditor = useAppStore((s) => s.openEntryEditor);
+  const openEntryDetail = useAppStore((s) => s.openEntryDetail);
   const openExportDialog = useAppStore((s) => s.openExportDialog);
   const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
   const openSystemEditor = useAppStore((s) => s.openSystemEditor);
@@ -296,9 +297,14 @@ export default function CommandPalette() {
           if (hit.system_id !== null) selectSystem(hit.system_id);
           goToJournal();
           close();
+          // Jumping to Journal alone still leaves the user to find this
+          // specific entry in the (now customer/system-filtered) list
+          // themselves -- open its read-only detail view directly instead,
+          // same one reachable by double-clicking a row there.
+          openEntryDetail(hit.entry_id);
         },
       })),
-    [entryHits, selectCustomer, selectSystem, goToJournal, close],
+    [entryHits, selectCustomer, selectSystem, goToJournal, close, openEntryDetail],
   );
 
   const items = useMemo<FlatItem[]>(
