@@ -1,13 +1,14 @@
 # Plugin-Architektur
 
-Status: Drei echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
-`commands::plugins`), Level.io (`plugin::level`, `commands::level`) und
-Snipe-IT (`plugin::snipeit`, `commands::snipeit`) --, alle mit
-Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
-Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
-einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
-von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`).
+Status: Vier echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+`commands::plugins`), Level.io (`plugin::level`, `commands::level`),
+Snipe-IT (`plugin::snipeit`, `commands::snipeit`) und Jamf Pro
+(`plugin::jamf`, `commands::jamf`) --, alle mit Mehrfach-Verbindungs-
+Unterstützung. `DummyPlugin` bleibt als Attrappen-Referenzimplementierung
+bestehen. Noch kein UI-Aufruf im Sinne einer Command Palette -- die
+Kommandos sind aber vollständig Ende-zu-Ende von einem Frontend aus nutzbar
+(`PluginsView.tsx` als dünne Hülle um `NinjaPluginSection.tsx`/
+`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`JamfPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -505,3 +506,173 @@ leer, siehe oben), unterdrückt aber den redundanten
 `asset_tag`-Zusatz, wenn der Anzeigename ohnehin schon der Asset-Tag ist
 (Backend-Fallback-Fall). `PluginsView.tsx` bindet die Sektion als dritte
 Karte neben `NinjaPluginSection.tsx`/`LevelPluginSection.tsx` ein.
+
+## Jamf-Pro-Plugin (`plugin::jamf`) -- vierte echte Integration
+
+`plugin/jamf.rs` implementiert `Plugin` für Jamf Pros öffentliche REST-API
+über HTTPS. Jamf Pro ist Apples eigenes Geräteverwaltungswerkzeug (MDM) für
+macOS/iOS/iPadOS -- strukturell näher an NinjaOne (Mehrfach-Standort-
+Delegation über eigene "Sites" innerhalb einer Verbindung, konfigurierbare
+`base_url`) als an Level.io. Die Umsetzung folgt exakt der obigen Anleitung:
+
+- **Authentifizierung**: OAuth2-Client-Credentials-Grant, strukturell
+  identisch zu NinjaOne -- `POST {base_url}/api/oauth/token`,
+  `Content-Type: application/x-www-form-urlencoded`, Body
+  `grant_type=client_credentials&client_id=<id>&client_secret=<secret>`
+  (verifiziert über Jamfs eigene Entwicklerdoku,
+  <https://developer.jamf.com>). Anders als bei NinjaOne gibt es kein
+  `scope`-Feld. Der Zugriffstoken wird -- wie bei NinjaOne -- bewusst nicht
+  zwischen Aufrufen zwischengespeichert, sondern pro Trait-Methodenaufruf neu
+  geholt.
+- **Selbst gehostet/cloud-gehostet**: wie NinjaOne (und anders als Level.ios
+  feste `BASE_URL`-Konstante) braucht eine Jamf-Verbindung eine vom Nutzer
+  angegebene Basis-URL (`JamfConnectionMeta.base_url`, z. B.
+  `https://yourserver.jamfcloud.com`).
+- **Sites (Mehrfach-Standort-Delegation)**: `GET {base_url}/api/v1/sites`
+  (verifiziert über Jamfs eigene Entwicklerdoku,
+  <https://developer.jamf.com/jamf-pro/reference/get_v1-sites>) liefert eine
+  einfache JSON-Liste von `{"id": "...", "name": "...", "divisionId": ...}`-
+  Objekten, NICHT paginiert -- strukturell identisch zu NinjaOnes
+  `GET /v2/organizations`. Ein einzelner Jamf-Pro-Server kann Inventar über
+  mehrere "Sites" delegieren (z. B. ein MSP oder eine Organisation mit
+  mehreren Standorten) -- deshalb exakt dasselbe granulare
+  Zuordnungsprinzip wie bei NinjaOnes "Organizations":
+  `JamfSiteMapping { connection_id, site_id, site_name, customer_id }` in
+  `Config::jamf_site_mappings`, `JamfConnectionMeta` selbst bewusst OHNE
+  `customer_id`.
+- **Computer**: `GET {base_url}/api/v1/computers-inventory?section=GENERAL&section=HARDWARE`,
+  Seite/Seitengröße-paginiert (`page`/`page-size`-Query-Parameter, NICHT
+  Cursor-basiert wie NinjaOne/Level.io, NICHT Offset-basiert wie Snipe-IT --
+  ein drittes, eigenes Paginierungsschema, verifiziert über Jamfs eigene
+  Entwicklerdoku,
+  <https://developer.jamf.com/jamf-pro/reference/get_v1-computers-inventory>).
+  Der Antwort-Umschlag ist über dieselbe Quelle verifiziert: `{"totalCount":
+  <Zahl>, "results": [...]}`. `list_computers` durchläuft alle Seiten intern
+  (bis zu `MAX_PAGES` Seiten à `PAGE_SIZE` (100) Computer, Schutz gegen eine
+  sich falsch verhaltende Gegenstelle, exakt dasselbe Prinzip wie
+  `plugin::snipeit::fetch_all_hardware`) und liefert eine einzige, bereits
+  zusammengefügte Liste.
+- **Site-Zugehörigkeit/Identifikationsfelder**: `general.site.id`/
+  `general.site.name` jedes Computers ordnet ihn genau einer Site zu
+  (verifiziert über Jamfs eigenes Antwortschema für
+  `GET /api/v1/computers-inventory`) -- das Feld, das dieses Modul gegen
+  `JamfSiteMapping` abgleicht, analog zu NinjaOnes `organizationId`.
+  `general.name` ist Jamfs eigener Anzeigename eines Computers UND dient
+  zugleich als Hostname-äquivalentes Identifikationsfeld (diese API hat kein
+  von `general.name` getrenntes "Hostname"-Feld für einen macOS-Computer) --
+  verwendet sowohl als `JamfDevice.name` als auch als `JamfDevice.hostname`,
+  passend zu NinjaOnes/Level.ios Hostname-basierter
+  "Mit bestehendem System verknüpfen"-Abgleichskonvention. Die IP-Adresse
+  kommt aus `general.lastIpAddress`, mit `general.lastReportedIpV4` als
+  Rückfallebene (beide über Jamfs eigenes Antwortschema verifiziert).
+- **Computer-Detail**: `GET {base_url}/api/v1/computers-inventory/{id}` mit
+  denselben `section=GENERAL&section=HARDWARE`-Query-Parametern wie der
+  Listenaufruf (verifizierter Endpunkt, bewusst dem Schwester-Endpunkt
+  `computers-inventory-detail/{id}` vorgezogen -- beide sind in Jamfs
+  aktueller OpenAPI-Spezifikation zum Zeitpunkt der Verifizierung als
+  veraltet markiert, ohne dokumentierten Ersatz; Jamf hat eine lange
+  Historie solcher "veralteter" Endpunkte, die über Jahre erhalten bleiben,
+  z. B. die gesamte Classic API. Der gewählte Endpunkt liefert dieselbe
+  `general`/`hardware`-Sektionsform wie der Listenaufruf oben statt jeder
+  Sektion, die Jamf kennt, was das externe-Feld-Vergleichspanel in
+  `JamfPluginSection.tsx` vorhersagbar hält).
+- **HTTP-Client**: `ureq` 3.4.1, synchron, dieselbe Abhängigkeit wie
+  `plugin::ninja`/`plugin::level`/`plugin::snipeit`. Verbindungs-/Timeout-/
+  Nicht-2xx-Fehler werden auf `PluginError::Unreachable` gemappt, HTTP
+  401/403 auf `PluginError::Authentication`, unerwartete JSON-Formen
+  (inkl. fehlgeschlagenem Token-Austausch) auf
+  `PluginError::UnexpectedResponse`/`Authentication` -- dieselben
+  Konventionen wie bei den drei anderen Plugins.
+- **Zugangsdaten-Kodierung**: wie NinjaOne braucht Jamf zwei Geheimwerte
+  (`client_id`, `client_secret`); `PluginCredentials.secret` ist laut
+  Trait-Vertrag aber ein einziger opaker String -- hier als JSON kodiert,
+  exakt wie `plugin::ninja::NinjaCredentials`.
+
+### Mehrere Jamf-Verbindungen, jede mit mehreren Sites
+
+Strukturell identisch zu NinjaOnes Verbindungs-/Organisations-Modell:
+
+- Nicht-geheime Metadaten (`id`, `label`, `base_url`, bewusst OHNE
+  `customer_id`) liegen als `JamfConnectionMeta` in
+  `Config::jamf_connections` (`#[serde(default)]`-kompatibel).
+  Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"jamf:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei NinjaOne/Level.io/Snipe-IT.
+- Welche Site innerhalb einer Verbindung welchem lokalen Kunden entspricht
+  (falls überhaupt), steht granular in `Config::jamf_site_mappings`. Eine
+  nicht zugeordnete Site liefert bei jeder Synchronisierung ihre Computer
+  weiterhin (zur Ansicht), aber immer mit `linked_system_id: None`.
+- Ein Computer, dessen `site_id` zu keiner der über `list_sites` gemeldeten
+  Sites passt (sollte laut Jamfs Datenmodell normalerweise nicht vorkommen,
+  ist aber z. B. bei einer zwischenzeitlich gelöschten Site denkbar), wird
+  nicht stillschweigend verworfen, sondern erscheint als eigene Gruppe unter
+  der rohen Site-ID -- exakt dieselbe Konvention wie
+  `commands::plugins::group_devices_by_organization`.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie NinjaOne/Level.io/Snipe-IT:
+`sync_jamf_connection` schreibt das Ergebnis jedes Laufs zusätzlich als JSON
+nach `data_dir/plugin-cache/jamf-<connection_id>.json`
+(`{"synced_at_utc": "...", "groups": [...]}`). `get_cached_jamf_sync` liest
+ausschließlich diese Datei (kein Netzwerkzugriff), rejoint dabei aber
+`customer_id` je Gruppe live gegen die AKTUELLEN
+`Config::jamf_site_mappings` (nicht den beim letzten Sync eingefrorenen
+Wert) -- exakt wie `commands::plugins::get_cached_ninja_sync` --, und
+liefert `None`, wenn für eine Verbindung noch nie synchronisiert wurde.
+`remove_jamf_connection` löscht diese Cache-Datei (bestes Bemühen) und alle
+`jamf_site_mappings`-Zeilen der entfernten Verbindung gleich mit.
+
+### Tauri-Kommandos (`commands::jamf`)
+
+`test_jamf_connection`, `list_jamf_connections`, `add_jamf_connection`,
+`remove_jamf_connection`, `list_jamf_sites`, `map_jamf_site`,
+`unmap_jamf_site`, `sync_jamf_connection`, `get_cached_jamf_sync`,
+`link_system_to_jamf`, `unlink_system_from_jamf`, `get_jamf_system_details`
+-- dünne Wrapper nach dem Muster von `commands::plugins`. `list_jamf_sites`
+liefert die Live-Site-Liste einer Verbindung (analog zu
+`list_ninja_organizations`), wird aber vom Frontend nicht aufgerufen --
+`JamfPluginSection.tsx` ist wie die anderen drei Sektionen konsequent
+Cache-first (`get_cached_jamf_sync` beim Öffnen, `sync_jamf_connection` nur
+auf "Aktualisieren"); der Befehl bleibt für Symmetrie und einen möglichen
+künftigen Ersteinrichtungs-Anwendungsfall erhalten. Das Übernehmen eines
+extern gelieferten Werts in ein selbst gepflegtes Feld (`name`, `hostname`,
+`ip_address`, `notes` in `systems`) bleibt -- wie bei den anderen drei
+Plugins -- ausschließlich eine bewusste, manuelle Aktion über
+`get_jamf_system_details` plus eine spätere UI-Aktion; kein Kommando hier
+schreibt automatisch in diese vier Felder.
+
+`commands::external_directory::list_unlinked_external_systems_for_customer`
+bezieht Jamf-Geräte über eine eigene `collect_jamf`-Funktion mit ein, exakt
+nach demselben Muster wie `collect_ninja`/`collect_snipeit` (Rejoin gegen
+die aktuellen `jamf_site_mappings`, nicht gegen den eingefrorenen
+Cache-Wert).
+
+### Frontend (`JamfPluginSection.tsx`)
+
+Strukturell an `SnipeitPluginSection.tsx`s Muster angelehnt (Sites
+eingeklappt mit Geräte-Anzahl-Zusammenfassung, Kunde-Zuordnungs-`<select>`
+inklusive "+ Neuen Kunden anlegen…", aufklappbare, filterbare,
+10-pro-Seite-paginierte Geräteliste mit `j`/`k`/`Enter`/`l`/`u`-
+Tastaturnavigation, Vergleichs-/Übernahme-Panel für verknüpfte Geräte). Der
+Verbindungs-Anlage-Dialog hat vier Felder wie bei Ninja (Label, Base-URL,
+Client-ID, Client-Secret als `type="password"`). Eine verifizierte
+Besonderheit gegenüber allen drei anderen Plugins: `ExternalSystemDto.hostname`
+ist auf dem Backend IMMER identisch zu `ExternalSystemDto.name` (Jamf hat
+kein von `general.name` getrenntes Hostname-Feld, siehe oben) --
+`DeviceSummaryLine` zeigt deshalb bewusst KEIN zweites Hostname-Segment
+(das wäre eine reine Wiederholung des Namens), sondern `serial_number`/
+`asset_tag`, analog zu Snipe-ITs `asset_tag`/`serial`-Darstellung. Aus
+demselben Grund hat ein lokales System kein eigenes Feld für
+`serial_number`/`asset_tag` -- beim "Neu anlegen" werden diese einmalig in
+das neu angelegte Systems `notes`-Feld geschrieben (wie bei Snipe-IT). Das
+externe-Feld-Vergleichspanel (`findExternalValue`) ist eine echte,
+verifizierte Erweiterung gegenüber Ninja/Snipe-IT: Jamfs eigene
+`get_jamf_system_details`-Antwort verschachtelt Felder unter `general`/
+`hardware` statt sie flach auf oberster Ebene zu liefern, deshalb scannt
+`findExternalValue` hier zusätzlich zur obersten Ebene auch innerhalb dieser
+beiden bekannten Container -- keine Vermutung, sondern aus Jamfs eigenem
+Antwortschema abgeleitet. `PluginsView.tsx` bindet die Sektion als vierte
+Karte neben `NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/
+`SnipeitPluginSection.tsx` ein.

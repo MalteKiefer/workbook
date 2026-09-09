@@ -1,5 +1,5 @@
 //! Pure read-access aggregation across all configured RMM/asset management
-//! plugin connections (Ninja, Level, Snipe-IT) for a given local customer:
+//! plugin connections (Ninja, Level, Snipe-IT, Jamf) for a given local customer:
 //! returns all devices/assets that (a) belong to this customer according to
 //! the most recently synced plugin caches, and (b) are not yet linked to any
 //! local system.
@@ -14,30 +14,36 @@
 //! latency.
 //!
 //! Deliberately reuses the real, already `Deserialize`-capable cache DTOs of
-//! the three plugin modules (`commands::plugins::CachedNinjaSyncDto`,
-//! `commands::level::CachedLevelSyncDto`, `commands::snipeit::CachedSnipeitSyncDto`),
-//! instead of defining the JSON shape here a second time -- that way this
-//! module stays automatically in sync if one of those shapes ever changes.
+//! the four plugin modules (`commands::plugins::CachedNinjaSyncDto`,
+//! `commands::level::CachedLevelSyncDto`, `commands::snipeit::CachedSnipeitSyncDto`,
+//! `commands::jamf::CachedJamfSyncDto`), instead of defining the JSON shape
+//! here a second time -- that way this module stays automatically in sync if
+//! one of those shapes ever changes.
 //!
 //! The cache path convention (`data_dir/plugin-cache/<plugin>-<connection_id>.json`)
 //! and the reading itself (`std::fs::read_to_string` + `serde_json::from_str`)
-//! are nonetheless rebuilt inline here instead of calling the three modules'
+//! are nonetheless rebuilt inline here instead of calling the plugin modules'
 //! `read_*_cache` helper functions directly: those are deliberately private
-//! there (`fn`, not `pub fn`), and this change set is not allowed to touch
-//! `commands/plugins.rs`, `commands/level.rs`, or `commands/snipeit.rs` (split
-//! with a change being worked on in parallel that owns exactly those files).
-//! Loosening the visibility to `pub(crate)` there would have violated that
-//! boundary; rebuilding it following the path convention and the real DTO
-//! types is the only option that respects that boundary without duplicating
-//! the JSON shape itself -- only the trivial one-liner path construction/the
-//! file read itself is duplicated, exactly as the three plugin modules already
-//! each do for themselves (`plugin_cache_dir` is already identically
-//! duplicated across all three).
+//! there (`fn`, not `pub fn`), and (at least for Ninja/Level/Snipe-IT) this
+//! change set is not allowed to touch `commands/plugins.rs`,
+//! `commands/level.rs`, or `commands/snipeit.rs` (split with a change being
+//! worked on in parallel that owns exactly those files). Loosening the
+//! visibility to `pub(crate)` there would have violated that boundary;
+//! rebuilding it following the path convention and the real DTO types is the
+//! only option that respects that boundary without duplicating the JSON
+//! shape itself -- only the trivial one-liner path construction/the file
+//! read itself is duplicated, exactly as the plugin modules already each do
+//! for themselves (`plugin_cache_dir` is already identically duplicated
+//! across all of them). `commands::jamf` has no such parallel-work
+//! constraint (it's introduced in this very change set), but the same
+//! inline-duplication style is kept here anyway for consistency with the
+//! other three.
 
 use std::path::{Path, PathBuf};
 
 use tauri::State;
 
+use crate::commands::jamf::CachedJamfSyncDto;
 use crate::commands::level::CachedLevelSyncDto;
 use crate::commands::plugins::CachedNinjaSyncDto;
 use crate::commands::snipeit::CachedSnipeitSyncDto;
@@ -99,6 +105,20 @@ fn read_snipeit_cache_file(
     let text = std::fs::read_to_string(&path)?;
     let cached: CachedSnipeitSyncDto = serde_json::from_str(&text)
         .map_err(|e| AppError::Plugin(format!("Snipe-IT-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_jamf_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedJamfSyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("jamf-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedJamfSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Jamf-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
@@ -232,6 +252,48 @@ fn collect_snipeit(
     Ok(())
 }
 
+/// Jamf: exactly the same pattern as Ninja/Snipe-IT (`collect_ninja`/
+/// `collect_snipeit`), including re-checking against the current
+/// `config.jamf_site_mappings` instead of the frozen cache value, for the
+/// same reason (a site freshly mapped via the Plugins page should show up
+/// here without requiring another live sync first).
+fn collect_jamf(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.jamf_connections {
+        let Some(cache) = read_jamf_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for group in &cache.groups {
+            let mapped_customer_id = config
+                .jamf_site_mappings
+                .iter()
+                .find(|m| m.connection_id == connection.id && m.site_id == group.site_id)
+                .map(|m| m.customer_id);
+            if mapped_customer_id != Some(customer_id) {
+                continue;
+            }
+            for device in &group.devices {
+                if device.linked_system_id.is_some() {
+                    continue;
+                }
+                out.push(UnlinkedExternalSystemDto {
+                    plugin: "jamf".to_string(),
+                    connection_id: connection.id.clone(),
+                    external_id: device.external_id.clone(),
+                    name: device.name.clone(),
+                    hostname: device.hostname.clone(),
+                    ip_address: device.ip_address.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Pure core logic, without `State<AppState>` -- testable with a hardcoded
 /// `Config` plus a `tempfile::tempdir()`, analogous to
 /// `commands::plugins::group_devices_by_organization`. The
@@ -250,6 +312,7 @@ pub fn list_unlinked_external_systems_for_customer_pure(
     collect_ninja(config, data_dir, customer_id, &mut result)?;
     collect_level(config, data_dir, customer_id, &mut result)?;
     collect_snipeit(config, data_dir, customer_id, &mut result)?;
+    collect_jamf(config, data_dir, customer_id, &mut result)?;
     Ok(result)
 }
 
@@ -267,6 +330,9 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    use crate::commands::jamf::{
+        ExternalSystemDto as JamfExternalSystemDto, JamfSiteDeviceGroupDto,
+    };
     use crate::commands::level::ExternalSystemDto as LevelExternalSystemDto;
     use crate::commands::plugins::{
         ExternalSystemDto as NinjaExternalSystemDto, NinjaOrgDeviceGroupDto,
@@ -274,6 +340,7 @@ mod tests {
     use crate::commands::snipeit::{
         ExternalSystemDto as SnipeitExternalSystemDto, SnipeitCompanyDeviceGroupDto,
     };
+    use crate::plugin::jamf::{JamfConnectionMeta, JamfSiteMapping};
     use crate::plugin::level::LevelConnectionMeta;
     use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
     use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
@@ -293,6 +360,10 @@ mod tests {
 
     fn snipeit_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
         plugin_cache_dir(data_dir).join(format!("snipeit-{connection_id}.json"))
+    }
+
+    fn jamf_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("jamf-{connection_id}.json"))
     }
 
     fn ninja_device(external_id: &str, linked_system_id: Option<i64>) -> NinjaExternalSystemDto {
@@ -689,6 +760,157 @@ mod tests {
     }
 
     #[test]
+    fn jamf_device_appears_when_its_site_is_mapped_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.jamf_connections.push(JamfConnectionMeta {
+            id: "jamf-conn-1".to_string(),
+            label: "ACME Jamf".to_string(),
+            base_url: "https://acme.jamfcloud.com".to_string(),
+        });
+        config.jamf_site_mappings.push(JamfSiteMapping {
+            connection_id: "jamf-conn-1".to_string(),
+            site_id: "site-1".to_string(),
+            site_name: "ACME Hauptsitz".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedJamfSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![JamfSiteDeviceGroupDto {
+                site_id: "site-1".to_string(),
+                site_name: "ACME Hauptsitz".to_string(),
+                // Deliberately left stale/`None` -- the mapping comes from
+                // `config.jamf_site_mappings`, not from this frozen field.
+                customer_id: None,
+                devices: vec![JamfExternalSystemDto {
+                    external_id: "mac-1".to_string(),
+                    name: "MBP-Anna".to_string(),
+                    hostname: Some("MBP-Anna".to_string()),
+                    ip_address: Some("10.0.0.5".to_string()),
+                    serial_number: Some("C02XXXXX".to_string()),
+                    asset_tag: Some("AT-0001".to_string()),
+                    jamf_url: "https://acme.jamfcloud.com/computers.html?id=mac-1".to_string(),
+                    linked_system_id: None,
+                }],
+            }],
+        };
+        write_json(&jamf_cache_path(dir.path(), "jamf-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "jamf");
+        assert_eq!(result[0].connection_id, "jamf-conn-1");
+        assert_eq!(result[0].external_id, "mac-1");
+        assert_eq!(result[0].hostname.as_deref(), Some("MBP-Anna"));
+    }
+
+    #[test]
+    fn already_linked_jamf_device_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.jamf_connections.push(JamfConnectionMeta {
+            id: "jamf-conn-1".to_string(),
+            label: "ACME Jamf".to_string(),
+            base_url: "https://acme.jamfcloud.com".to_string(),
+        });
+        config.jamf_site_mappings.push(JamfSiteMapping {
+            connection_id: "jamf-conn-1".to_string(),
+            site_id: "site-1".to_string(),
+            site_name: "ACME Hauptsitz".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedJamfSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![JamfSiteDeviceGroupDto {
+                site_id: "site-1".to_string(),
+                site_name: "ACME Hauptsitz".to_string(),
+                customer_id: Some(5),
+                devices: vec![JamfExternalSystemDto {
+                    external_id: "mac-1".to_string(),
+                    name: "MBP-Anna".to_string(),
+                    hostname: None,
+                    ip_address: None,
+                    serial_number: None,
+                    asset_tag: None,
+                    jamf_url: "https://acme.jamfcloud.com/computers.html?id=mac-1".to_string(),
+                    linked_system_id: Some(11),
+                }],
+            }],
+        };
+        write_json(&jamf_cache_path(dir.path(), "jamf-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn jamf_site_mapped_to_a_different_customer_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.jamf_connections.push(JamfConnectionMeta {
+            id: "jamf-conn-1".to_string(),
+            label: "ACME Jamf".to_string(),
+            base_url: "https://acme.jamfcloud.com".to_string(),
+        });
+        config.jamf_site_mappings.push(JamfSiteMapping {
+            connection_id: "jamf-conn-1".to_string(),
+            site_id: "site-1".to_string(),
+            site_name: "ACME Hauptsitz".to_string(),
+            customer_id: 99,
+        });
+        let cache = CachedJamfSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![JamfSiteDeviceGroupDto {
+                site_id: "site-1".to_string(),
+                site_name: "ACME Hauptsitz".to_string(),
+                customer_id: Some(99),
+                devices: vec![JamfExternalSystemDto {
+                    external_id: "mac-1".to_string(),
+                    name: "MBP-Anna".to_string(),
+                    hostname: None,
+                    ip_address: None,
+                    serial_number: None,
+                    asset_tag: None,
+                    jamf_url: "https://acme.jamfcloud.com/computers.html?id=mac-1".to_string(),
+                    linked_system_id: None,
+                }],
+            }],
+        };
+        write_json(&jamf_cache_path(dir.path(), "jamf-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn jamf_connection_never_synced_is_skipped_gracefully_not_as_an_error() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.jamf_connections.push(JamfConnectionMeta {
+            id: "jamf-conn-1".to_string(),
+            label: "ACME Jamf".to_string(),
+            base_url: "https://acme.jamfcloud.com".to_string(),
+        });
+        config.jamf_site_mappings.push(JamfSiteMapping {
+            connection_id: "jamf-conn-1".to_string(),
+            site_id: "site-1".to_string(),
+            site_name: "ACME Hauptsitz".to_string(),
+            customer_id: 5,
+        });
+
+        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
     fn results_from_multiple_plugins_are_combined_for_the_same_customer() {
         let dir = tempdir().unwrap();
         let mut config = ninja_config_with_connection("conn-1", "org-1", Some(42));
@@ -696,6 +918,17 @@ mod tests {
             id: "level-conn-1".to_string(),
             customer_id: 42,
             label: "ACME Level".to_string(),
+        });
+        config.jamf_connections.push(JamfConnectionMeta {
+            id: "jamf-conn-1".to_string(),
+            label: "ACME Jamf".to_string(),
+            base_url: "https://acme.jamfcloud.com".to_string(),
+        });
+        config.jamf_site_mappings.push(JamfSiteMapping {
+            connection_id: "jamf-conn-1".to_string(),
+            site_id: "site-1".to_string(),
+            site_name: "ACME Hauptsitz".to_string(),
+            customer_id: 42,
         });
 
         write_json(
@@ -725,13 +958,35 @@ mod tests {
                 }],
             },
         );
+        write_json(
+            &jamf_cache_path(dir.path(), "jamf-conn-1"),
+            &CachedJamfSyncDto {
+                synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+                groups: vec![JamfSiteDeviceGroupDto {
+                    site_id: "site-1".to_string(),
+                    site_name: "ACME Hauptsitz".to_string(),
+                    customer_id: Some(42),
+                    devices: vec![JamfExternalSystemDto {
+                        external_id: "mac-1".to_string(),
+                        name: "MBP-Anna".to_string(),
+                        hostname: Some("MBP-Anna".to_string()),
+                        ip_address: None,
+                        serial_number: None,
+                        asset_tag: None,
+                        jamf_url: "https://acme.jamfcloud.com/computers.html?id=mac-1".to_string(),
+                        linked_system_id: None,
+                    }],
+                }],
+            },
+        );
 
         let mut result =
             list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42).unwrap();
         result.sort_by(|a, b| a.plugin.cmp(&b.plugin));
 
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].plugin, "level");
-        assert_eq!(result[1].plugin, "ninja");
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].plugin, "jamf");
+        assert_eq!(result[1].plugin, "level");
+        assert_eq!(result[2].plugin, "ninja");
     }
 }
