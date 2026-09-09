@@ -544,7 +544,6 @@ export default function LevelPluginSection() {
     } finally {
       setCacheBusy((prev) => ({ ...prev, [id]: false }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function openDeviceModal(connection: LevelConnectionDto) {
@@ -707,6 +706,14 @@ export default function LevelPluginSection() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+    // createAndLink/getDeviceGroupsList/handleUnlink/openLinkPicker/toggleDetails
+    // are intentionally omitted: they are plain function declarations
+    // recreated every render, and listing them would re-subscribe this
+    // global keydown listener on every render instead of only when the
+    // state above actually changes. Their own bodies read from
+    // connections/connection/row (already fresh via the deps above), so a
+    // stale reference to the function itself carries no stale-closure risk.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     openConnectionId,
     connections,

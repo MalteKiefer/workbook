@@ -523,7 +523,6 @@ export default function NinjaPluginSection() {
     } finally {
       setCacheBusy((prev) => ({ ...prev, [id]: false }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function openOrgDeviceModal(connection: NinjaConnectionDto) {

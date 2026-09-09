@@ -348,7 +348,6 @@ export default function QuickCapture() {
     return () => {
       unlisten.then((f) => f());
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshPreview, loadCustomers, loadSystems]);
 
   useEffect(() => {

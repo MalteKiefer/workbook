@@ -574,7 +574,6 @@ export default function SnipeitPluginSection() {
     } finally {
       setCacheBusy((prev) => ({ ...prev, [id]: false }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function openCompanyDeviceModal(connection: SnipeitConnectionDto) {
