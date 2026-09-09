@@ -41,7 +41,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   view: "customers",
-  settingsTab: "backup",
+  settingsTab: "general",
   selectedCustomerId: null,
   selectedSystemId: null,
   formOpen: false,
