@@ -255,7 +255,7 @@ pub fn list(conn: &Connection, filter: &EntryFilter) -> Result<Vec<Entry>, AppEr
            AND (?5 IS NULL OR performed_at_utc <= ?5)
            AND (?6 IS NULL OR EXISTS (
                  SELECT 1 FROM entry_tags et JOIN tags t ON t.id = et.tag_id
-                 WHERE et.entry_id = e.id AND t.name = ?6
+                 WHERE et.entry_id = e.id AND t.name = ?6 COLLATE NOCASE
                ))
          ORDER BY performed_at_utc DESC",
     )?;
@@ -523,6 +523,41 @@ mod tests {
             &conn,
             &EntryFilter {
                 tag: Some("exchange".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            result.iter().map(|e| e.id).collect::<Vec<_>>(),
+            vec![with_tag.id]
+        );
+    }
+
+    #[test]
+    fn list_filters_by_tag_ignoring_case() {
+        let conn = migrated_connection();
+        let data_dir = temp_data_dir();
+        let customer_id = seed_customer(&conn);
+        let with_tag = create(
+            &conn,
+            data_dir.path(),
+            NewEntry {
+                tag_names: vec!["Kernel".into()],
+                ..new_entry(
+                    customer_id,
+                    "Mit Tag",
+                    "2026-09-05T10:00:00.000Z",
+                    Category::Wartung,
+                )
+            },
+            &berlin(),
+        )
+        .unwrap();
+
+        let result = list(
+            &conn,
+            &EntryFilter {
+                tag: Some("kernel".into()),
                 ..Default::default()
             },
         )
