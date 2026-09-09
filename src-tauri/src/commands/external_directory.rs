@@ -1,8 +1,8 @@
 //! Pure read-access aggregation across all configured RMM/asset management
-//! plugin connections (Ninja, Level, Snipe-IT) for a given local customer:
-//! returns all devices/assets that (a) belong to this customer according to
-//! the most recently synced plugin caches, and (b) are not yet linked to any
-//! local system.
+//! plugin connections (Ninja, Level, Snipe-IT, Intune) for a given local
+//! customer: returns all devices/assets that (a) belong to this customer
+//! according to the most recently synced plugin caches, and (b) are not yet
+//! linked to any local system.
 //!
 //! Background: the system field when creating a maintenance entry
 //! (`EntryEditor.tsx`/`QuickCapture.tsx`) has so far only searched existing
@@ -14,30 +14,33 @@
 //! latency.
 //!
 //! Deliberately reuses the real, already `Deserialize`-capable cache DTOs of
-//! the three plugin modules (`commands::plugins::CachedNinjaSyncDto`,
-//! `commands::level::CachedLevelSyncDto`, `commands::snipeit::CachedSnipeitSyncDto`),
-//! instead of defining the JSON shape here a second time -- that way this
-//! module stays automatically in sync if one of those shapes ever changes.
+//! the four plugin modules (`commands::plugins::CachedNinjaSyncDto`,
+//! `commands::level::CachedLevelSyncDto`, `commands::snipeit::CachedSnipeitSyncDto`,
+//! `commands::intune::CachedIntuneSyncDto`), instead of defining the JSON
+//! shape here a second time -- that way this module stays automatically in
+//! sync if one of those shapes ever changes.
 //!
 //! The cache path convention (`data_dir/plugin-cache/<plugin>-<connection_id>.json`)
 //! and the reading itself (`std::fs::read_to_string` + `serde_json::from_str`)
-//! are nonetheless rebuilt inline here instead of calling the three modules'
+//! are nonetheless rebuilt inline here instead of calling the four modules'
 //! `read_*_cache` helper functions directly: those are deliberately private
 //! there (`fn`, not `pub fn`), and this change set is not allowed to touch
-//! `commands/plugins.rs`, `commands/level.rs`, or `commands/snipeit.rs` (split
-//! with a change being worked on in parallel that owns exactly those files).
-//! Loosening the visibility to `pub(crate)` there would have violated that
-//! boundary; rebuilding it following the path convention and the real DTO
-//! types is the only option that respects that boundary without duplicating
-//! the JSON shape itself -- only the trivial one-liner path construction/the
-//! file read itself is duplicated, exactly as the three plugin modules already
-//! each do for themselves (`plugin_cache_dir` is already identically
-//! duplicated across all three).
+//! `commands/plugins.rs`, `commands/level.rs`, `commands/snipeit.rs`, or
+//! `commands/intune.rs` (split with changes being worked on in parallel that
+//! own exactly those files). Loosening the visibility to `pub(crate)` there
+//! would have violated that boundary; rebuilding it following the path
+//! convention and the real DTO types is the only option that respects that
+//! boundary without duplicating the JSON shape itself -- only the trivial
+//! one-liner path construction/the file read itself is duplicated, exactly
+//! as the four plugin modules already each do for themselves
+//! (`plugin_cache_dir` is already identically duplicated across all of
+//! them).
 
 use std::path::{Path, PathBuf};
 
 use tauri::State;
 
+use crate::commands::intune::CachedIntuneSyncDto;
 use crate::commands::level::CachedLevelSyncDto;
 use crate::commands::plugins::CachedNinjaSyncDto;
 use crate::commands::snipeit::CachedSnipeitSyncDto;
@@ -99,6 +102,20 @@ fn read_snipeit_cache_file(
     let text = std::fs::read_to_string(&path)?;
     let cached: CachedSnipeitSyncDto = serde_json::from_str(&text)
         .map_err(|e| AppError::Plugin(format!("Snipe-IT-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_intune_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedIntuneSyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("intune-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedIntuneSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Intune-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
@@ -232,6 +249,44 @@ fn collect_snipeit(
     Ok(())
 }
 
+/// Intune: exactly the same pattern as Level (`collect_level`) -- a
+/// connection belongs directly to exactly one customer
+/// (`IntuneConnectionMeta.customer_id`), see the `plugin::intune` module
+/// documentation. No staleness problem like with Ninja/Snipe-IT:
+/// `customer_id` is a direct connection field, not frozen in a cache file.
+/// `hostname` is populated from Intune's `deviceName` (see `plugin::intune`
+/// module documentation); `ip_address` is always `None` -- Microsoft Graph's
+/// managed-device response has no IP address field at all.
+fn collect_intune(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.intune_connections {
+        if connection.customer_id != customer_id {
+            continue;
+        }
+        let Some(cache) = read_intune_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for device in &cache.devices {
+            if device.linked_system_id.is_some() {
+                continue;
+            }
+            out.push(UnlinkedExternalSystemDto {
+                plugin: "intune".to_string(),
+                connection_id: connection.id.clone(),
+                external_id: device.external_id.clone(),
+                name: device.name.clone(),
+                hostname: device.hostname.clone(),
+                ip_address: device.ip_address.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Pure core logic, without `State<AppState>` -- testable with a hardcoded
 /// `Config` plus a `tempfile::tempdir()`, analogous to
 /// `commands::plugins::group_devices_by_organization`. The
@@ -250,6 +305,7 @@ pub fn list_unlinked_external_systems_for_customer_pure(
     collect_ninja(config, data_dir, customer_id, &mut result)?;
     collect_level(config, data_dir, customer_id, &mut result)?;
     collect_snipeit(config, data_dir, customer_id, &mut result)?;
+    collect_intune(config, data_dir, customer_id, &mut result)?;
     Ok(result)
 }
 
@@ -267,6 +323,7 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    use crate::commands::intune::ExternalSystemDto as IntuneExternalSystemDto;
     use crate::commands::level::ExternalSystemDto as LevelExternalSystemDto;
     use crate::commands::plugins::{
         ExternalSystemDto as NinjaExternalSystemDto, NinjaOrgDeviceGroupDto,
@@ -274,6 +331,7 @@ mod tests {
     use crate::commands::snipeit::{
         ExternalSystemDto as SnipeitExternalSystemDto, SnipeitCompanyDeviceGroupDto,
     };
+    use crate::plugin::intune::IntuneConnectionMeta;
     use crate::plugin::level::LevelConnectionMeta;
     use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
     use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
@@ -293,6 +351,10 @@ mod tests {
 
     fn snipeit_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
         plugin_cache_dir(data_dir).join(format!("snipeit-{connection_id}.json"))
+    }
+
+    fn intune_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("intune-{connection_id}.json"))
     }
 
     fn ninja_device(external_id: &str, linked_system_id: Option<i64>) -> NinjaExternalSystemDto {
@@ -683,6 +745,131 @@ mod tests {
         });
 
         let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn intune_device_appears_when_its_connection_is_bound_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.intune_connections.push(IntuneConnectionMeta {
+            id: "intune-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME Intune".to_string(),
+        });
+        let cache = CachedIntuneSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            devices: vec![IntuneExternalSystemDto {
+                external_id: "intune-1".to_string(),
+                name: "Intune Device 1".to_string(),
+                hostname: Some("Intune Device 1".to_string()),
+                ip_address: None,
+                linked_system_id: None,
+                operating_system: Some("Windows".to_string()),
+                os_version: Some("10.0.19045".to_string()),
+                serial_number: Some("SN-001".to_string()),
+                manufacturer: Some("Contoso".to_string()),
+                model: Some("Surface".to_string()),
+                compliance_state: Some("compliant".to_string()),
+                last_sync_date_time: Some("2026-09-07T10:00:00Z".to_string()),
+                user_principal_name: Some("user@contoso.com".to_string()),
+            }],
+        };
+        write_json(&intune_cache_path(dir.path(), "intune-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "intune");
+        assert_eq!(result[0].connection_id, "intune-conn-1");
+        assert_eq!(result[0].external_id, "intune-1");
+        assert_eq!(result[0].ip_address, None);
+    }
+
+    #[test]
+    fn already_linked_intune_device_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.intune_connections.push(IntuneConnectionMeta {
+            id: "intune-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME Intune".to_string(),
+        });
+        let cache = CachedIntuneSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            devices: vec![IntuneExternalSystemDto {
+                external_id: "intune-1".to_string(),
+                name: "Intune Device 1".to_string(),
+                hostname: None,
+                ip_address: None,
+                linked_system_id: Some(3),
+                operating_system: None,
+                os_version: None,
+                serial_number: None,
+                manufacturer: None,
+                model: None,
+                compliance_state: None,
+                last_sync_date_time: None,
+                user_principal_name: None,
+            }],
+        };
+        write_json(&intune_cache_path(dir.path(), "intune-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn intune_connection_bound_to_a_different_customer_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.intune_connections.push(IntuneConnectionMeta {
+            id: "intune-conn-1".to_string(),
+            customer_id: 99,
+            label: "ACME Intune".to_string(),
+        });
+        let cache = CachedIntuneSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            devices: vec![IntuneExternalSystemDto {
+                external_id: "intune-1".to_string(),
+                name: "Intune Device 1".to_string(),
+                hostname: None,
+                ip_address: None,
+                linked_system_id: None,
+                operating_system: None,
+                os_version: None,
+                serial_number: None,
+                manufacturer: None,
+                model: None,
+                compliance_state: None,
+                last_sync_date_time: None,
+                user_principal_name: None,
+            }],
+        };
+        write_json(&intune_cache_path(dir.path(), "intune-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn intune_connection_never_synced_is_skipped_gracefully_not_as_an_error() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.intune_connections.push(IntuneConnectionMeta {
+            id: "intune-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME Intune".to_string(),
+        });
+
+        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7);
 
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());

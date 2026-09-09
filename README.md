@@ -11,7 +11,7 @@ Wartungsdoku is an offline, keyboard first desktop application for a single IT a
 * Content addressed attachment storage. Files are deduplicated by their SHA256 hash.
 * Markdown editing with an export to Markdown or PDF per customer.
 * Full backup and restore, including the database, attachments, configuration, and any plugin cache.
-* Three built in RMM and asset management plugin integrations: NinjaOne, Level.io, and Snipe IT. Each is read only. Data is pulled in and linked to a local system on request, and existing fields are never overwritten automatically.
+* Four built in RMM and asset management plugin integrations: NinjaOne, Level.io, Snipe IT, and Microsoft Intune. Each is read only. Data is pulled in and linked to a local system on request, and existing fields are never overwritten automatically.
 * Light, dark, and system theme.
 
 ## Tech stack

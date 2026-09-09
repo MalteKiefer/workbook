@@ -1,13 +1,15 @@
 # Plugin-Architektur
 
-Status: Drei echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
-`commands::plugins`), Level.io (`plugin::level`, `commands::level`) und
-Snipe-IT (`plugin::snipeit`, `commands::snipeit`) --, alle mit
+Status: Vier echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+`commands::plugins`), Level.io (`plugin::level`, `commands::level`),
+Snipe-IT (`plugin::snipeit`, `commands::snipeit`) und Microsoft Intune
+(`plugin::intune`, `commands::intune`) --, alle mit
 Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
 Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
 einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
 von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`).
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/
+`IntunePluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -505,3 +507,145 @@ leer, siehe oben), unterdrückt aber den redundanten
 `asset_tag`-Zusatz, wenn der Anzeigename ohnehin schon der Asset-Tag ist
 (Backend-Fallback-Fall). `PluginsView.tsx` bindet die Sektion als dritte
 Karte neben `NinjaPluginSection.tsx`/`LevelPluginSection.tsx` ein.
+
+## Microsoft-Intune-Plugin (`plugin::intune`) -- vierte echte Integration
+
+`plugin/intune.rs` implementiert `Plugin` für Geräteverwaltung über die
+Microsoft-Graph-API. Vierte echte Integration nach NinjaOne, Level.io und
+Snipe-IT -- strukturell am nächsten an Level.io (eine Verbindung bindet
+direkt an genau einen lokalen Kunden, kein granulares
+Organisations-Zuordnungs-Konzept nötig), authentifiziert aber wie NinjaOne
+über einen OAuth2-Client-Credentials-Grant, nur gegen Microsofts eigene
+Identitätsplattform statt NinjaOnes und mit einem dritten Geheimwert
+(`tenant_id`) zusätzlich zu `client_id`/`client_secret`.
+
+- **Authentifizierung**: OAuth2-Client-Credentials-Grant gegen Azure AD
+  (`POST https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token`,
+  `grant_type=client_credentials`, `client_id`, `client_secret`,
+  `scope=https://graph.microsoft.com/.default`) -- verifiziert gegen
+  Microsofts eigene Dokumentation der Identitätsplattform. Genau wie bei
+  `plugin::ninja` wird der Zugriffstoken bewusst nicht zwischen Aufrufen
+  zwischengespeichert, sondern pro Trait-Methodenaufruf neu geholt -- diese
+  App ruft Plugin-Methoden selten und manuell auf, nie in einer heißen
+  Schleife, daher bleibt das einfach und korrekt genug für v1.
+- **Fester Host, kein `base_url`**: anders als NinjaOne/Snipe-IT (selbst
+  gehostete bzw. regionsabhängige Instanzen) ist der Host der
+  Microsoft-Graph-API immer `graph.microsoft.com` -- deshalb, wie bei
+  Level.ios `BASE_URL`-Konstante, kein vom Nutzer angegebenes
+  `base_url`-Feld an `IntuneConnectionMeta` nötig.
+- **Geräte**: `GET {GRAPH_BASE_URL}/v1.0/deviceManagement/managedDevices`,
+  paginiert über `@odata.nextLink` (eine vollständige Fortsetzungs-URL im
+  Antwort-Umschlag, Microsoft Graphs Standard-Paginierungsmuster --
+  verifiziert gegen Microsofts eigene Graph-API-Dokumentation für diesen
+  Endpunkt). `IntunePlugin::list_devices` durchläuft alle Seiten intern (bis
+  zu `MAX_PAGES` Seiten als Schutz gegen eine sich falsch verhaltende
+  Gegenstelle) und liefert eine einzige, bereits zusammengefügte Liste --
+  der Aufrufer sieht nichts von Graphs Paginierung, dasselbe Prinzip wie bei
+  Level.io/Snipe-IT. Reine, für sich testbare Funktionen `parse_devices_page`
+  (Seiten-Antwort -> Geräte-Array + Fortsetzungs-URL) und
+  `map_intune_devices` (Geräte-Array -> `IntuneDevice`), beide mit
+  hartkodierten JSON-Fixtures getestet (die Geräte-Fixture stammt direkt aus
+  Microsofts eigenem offiziellem Beispiel für diesen Endpunkt), kein echter
+  Netzwerkzugriff in Tests.
+- **Gerätedetails**: `GET {GRAPH_BASE_URL}/v1.0/deviceManagement/managedDevices/{id}`,
+  reicht die Antwort unverändert als `serde_json::Value` durch, genau wie
+  bei Level.io/NinjaOne.
+- **Nur ein Ausschnitt der Felder abgebildet**: ein reales
+  `managedDevices`-Objekt hat rund 50 Felder; dieses Modul dekodiert nur die
+  tatsächlich genutzten (`id`, `deviceName`, `operatingSystem`, `osVersion`,
+  `serialNumber`, `manufacturer`, `model`, `complianceState`,
+  `lastSyncDateTime`, `userPrincipalName`) -- dieselbe
+  "nur abbilden, was auch genutzt wird"-Konvention, die NinjaOnes
+  Geräteabbildung bereits verfolgt. `deviceName` dient als
+  identifizierendes/Anzeige-Feld, analog dazu wie Ninja/Level `hostname`
+  verwenden -- es füllt sowohl `IntuneDevice::name` als auch
+  `IntuneDevice::hostname`, da Intunes Geräteobjekt kein von `deviceName`
+  getrenntes physisches Hostname-Feld kennt.
+- **Keine IP-Adresse**: verifiziert gegen Microsofts eigenes offizielles
+  `managedDevices`-Schema -- an keiner Stelle dieses Objekts existiert ein
+  IP-Adress-Feld (`wiFiMacAddress` ist eine MAC-Adresse, keine IP-Adresse,
+  und auch sonst nicht als eine solche nutzbar). `IntuneDevice::ip_address`
+  ist deshalb IMMER `None` -- keine Auslassung aus Bequemlichkeit, sondern
+  dieselbe ehrlich verifizierte Abwesenheit, die Snipe-IT für
+  `hostname`/`ip_address` bereits dokumentiert (siehe oben, Abschnitt
+  "Snipe-IT-Plugin").
+- **HTTP-Client**: dieselbe `ureq`-3.4.1-Abhängigkeit wie
+  `plugin::ninja`/`plugin::level`/`plugin::snipeit`, kein zweiter
+  HTTP-Client in dieser Codebasis.
+- **Zugangsdaten-Kodierung**: Intune braucht drei Geheimwerte (`tenant_id`,
+  `client_id`, `client_secret`) -- einen mehr als NinjaOnes zwei.
+  `PluginCredentials.secret` ist laut Trait-Vertrag ein einziger opaker
+  String, den das Plugin selbst interpretiert -- hier als JSON-Objekt
+  kodiert (`serde_json::to_string`/`from_str`), genau wie `plugin::ninja`
+  seine `NinjaCredentials` kodiert, nur mit einem dritten Feld.
+
+### Intune-Verbindungen sind 1:1 an einen Kunden gebunden
+
+- Nicht-geheime Metadaten (`id`, `customer_id`, `label`) liegen als
+  `IntuneConnectionMeta` in `Config::intune_connections` (`config.toml`,
+  `#[serde(default)]`-kompatibel mit älteren Konfigurationen ohne dieses
+  Feld). Bewusst OHNE `base_url` -- siehe `GRAPH_BASE_URL` oben.
+- Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"intune:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei Level.io/NinjaOne.
+- Weil jede Verbindung genau eine `customer_id` trägt, braucht
+  `sync_intune_connection` keine Fallunterscheidung "zugeordnet/
+  unzugeordnet" wie `sync_ninja_connection` -- jedes synchronisierte Gerät
+  gehört automatisch zum Kunden der Verbindung, `linked_system_id` wird für
+  jedes Gerät direkt gegen die `external_refs`-Zeilen dieses Kunden geprüft.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie Level.io, nur ohne Gruppierung (Intune kennt
+kein Gruppen-Konzept): `sync_intune_connection` schreibt das Ergebnis jedes
+Laufs zusätzlich als JSON nach
+`data_dir/plugin-cache/intune-<connection_id>.json`
+(`{"synced_at_utc": "...", "devices": [...]}`). `get_cached_intune_sync`
+liest ausschließlich diese Datei (kein Netzwerkzugriff) und liefert `None`,
+wenn für eine Verbindung noch nie synchronisiert wurde. `remove_intune_connection`
+löscht diese Cache-Datei (bestes Bemühen).
+
+### Tauri-Kommandos (`commands::intune`)
+
+`test_intune_connection`, `list_intune_connections`, `add_intune_connection`,
+`remove_intune_connection`, `sync_intune_connection`,
+`get_cached_intune_sync`, `link_system_to_intune`,
+`unlink_system_from_intune`, `get_intune_system_details` -- dünne Wrapper
+nach demselben Muster wie `commands::level`, ohne
+Organisations-Zuordnungskommandos (kein Intune-Äquivalent zu
+`map_ninja_organization`/`unmap_ninja_organization` nötig, siehe oben).
+
+`test_intune_connection` prüft ein Tenant-ID/Client-ID/Client-Secret-Tripel
+per OAuth2-Grant, ohne irgendetwas zu persistieren. Das Übernehmen eines
+extern gelieferten Werts in ein selbst gepflegtes Feld (`name`, `hostname`,
+`ip_address`, `notes` in `systems`) bleibt dabei -- wie bei den anderen drei
+Integrationen -- ausschließlich eine bewusste, manuelle Aktion über
+`get_intune_system_details` plus eine spätere UI-Aktion; kein Kommando hier
+schreibt automatisch in diese vier Felder.
+
+### Frontend (`IntunePluginSection.tsx`)
+
+Strukturell an `LevelPluginSection.tsx` angelehnt (Kunde-Zuordnungs-`<select>`
+inklusive "+ Neuen Kunden anlegen…" im Verbindungs-Anlage-Dialog,
+Vergleichs-/Übernahme-Panel für verknüpfte Geräte, `j`/`k`/`Enter`/`l`/`u`-
+Tastaturnavigation), aber ohne Level.ios Gruppen-Verschachtelung -- Intune
+kennt kein Gruppen-Konzept, die Geräteliste ist deshalb eine echte flache,
+filterbare, 10-pro-Seite-paginierte Liste ohne zusätzliche Verschachtelungs-
+ebene. Der Verbindungs-Anlage-Dialog hat vier Felder statt Levels zwei
+(Label, Tenant-ID, Client-ID, Client-Secret als `type="password"`) -- analog
+zu NinjaOnes Client-ID/-Secret-Paar, nur mit der zusätzlichen Tenant-ID.
+`DeviceSummaryLine` zeigt Betriebssystem/-version und Compliance-Status
+zusätzlich zum Namen an; das Vergleichs-Panel ergänzt schreibgeschützte
+Zusatzinformationen (Compliance, Betriebssystem, Hersteller, Modell,
+Seriennummer, Benutzer), da ein lokales System dafür keine eigenen Felder
+hat. Analog zu Snipe-ITs `asset_tag`/`serial`-Vorbelegung schreibt
+"Neu anlegen" Seriennummer/Compliance-Status/Betriebssystem einmalig in das
+neu angelegte Systems `notes`-Feld (`buildInitialNotes`) -- eine einmalige
+Vorbelegung bei der Erstanlage, keine spätere automatische Überschreibung.
+Die IP-Adress-Zeile im Vergleichs-Panel erscheint wie bei den anderen drei
+Integrationen, liefert für Intune aber nie einen externen Wert (siehe oben,
+"Keine IP-Adresse") -- "Übernehmen" bleibt für diese Zeile deshalb immer
+deaktiviert. `PluginsView.tsx` bindet die Sektion als vierte Karte neben
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`
+ein.

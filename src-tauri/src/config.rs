@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
+use crate::plugin::intune::IntuneConnectionMeta;
 use crate::plugin::level::LevelConnectionMeta;
 use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
 use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
@@ -107,6 +108,16 @@ pub struct Config {
     /// exactly the same principle as `ninja_org_mappings`.
     /// `#[serde(default)]`-compatible with configs from before this change.
     pub snipeit_company_mappings: Vec<SnipeitCompanyMapping>,
+    /// Non-secret metadata per configured Microsoft Intune connection. Like
+    /// a Level connection, an Intune connection is bound directly to
+    /// exactly one local customer (`IntuneConnectionMeta.customer_id`) --
+    /// one Azure AD/Entra ID tenant is one organization here, no further
+    /// sub-tenant concept needed, see `plugin::intune`. The associated
+    /// OAuth2 credentials (tenant ID, client ID, client secret) live
+    /// exclusively in the OS keyring, see `plugin::secrets`.
+    /// `#[serde(default)]`-compatible with configs from before this change,
+    /// analogous to `level_connections` above.
+    pub intune_connections: Vec<IntuneConnectionMeta>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -150,6 +161,7 @@ impl Default for Config {
             level_connections: Vec::new(),
             snipeit_connections: Vec::new(),
             snipeit_company_mappings: Vec::new(),
+            intune_connections: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -444,6 +456,41 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.snipeit_company_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_intune_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.intune_connections.push(IntuneConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            customer_id: 7,
+            label: "ACME Intune".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.intune_connections.len(), 1);
+        assert_eq!(loaded.intune_connections[0].customer_id, 7);
+        assert_eq!(loaded.intune_connections[0].label, "ACME Intune");
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_intune_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the Intune integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.intune_connections.is_empty());
     }
 
     #[test]
