@@ -17,7 +17,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux system dependencies
         if: matrix.os == 'ubuntu-latest'
@@ -83,7 +83,7 @@ jobs:
       contents: read
       checks: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # RUSTSEC-2026-0194 and RUSTSEC-2026-0195: denial-of-service issues in
       # quick-xml 0.38.4, pinned below the 0.41.0 fix by citationberg's
       # `quick-xml = "^0.38.1"` requirement (citationberg -> hayagriva ->
