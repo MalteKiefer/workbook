@@ -195,6 +195,15 @@ pub fn run() {
             commands::snipeit::link_system_to_snipeit,
             commands::snipeit::unlink_system_from_snipeit,
             commands::snipeit::get_snipeit_system_details,
+            commands::abm::test_abm_connection,
+            commands::abm::list_abm_connections,
+            commands::abm::add_abm_connection,
+            commands::abm::remove_abm_connection,
+            commands::abm::sync_abm_connection,
+            commands::abm::get_cached_abm_sync,
+            commands::abm::link_system_to_abm,
+            commands::abm::unlink_system_from_abm,
+            commands::abm::get_abm_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())

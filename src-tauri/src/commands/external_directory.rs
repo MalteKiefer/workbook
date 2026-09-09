@@ -1,8 +1,8 @@
 //! Pure read-access aggregation across all configured RMM/asset management
-//! plugin connections (Ninja, Level, Snipe-IT) for a given local customer:
-//! returns all devices/assets that (a) belong to this customer according to
-//! the most recently synced plugin caches, and (b) are not yet linked to any
-//! local system.
+//! plugin connections (Ninja, Level, Snipe-IT, ABM) for a given local
+//! customer: returns all devices/assets that (a) belong to this customer
+//! according to the most recently synced plugin caches, and (b) are not yet
+//! linked to any local system.
 //!
 //! Background: the system field when creating a maintenance entry
 //! (`EntryEditor.tsx`/`QuickCapture.tsx`) has so far only searched existing
@@ -14,30 +14,32 @@
 //! latency.
 //!
 //! Deliberately reuses the real, already `Deserialize`-capable cache DTOs of
-//! the three plugin modules (`commands::plugins::CachedNinjaSyncDto`,
-//! `commands::level::CachedLevelSyncDto`, `commands::snipeit::CachedSnipeitSyncDto`),
-//! instead of defining the JSON shape here a second time -- that way this
-//! module stays automatically in sync if one of those shapes ever changes.
+//! the four plugin modules (`commands::plugins::CachedNinjaSyncDto`,
+//! `commands::level::CachedLevelSyncDto`, `commands::snipeit::CachedSnipeitSyncDto`,
+//! `commands::abm::CachedAbmSyncDto`), instead of defining the JSON shape here
+//! a second time -- that way this module stays automatically in sync if one
+//! of those shapes ever changes.
 //!
 //! The cache path convention (`data_dir/plugin-cache/<plugin>-<connection_id>.json`)
 //! and the reading itself (`std::fs::read_to_string` + `serde_json::from_str`)
-//! are nonetheless rebuilt inline here instead of calling the three modules'
+//! are nonetheless rebuilt inline here instead of calling the plugin modules'
 //! `read_*_cache` helper functions directly: those are deliberately private
-//! there (`fn`, not `pub fn`), and this change set is not allowed to touch
-//! `commands/plugins.rs`, `commands/level.rs`, or `commands/snipeit.rs` (split
-//! with a change being worked on in parallel that owns exactly those files).
-//! Loosening the visibility to `pub(crate)` there would have violated that
-//! boundary; rebuilding it following the path convention and the real DTO
-//! types is the only option that respects that boundary without duplicating
-//! the JSON shape itself -- only the trivial one-liner path construction/the
-//! file read itself is duplicated, exactly as the three plugin modules already
-//! each do for themselves (`plugin_cache_dir` is already identically
-//! duplicated across all three).
+//! there (`fn`, not `pub fn`), and past change sets touching this file were
+//! not allowed to touch `commands/plugins.rs`, `commands/level.rs`, or
+//! `commands/snipeit.rs` (split with changes being worked on in parallel that
+//! owned exactly those files). Loosening the visibility to `pub(crate)` there
+//! would have violated that boundary; rebuilding it following the path
+//! convention and the real DTO types is the only option that respects that
+//! boundary without duplicating the JSON shape itself -- only the trivial
+//! one-liner path construction/the file read itself is duplicated, exactly as
+//! every plugin module already does for itself (`plugin_cache_dir` is already
+//! identically duplicated across all of them).
 
 use std::path::{Path, PathBuf};
 
 use tauri::State;
 
+use crate::commands::abm::CachedAbmSyncDto;
 use crate::commands::level::CachedLevelSyncDto;
 use crate::commands::plugins::CachedNinjaSyncDto;
 use crate::commands::snipeit::CachedSnipeitSyncDto;
@@ -99,6 +101,20 @@ fn read_snipeit_cache_file(
     let text = std::fs::read_to_string(&path)?;
     let cached: CachedSnipeitSyncDto = serde_json::from_str(&text)
         .map_err(|e| AppError::Plugin(format!("Snipe-IT-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_abm_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedAbmSyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("abm-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedAbmSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("ABM-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
@@ -232,6 +248,45 @@ fn collect_snipeit(
     Ok(())
 }
 
+/// ABM: exactly the same pattern as Level (`collect_level`) -- no separate
+/// organization/mapping layer, a connection belongs directly to exactly one
+/// customer (`AbmConnectionMeta.customer_id`), see the `plugin::abm` module
+/// documentation. `hostname`/`ip_address` are always `None` for ABM devices
+/// (ABM is a purchasing/enrollment registry, not RMM telemetry, see
+/// `plugin::abm` module docs) -- `name` is nonetheless meaningfully
+/// populated, because ABM's own device mapping logic (`plugin::abm`) already
+/// falls back itself from `deviceModel` to `serialNumber` down to the
+/// external ID, before the value even reaches the cache.
+fn collect_abm(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.abm_connections {
+        if connection.customer_id != customer_id {
+            continue;
+        }
+        let Some(cache) = read_abm_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for device in &cache.devices {
+            if device.linked_system_id.is_some() {
+                continue;
+            }
+            out.push(UnlinkedExternalSystemDto {
+                plugin: "abm".to_string(),
+                connection_id: connection.id.clone(),
+                external_id: device.external_id.clone(),
+                name: device.name.clone(),
+                hostname: device.hostname.clone(),
+                ip_address: device.ip_address.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Pure core logic, without `State<AppState>` -- testable with a hardcoded
 /// `Config` plus a `tempfile::tempdir()`, analogous to
 /// `commands::plugins::group_devices_by_organization`. The
@@ -250,6 +305,7 @@ pub fn list_unlinked_external_systems_for_customer_pure(
     collect_ninja(config, data_dir, customer_id, &mut result)?;
     collect_level(config, data_dir, customer_id, &mut result)?;
     collect_snipeit(config, data_dir, customer_id, &mut result)?;
+    collect_abm(config, data_dir, customer_id, &mut result)?;
     Ok(result)
 }
 
@@ -267,6 +323,7 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    use crate::commands::abm::ExternalSystemDto as AbmExternalSystemDto;
     use crate::commands::level::ExternalSystemDto as LevelExternalSystemDto;
     use crate::commands::plugins::{
         ExternalSystemDto as NinjaExternalSystemDto, NinjaOrgDeviceGroupDto,
@@ -274,6 +331,7 @@ mod tests {
     use crate::commands::snipeit::{
         ExternalSystemDto as SnipeitExternalSystemDto, SnipeitCompanyDeviceGroupDto,
     };
+    use crate::plugin::abm::AbmConnectionMeta;
     use crate::plugin::level::LevelConnectionMeta;
     use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
     use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
@@ -293,6 +351,10 @@ mod tests {
 
     fn snipeit_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
         plugin_cache_dir(data_dir).join(format!("snipeit-{connection_id}.json"))
+    }
+
+    fn abm_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("abm-{connection_id}.json"))
     }
 
     fn ninja_device(external_id: &str, linked_system_id: Option<i64>) -> NinjaExternalSystemDto {
@@ -683,6 +745,113 @@ mod tests {
         });
 
         let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn abm_device_appears_when_its_connection_is_bound_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.abm_connections.push(AbmConnectionMeta {
+            id: "abm-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME ABM".to_string(),
+        });
+        let cache = CachedAbmSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            devices: vec![AbmExternalSystemDto {
+                external_id: "abm-1".to_string(),
+                name: "iMac 21.5\"".to_string(),
+                hostname: None,
+                ip_address: None,
+                serial_number: Some("XABC123X0ABC123X0".to_string()),
+                device_model: Some("iMac 21.5\"".to_string()),
+                linked_system_id: None,
+            }],
+        };
+        write_json(&abm_cache_path(dir.path(), "abm-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "abm");
+        assert_eq!(result[0].connection_id, "abm-conn-1");
+        assert_eq!(result[0].external_id, "abm-1");
+        assert_eq!(result[0].hostname, None);
+    }
+
+    #[test]
+    fn already_linked_abm_device_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.abm_connections.push(AbmConnectionMeta {
+            id: "abm-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME ABM".to_string(),
+        });
+        let cache = CachedAbmSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            devices: vec![AbmExternalSystemDto {
+                external_id: "abm-1".to_string(),
+                name: "iMac 21.5\"".to_string(),
+                hostname: None,
+                ip_address: None,
+                serial_number: Some("XABC123X0ABC123X0".to_string()),
+                device_model: Some("iMac 21.5\"".to_string()),
+                linked_system_id: Some(3),
+            }],
+        };
+        write_json(&abm_cache_path(dir.path(), "abm-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn abm_connection_bound_to_a_different_customer_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.abm_connections.push(AbmConnectionMeta {
+            id: "abm-conn-1".to_string(),
+            customer_id: 99,
+            label: "ACME ABM".to_string(),
+        });
+        let cache = CachedAbmSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            devices: vec![AbmExternalSystemDto {
+                external_id: "abm-1".to_string(),
+                name: "iMac 21.5\"".to_string(),
+                hostname: None,
+                ip_address: None,
+                serial_number: None,
+                device_model: None,
+                linked_system_id: None,
+            }],
+        };
+        write_json(&abm_cache_path(dir.path(), "abm-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn abm_connection_never_synced_is_skipped_gracefully_not_as_an_error() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.abm_connections.push(AbmConnectionMeta {
+            id: "abm-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME ABM".to_string(),
+        });
+
+        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7);
 
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
