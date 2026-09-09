@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
@@ -43,6 +44,62 @@ const CATEGORY_LABELS: Record<string, string> = {
   installation: "Installation",
   sonstiges: "Sonstiges",
 };
+
+// This is a read-only view, not the CodeMirror editor — it just dumps
+// body_md as text, so a fenced code block previously rendered as literal
+// ```lang / ``` lines with no visual distinction from the surrounding prose
+// (same underlying complaint as the editor's code blocks: not clean, hard to
+// read against the dark background). No markdown-rendering library is used
+// anywhere in this app, so this stays a minimal regex split rather than
+// pulling one in just for code fences — it doesn't render bold/italic/etc.,
+// only gives fenced code its own background box and strips the backtick
+// fence lines, mirroring the boxed look MarkdownEditor.tsx's
+// codeBlockBackground now gives the same content while editing.
+function renderBody(bodyMd: string): ReactNode[] {
+  const codeBlockPattern = /```(\w*)\n([\s\S]*?)```/g;
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = codeBlockPattern.exec(bodyMd)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(<span key={key++}>{bodyMd.slice(lastIndex, match.index)}</span>);
+    }
+    const [, lang, code] = match;
+    parts.push(
+      <div
+        key={key++}
+        style={{
+          background: "var(--bg-hover)",
+          border: "1px solid var(--border-subtle)",
+          borderRadius: "var(--radius-sm)",
+          margin: "0.3rem 0",
+          overflow: "hidden",
+        }}
+      >
+        {lang && (
+          <div
+            style={{
+              padding: "0.15rem 0.6rem",
+              fontSize: "0.72rem",
+              color: "var(--text-secondary)",
+              fontStyle: "italic",
+              borderBottom: "1px solid var(--border-subtle)",
+            }}
+          >
+            {lang}
+          </div>
+        )}
+        <div style={{ padding: "0.6rem" }}>{code.replace(/\n$/, "")}</div>
+      </div>,
+    );
+    lastIndex = codeBlockPattern.lastIndex;
+  }
+  if (lastIndex < bodyMd.length) {
+    parts.push(<span key={key}>{bodyMd.slice(lastIndex)}</span>);
+  }
+  return parts;
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -160,7 +217,7 @@ export default function EntryDetailModal() {
               <span>· {CATEGORY_LABELS[entry.category] ?? entry.category}</span>
               {entry.tags.length > 0 && <span>· {entry.tags.join(", ")}</span>}
             </div>
-            <pre
+            <div
               style={{
                 whiteSpace: "pre-wrap",
                 fontFamily: "var(--font-mono)",
@@ -169,11 +226,10 @@ export default function EntryDetailModal() {
                 border: "1px solid var(--border-subtle)",
                 borderRadius: "var(--radius-sm)",
                 padding: "0.6rem",
-                margin: 0,
               }}
             >
-              {entry.body_md}
-            </pre>
+              {renderBody(entry.body_md)}
+            </div>
             {attachments.length > 0 && (
               <div>
                 <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)", fontWeight: 500 }}>Anhänge</span>

@@ -1,7 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { EditorSelection, EditorState, Prec } from "@codemirror/state";
-import { EditorView, keymap, placeholder as placeholderExtension } from "@codemirror/view";
+import { EditorSelection, EditorState, Prec, RangeSetBuilder } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin, keymap, placeholder as placeholderExtension } from "@codemirror/view";
+import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, historyKeymap, history } from "@codemirror/commands";
+import { HighlightStyle, syntaxHighlighting, syntaxTree } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { markdown } from "@codemirror/lang-markdown";
 import { basicSetup } from "codemirror";
 
@@ -58,7 +61,81 @@ const editorTheme = EditorView.theme({
   ".cm-placeholder": {
     color: "var(--text-muted)",
   },
+  // Applied by codeBlockBackground below to every line inside a fenced code
+  // block (including its ``` fence lines), so a code block reads as a
+  // distinct box rather than plain text on the same background as prose —
+  // this is what was missing before (basicSetup's default highlight style
+  // only colors tokens, it never gives a block its own background).
+  ".cm-code-block-line": {
+    backgroundColor: "var(--bg-hover)",
+  },
 });
+
+// basicSetup ships its own default syntax highlighting, tuned for a generic
+// light-ish background — several markdown token colors (the ```fence marks,
+// the language tag, inline `code`) ended up low-contrast/hard to read against
+// this app's dark editor background. Re-themed against this app's own design
+// tokens so it stays legible (and correctly re-themes itself) in both the
+// dark and light palettes in theme.css. Tag-to-node mapping confirmed against
+// @lezer/markdown's own styleTags config: CodeMark = the ``` /# /- /> /**
+// marker characters themselves, monospace = InlineCode/CodeText (covers both
+// `inline code` and fenced code block content), labelName = the CodeInfo
+// language tag (e.g. "bash" in ```bash).
+const markdownHighlightStyle = HighlightStyle.define([
+  { tag: [tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6], color: "var(--text-primary)", fontWeight: "700" },
+  { tag: tags.strong, color: "var(--text-primary)", fontWeight: "700" },
+  { tag: tags.emphasis, color: "var(--text-primary)", fontStyle: "italic" },
+  { tag: tags.strikethrough, color: "var(--text-muted)", textDecoration: "line-through" },
+  { tag: tags.link, color: "var(--accent)", textDecoration: "underline" },
+  { tag: tags.url, color: "var(--accent)" },
+  { tag: tags.quote, color: "var(--text-secondary)", fontStyle: "italic" },
+  { tag: tags.monospace, color: "var(--text-primary)" },
+  { tag: tags.labelName, color: "var(--text-secondary)", fontStyle: "italic" },
+  { tag: tags.processingInstruction, color: "var(--text-muted)" },
+]);
+
+// Gives every line inside a fenced code block (```...```) the `.cm-code-block-line`
+// background class from editorTheme above, so the block reads as one visually
+// distinct box (the ``` fence lines included) instead of blending into
+// surrounding prose. basicSetup's markdown highlighting only colors
+// individual tokens -- it has no concept of "this whole block gets a
+// background" -- so this has to be a line decoration built by hand from the
+// syntax tree, recomputed whenever the document or viewport changes (the
+// same pattern CodeMirror's own docs use for line-based decorations).
+function computeCodeBlockLineDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const decoratedLines = new Set<number>();
+  syntaxTree(view.state).iterate({
+    enter: (node) => {
+      if (node.name !== "FencedCode") return;
+      const startLine = view.state.doc.lineAt(node.from).number;
+      const endLine = view.state.doc.lineAt(node.to).number;
+      for (let lineNumber = startLine; lineNumber <= endLine; lineNumber++) {
+        decoratedLines.add(lineNumber);
+      }
+    },
+  });
+  for (const lineNumber of [...decoratedLines].sort((a, b) => a - b)) {
+    const line = view.state.doc.line(lineNumber);
+    builder.add(line.from, line.from, Decoration.line({ class: "cm-code-block-line" }));
+  }
+  return builder.finish();
+}
+
+const codeBlockBackground = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = computeCodeBlockLineDecorations(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = computeCodeBlockLineDecorations(update.view);
+      }
+    }
+  },
+  { decorations: (instance) => instance.decorations },
+);
 
 // Toggle a marker pair (e.g. "**" for bold, "_" for italic) around each
 // selection range. If the selection is already immediately wrapped by the
@@ -129,6 +206,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
           ]),
         ),
         markdown(),
+        syntaxHighlighting(markdownHighlightStyle),
+        codeBlockBackground,
         EditorView.lineWrapping,
         editorTheme,
         ...(placeholder ? [placeholderExtension(placeholder)] : []),

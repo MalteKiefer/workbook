@@ -32,9 +32,10 @@ plugin-cache/
 smoke-test.log
 *.log
 
-# Editors / OS
+# Editors / OS / local agent tooling
 .vscode/
 .idea/
+.claude/
 *.swp
 .DS_Store
 Thumbs.db
