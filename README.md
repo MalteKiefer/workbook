@@ -1,107 +1,70 @@
 # Wartungsdoku
 
-Lokale, tastaturgesteuerte Wartungsdokumentation für einen einzelnen IT-Administrator:
-Tätigkeiten je Kunde und System zeitstempelgenau protokollieren — vollständig offline,
-ohne Server- oder Cloud-Anbindung. Tauri 2 (Rust-Backend) mit React/TypeScript-Frontend.
+Wartungsdoku is an offline, keyboard first desktop application for a single IT administrator to document maintenance work per customer and system. It runs fully on the local machine, keeps all data in a local SQLite database, and never requires an internet connection for its core workflow.
 
-Die vollständige Architektur- und Design-Spezifikation steht in
-[`docs/superpowers/specs/2026-09-07-wartungsdoku-design.md`](docs/superpowers/specs/2026-09-07-wartungsdoku-design.md).
+## Features
 
-## Voraussetzungen
+* Customers, systems, and a searchable journal of maintenance entries.
+* A global Command Palette (Ctrl+K) as the primary way to navigate and act.
+* A quick capture popup, triggered by a global hotkey, for jotting down an entry without switching windows.
+* A strict timestamp model. Every timestamp stores both a UTC value and an IANA timezone name, and the moment the work was performed is always kept separate from the moment it was recorded.
+* Content addressed attachment storage. Files are deduplicated by their SHA256 hash.
+* Markdown editing with an export to Markdown or PDF per customer.
+* Full backup and restore, including the database, attachments, configuration, and any plugin cache.
+* Three built in RMM and asset management plugin integrations: NinjaOne, Level.io, and Snipe IT. Each is read only. Data is pulled in and linked to a local system on request, and existing fields are never overwritten automatically.
+* Light, dark, and system theme.
 
-- **Rust** (stable) über [rustup](https://rustup.rs)
-- **Node.js** + **npm**
-- **Windows:** MSVC-Build-Tools für das Target `x86_64-pc-windows-msvc` — entweder die
-  "Visual Studio Build Tools" oder eine volle Visual-Studio-Installation, jeweils mit der
-  Workload **"Desktop development with C++"**.
-- **Linux** (Debian/Ubuntu als Beispiel — genaue Paketnamen variieren je Distribution):
+## Tech stack
+
+* Backend: Rust, using Tauri 2 as the application shell, rusqlite for the database, and Typst for PDF rendering.
+* Frontend: React and TypeScript, built with Vite, state managed with Zustand, and CodeMirror for the Markdown editor.
+
+## Prerequisites
+
+* Rust, stable channel, via [rustup](https://rustup.rs).
+* Node.js 22 or newer, with npm.
+* Windows: the MSVC build tools for the `x86_64-pc-windows-msvc` target. Either the Visual Studio Build Tools or a full Visual Studio installation, with the "Desktop development with C++" workload.
+* Linux (package names vary by distribution, Debian and Ubuntu shown as an example):
+
   ```sh
   sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
     build-essential curl wget file libssl-dev libxdo-dev
   ```
-  Je nach Distribution heißt das AppIndicator-Paket `libayatana-appindicator3-dev` statt
-  `libappindicator3-dev`. Die aktuelle, vollständige Liste pflegt Tauri selbst unter
-  <https://v2.tauri.app/start/prerequisites/> — im Zweifel dort nachsehen.
 
-## Entwicklung
+  Some distributions name the AppIndicator package `libayatana-appindicator3-dev` instead of `libappindicator3-dev`. Tauri maintains the current, full list at <https://v2.tauri.app/start/prerequisites/>.
 
-```sh
+## Development
+
+```bash
 npm install
+npm run dev
 ```
 
-`@tauri-apps/cli` ist als Dev-Dependency installiert (siehe `package.json`), es gibt aber
-(noch) kein eigenes `tauri`-npm-Skript. Direkt nutzbar ist der lokal installierte
-CLI-Befehl:
+In a second terminal, run the Tauri application in development mode:
 
-```sh
-npx tauri dev
+```bash
+cd src-tauri
+cargo run
 ```
 
-Das baut das Frontend (`beforeDevCommand`/`devUrl` in `src-tauri/tauri.conf.json`) und
-startet die App im Entwicklungsmodus.
+### Checks
 
-Alternativ — der über die bisherige Projekt-Historie hinweg tatsächlich verwendete und
-verifizierte Zwei-Schritt-Weg (siehe die Verifikationsschritte in den Plänen unter
-`docs/superpowers/plans/`):
-
-```sh
+```bash
+npm run lint
 npm run build
-cd src-tauri
-cargo run --bin wartungsdoku
 ```
 
-`npm run build` erzeugt den `dist/`-Ordner, den `cargo run` dann als bereits fertiges
-Frontend einbettet.
-
-## Produktions-Build
-
-Für einen echten Installer/Bundle ist `cargo tauri build` (bzw. äquivalent `npx tauri
-build`) der vorgesehene Weg. Ehrlicher Stand: Diese Repo wurde während ihrer gesamten
-bisherigen Entstehung ausschließlich im Entwicklungsmodus gebaut und ausgeführt (`cargo
-build` / `cargo run` fürs Backend, `npm run build` fürs Frontend) — kein einziger
-Plan-Durchlauf in `docs/superpowers/plans/` hat bislang einen tatsächlichen
-Release-/Bundle-Build durchgeführt oder verifiziert. `cargo tauri build` ist der
-dokumentierte nächste Schritt, aber in dieser Repo bisher ungetestet.
-
-## Datenverzeichnis
-
-Default-Datenverzeichnis: das plattformübliche App-Datenverzeichnis, ermittelt über die
-`dirs`-Crate (`default_data_dir()` in `src-tauri/src/config.rs`) als
-`dirs::data_dir()/wartungsdoku` — in der Praxis also `%APPDATA%\wartungsdoku` unter
-Windows und `~/.local/share/wartungsdoku` unter Linux.
-
-Überschreibbar per Umgebungsvariable:
-
-```sh
-WARTUNGSDOKU_DATA_DIR=/pfad/zu/eigenem/verzeichnis
-```
-
-(siehe `resolve_data_dir()` in `src-tauri/src/config.rs`).
-
-Ein Backup ist einfach eine Kopie des gesamten Datenverzeichnisses (`wartungsdoku.db`
-samt WAL-Dateien, `attachments/`, `config.toml`) — keine gesonderte Exportfunktion nötig.
-
-## Tests
-
-```sh
+```bash
 cd src-tauri
+cargo fmt --check
+cargo clippy --all-targets --all-features
 cargo test
 ```
 
-Rust-seitige Tests decken Datenschicht, Migrationen und Volltextsuche ab. Die Anzahl
-wächst mit dem Projekt — alle Tests sollten grün sein.
+## Releases
 
-## Projektstruktur
+Pushing a tag matching `v*` triggers a GitHub Actions workflow that builds installers for Linux and Windows and publishes them as a GitHub Release.
 
-| Pfad | Inhalt |
-|---|---|
-| `src-tauri/` | Rust-Backend: Tauri-Commands, SQLite-Datenschicht, Migrationen, globale Hotkeys, Export |
-| `src/` | React-Frontend des Hauptfensters |
-| `src/quick-capture/` | Eigenständiges Frontend des separaten Schnellerfassungsfensters |
-| `docs/superpowers/specs/` | Architektur-/Design-Spezifikation |
-| `docs/superpowers/plans/` | Projektinterne, phasenweise Umsetzungspläne — nützliche Lektüre für Anschlussarbeit |
+## License
 
-## Weiterführende Dokumentation
-
-- [`SHORTCUTS.md`](SHORTCUTS.md) — vollständige, gegen den Code verifizierte Tastaturbelegung
-- [`docs/PLUGIN_ARCHITECTURE.md`](docs/PLUGIN_ARCHITECTURE.md) — Architekturnotiz zur Plugin-Erweiterung
+This is a private, unlicensed project for internal use.
