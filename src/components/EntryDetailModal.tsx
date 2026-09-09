@@ -172,9 +172,19 @@ export default function EntryDetailModal() {
 
   function handleEdit() {
     if (entry === null) return;
-    closeForm();
+    const entryId = entry.id;
+    // Closing this modal and opening EntryEditor in the same tick raced: both
+    // components watch the SAME global `formOpen` flag (openForm on mount,
+    // closeEntryEditor/closeEntryDetail when formOpen goes false again — see
+    // useGlobalHotkeys.ts's Escape handling), and effect cleanup order across
+    // sibling components meant EntryEditor's own "auto-close if formOpen
+    // becomes false" watcher could fire right after it opened, immediately
+    // closing it again -- from the user's side this looked like "everything
+    // just closes, nothing happens". Letting closeEntryDetail's effect
+    // cleanup (which flips formOpen back to false) fully settle before
+    // opening the editor, in a separate tick, avoids the collision.
     closeEntryDetail();
-    openEntryEditor(entry.id);
+    setTimeout(() => openEntryEditor(entryId), 0);
   }
 
   async function handleOpenAttachment(attachmentId: number) {
