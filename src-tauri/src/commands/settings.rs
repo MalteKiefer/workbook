@@ -1,6 +1,6 @@
-//! Allgemeine App-Einstellungen, die zu keinem spezifischeren Modul gehören
-//! (Einstellungen → Allgemein im Frontend). Aktuell nur die Theme-Präferenz;
-//! weitere globale Einstellungen können hier ergänzt werden.
+//! General app settings that don't belong to a more specific module
+//! (Settings -> General in the frontend). Currently just the theme
+//! preference; further global settings can be added here.
 
 use tauri::{AppHandle, Emitter, State};
 
@@ -28,10 +28,10 @@ pub fn set_theme_preference(
     config.save(&config_path)?;
     drop(config);
 
-    // App-weites Broadcast (nicht nur an das Fenster, das den Command
-    // aufgerufen hat) -- damit ein bereits offenes Schnellerfassungsfenster
-    // live nachzieht, wenn die Einstellung im Hauptfenster geändert wird (und
-    // umgekehrt), siehe `src/lib/theme.ts::listenForThemeChanges`.
+    // App-wide broadcast (not just to the window that invoked the command) --
+    // so an already-open quick capture window picks up the change live when
+    // the setting is changed in the main window (and vice versa), see
+    // `src/lib/theme.ts::listenForThemeChanges`.
     app.emit("theme-changed", preference)
         .map_err(|e| AppError::Config(format!("Ereignis konnte nicht gesendet werden: {e}")))?;
 

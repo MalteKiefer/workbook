@@ -91,8 +91,8 @@ export default function BackupView() {
       setRestoreBusy(true);
       setRestoreStatus("Wiederherstellung wird vorbereitet, Anwendung startet danach automatisch neu…");
       await invoke("restore_backup", { sourcePath, passphrase });
-      // In der Praxis unerreichbar: bei Erfolg startet die App neu, bevor
-      // dieses Promise aufgelöst wird.
+      // Unreachable in practice: on success, the app restarts before this
+      // promise resolves.
       setRestoreStatus("Wiederherstellung abgeschlossen.");
     } catch (e) {
       setRestoreError(formatInvokeError(e));

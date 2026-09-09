@@ -1,23 +1,22 @@
-//! Tauri-Kommandos für die NinjaOne-Plugin-Integration (siehe
-//! `plugin::ninja` und `docs/PLUGIN_ARCHITECTURE.md`). Dünne Wrapper nach dem
-//! Muster von `commands::export`: hier nur `State<AppState>` entgegennehmen,
-//! eine gepoolte Verbindung/den Config-Mutex holen und in die eigentliche
-//! Logik (Plugin-Trait, `db::external_refs`, `Config`) durchreichen.
+//! Tauri commands for the NinjaOne plugin integration (see `plugin::ninja`
+//! and `docs/PLUGIN_ARCHITECTURE.md`). Thin wrappers following the pattern
+//! of `commands::export`: just take `State<AppState>` here, grab a pooled
+//! connection/the config mutex, and pass through to the actual logic
+//! (plugin trait, `db::external_refs`, `Config`).
 //!
-//! Eine Ninja-"Verbindung" ist ein vom Nutzer angelegter Datensatz (Basis-URL +
-//! Zugangsdaten) für genau einen Ninja-Mandanten -- NICHT für genau einen
-//! lokalen Kunden. Ein Ninja-Mandant modelliert selbst mehrere
-//! "Organizations" (z. B. weil der Nutzer, der die Verbindung anlegt, selbst
-//! ein MSP ist und mehrere eigene Kunden als getrennte Organisationen in
-//! Ninja führt). Welche Organisation welchem lokalen Kunden entspricht (falls
-//! überhaupt), ist eine separate, granulare Zuordnung
-//! (`NinjaOrgMapping`/`Config::ninja_org_mappings`), die dieses Modul über
-//! `map_ninja_organization`/`unmap_ninja_organization` pflegt. Der
-//! vollqualifizierte Bezeichner `"ninja:<connection_id>"` dient sowohl als
-//! Schlüsselspeicher-Konto (`plugin::secrets`) als auch als
-//! `external_refs.plugin_id`, sodass die bestehende
-//! Ein-Zeile-je-(system_id,plugin_id)-Upsert-Semantik unverändert
-//! weiterfunktioniert.
+//! A Ninja "connection" is a user-created record (base URL + credentials)
+//! for exactly one Ninja tenant -- NOT for exactly one local customer. A
+//! Ninja tenant itself models multiple "organizations" (e.g. because the
+//! user creating the connection is themselves an MSP and manages several of
+//! their own customers as separate organizations in Ninja). Which
+//! organization corresponds to which local customer (if any) is a separate,
+//! granular mapping (`NinjaOrgMapping`/`Config::ninja_org_mappings`) that
+//! this module maintains via `map_ninja_organization`/
+//! `unmap_ninja_organization`. The fully-qualified identifier
+//! `"ninja:<connection_id>"` serves both as the key store account
+//! (`plugin::secrets`) and as `external_refs.plugin_id`, so the existing
+//! one-row-per-(system_id,plugin_id) upsert semantics keep working
+//! unchanged.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -44,17 +43,18 @@ pub struct ExternalSystemDto {
     pub external_id: String,
     pub name: String,
     pub hostname: Option<String>,
-    /// Erste Adresse aus Ninjas `ipAddresses`-Array, mit `publicIP` als
-    /// Rückfallebene (siehe `plugin::ninja::map_ninja_device`).
+    /// First address from Ninja's `ipAddresses` array, with `publicIP` as a
+    /// fallback (see `plugin::ninja::map_ninja_device`).
     pub ip_address: Option<String>,
-    /// Direktlink auf das Geräte-Dashboard in der Ninja-Weboberfläche, aus
-    /// `base_url` der Verbindung und der externen Geräte-ID konstruiert.
+    /// Direct link to the device dashboard in the Ninja web UI, constructed
+    /// from the connection's `base_url` and the external device ID.
     pub ninja_url: String,
-    /// `Some(id)`, wenn irgendein lokales System bereits mit dieser externen
-    /// ID für diese Verbindung verknüpft ist (`external_refs`-Zeile mit
-    /// passendem `plugin_id`/`external_id`), sonst `None`. Bei Geräten einer
-    /// nicht zugeordneten Organisation immer `None` -- ohne `customer_id`
-    /// lässt sich nicht sinnvoll gegen `external_refs` querverweisen.
+    /// `Some(id)` if any local system is already linked to this external ID
+    /// for this connection (an `external_refs` row with matching
+    /// `plugin_id`/`external_id`), otherwise `None`. Always `None` for
+    /// devices of an unmapped organization -- without a `customer_id`
+    /// there's no meaningful way to cross-reference against
+    /// `external_refs`.
     pub linked_system_id: Option<i64>,
 }
 
@@ -62,9 +62,9 @@ pub struct ExternalSystemDto {
 pub struct NinjaOrganizationDto {
     pub id: String,
     pub name: String,
-    /// `None`, solange diese Organisation noch keinem lokalen Kunden
-    /// zugeordnet wurde (`Config::ninja_org_mappings` hat keine passende
-    /// Zeile für diese Verbindung+Organisation).
+    /// `None` as long as this organization hasn't been mapped to a local
+    /// customer yet (`Config::ninja_org_mappings` has no matching row for
+    /// this connection+organization).
     pub mapped_customer_id: Option<i64>,
 }
 
@@ -72,20 +72,19 @@ pub struct NinjaOrganizationDto {
 pub struct NinjaOrgDeviceGroupDto {
     pub organization_id: String,
     pub organization_name: String,
-    /// `None`, wenn diese Organisation (noch) keinem lokalen Kunden
-    /// zugeordnet ist -- ein künftiges Frontend soll in diesem Fall
-    /// "nicht zugeordnet" anzeigen und das Verknüpfen der Geräte dieser
-    /// Gruppe deaktivieren.
+    /// `None` if this organization isn't mapped to a local customer (yet) --
+    /// in this case a future frontend should show "unmapped" and disable
+    /// linking the devices in this group.
     pub customer_id: Option<i64>,
     pub devices: Vec<ExternalSystemDto>,
 }
 
-/// Momentaufnahme des letzten `sync_ninja_connection`-Laufs, unter
-/// `data_dir/plugin-cache/ninja-<connection_id>.json` zwischengespeichert
-/// (siehe `write_ninja_cache`/`read_ninja_cache`), damit
-/// `get_cached_ninja_sync` ohne Netzwerkzugriff funktioniert. Braucht neben
-/// `Serialize` (zum Schreiben) auch `Deserialize` (zum Wiedereinlesen) --
-/// beides für den Cache-Datei-Roundtrip nötig.
+/// Snapshot of the last `sync_ninja_connection` run, cached under
+/// `data_dir/plugin-cache/ninja-<connection_id>.json` (see
+/// `write_ninja_cache`/`read_ninja_cache`), so `get_cached_ninja_sync` works
+/// without network access. Needs `Deserialize` (for reading back) in
+/// addition to `Serialize` (for writing) -- both are needed for the cache
+/// file round trip.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CachedNinjaSyncDto {
     pub synced_at_utc: String,
@@ -100,17 +99,17 @@ fn to_dto(meta: &NinjaConnectionMeta) -> NinjaConnectionDto {
     }
 }
 
-/// Der vollqualifizierte `plugin_id`-Wert für eine Ninja-Verbindung -- sowohl
-/// Schlüsselspeicher-Konto als auch `external_refs.plugin_id`.
+/// The fully-qualified `plugin_id` value for a Ninja connection -- both the
+/// key store account and `external_refs.plugin_id`.
 fn plugin_id_for(connection_id: &str) -> String {
     format!("ninja:{connection_id}")
 }
 
-/// Erzeugt aus einem Nutzer-Label eine stabile, kollisionsarme
-/// Verbindungs-ID: ein URL-/Dateiname-taugliches Slug des Labels plus ein
-/// Millisekunden-Zeitstempel-Suffix. Kein zusätzliches `uuid`-Crate nötig --
-/// diese IDs werden selten (interaktiv, "Verbindung anlegen") erzeugt, nie in
-/// einer heißen Schleife, ein Zeitstempel reicht als Eindeutigkeitsgarantie.
+/// Generates a stable, low-collision connection ID from a user label: a
+/// URL-/filename-safe slug of the label plus a millisecond timestamp
+/// suffix. No extra `uuid` crate needed -- these IDs are generated rarely
+/// (interactively, "create connection"), never in a hot loop, a timestamp
+/// is enough of a uniqueness guarantee.
 fn generate_connection_id(label: &str) -> String {
     let slug = slugify(label);
     let now_millis = std::time::SystemTime::now()
@@ -152,8 +151,8 @@ fn find_connection(config: &Config, connection_id: &str) -> Result<NinjaConnecti
         })
 }
 
-/// Baut aus einer Verbindungs-Metadatenzeile das lauffähige Plugin-Objekt
-/// plus die dazugehörigen Zugangsdaten aus dem Schlüsselspeicher.
+/// Builds the runnable plugin object plus its associated credentials from
+/// the key store, based on a connection metadata row.
 fn build_plugin(meta: &NinjaConnectionMeta) -> Result<(NinjaPlugin, PluginCredentials), AppError> {
     let plugin_id = plugin_id_for(&meta.id);
     let secret = plugin::secrets::load_secret(&plugin_id)?.ok_or_else(|| {
@@ -168,13 +167,13 @@ fn build_plugin(meta: &NinjaConnectionMeta) -> Result<(NinjaPlugin, PluginCreden
     ))
 }
 
-/// `plugin::secrets` bietet bewusst nur `store_secret`/`load_secret` (siehe
-/// Credential-Prinzip in `docs/PLUGIN_ARCHITECTURE.md`) -- kein Löschen, weil
-/// dieses Modul außerhalb des Aufgabenbereichs dieser Änderung liegt. Für den
-/// seltenen "Verbindung entfernen"-Fall reicht ein direkter, lokaler Zugriff
-/// mit demselben Service-Namen (`"wartungsdoku"`), rein bestes Bemühen: ein
-/// fehlendes oder nicht löschbares Schlüsselspeicher-Konto darf die gesamte
-/// `remove_ninja_connection`-Aktion nicht scheitern lassen.
+/// `plugin::secrets` deliberately only offers `store_secret`/`load_secret`
+/// (see the credential principle in `docs/PLUGIN_ARCHITECTURE.md`) -- no
+/// delete, because that module is out of scope for this change. For the
+/// rare "remove connection" case, a direct, local access with the same
+/// service name (`"wartungsdoku"`) is enough, purely best-effort: a missing
+/// or non-deletable key store account must not fail the entire
+/// `remove_ninja_connection` action.
 fn delete_keyring_secret_best_effort(plugin_id: &str) -> Result<(), keyring::Error> {
     let entry = keyring::Entry::new("wartungsdoku", plugin_id)?;
     match entry.delete_credential() {
@@ -184,10 +183,9 @@ fn delete_keyring_secret_best_effort(plugin_id: &str) -> Result<(), keyring::Err
     }
 }
 
-/// Verzeichnis für plugin-spezifische Zwischenspeicher-Dateien
-/// (`data_dir/plugin-cache/`). Aktuell nur für Ninja-Sync-Momentaufnahmen
-/// genutzt, aber bewusst nicht `ninja-cache` genannt -- ein künftiges
-/// weiteres Plugin kann denselben Ordner mitbenutzen.
+/// Directory for plugin-specific cache files (`data_dir/plugin-cache/`).
+/// Currently only used for Ninja sync snapshots, but deliberately not named
+/// `ninja-cache` -- a future additional plugin can share the same folder.
 fn plugin_cache_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("plugin-cache")
 }
@@ -196,12 +194,12 @@ fn ninja_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
     plugin_cache_dir(data_dir).join(format!("ninja-{connection_id}.json"))
 }
 
-/// Schreibt eine Momentaufnahme des Sync-Ergebnisses als JSON-Datei, für ein
-/// späteres Offline-Auslesen über `read_ninja_cache`/`get_cached_ninja_sync`.
-/// Überschreibt eine evtl. vorhandene ältere Momentaufnahme für dieselbe
-/// Verbindung. Als eigene Funktion herausgezogen (statt Inline-Code in
-/// `sync_ninja_connection`), damit sie sich mit `tempfile::tempdir()` isoliert
-/// testen lässt, analog zu `Config::save`/`Config::load_or_default`.
+/// Writes a snapshot of the sync result as a JSON file, for later offline
+/// reading via `read_ninja_cache`/`get_cached_ninja_sync`. Overwrites any
+/// older snapshot that may exist for the same connection. Extracted into
+/// its own function (instead of inline code in `sync_ninja_connection`), so
+/// it can be tested in isolation with `tempfile::tempdir()`, analogous to
+/// `Config::save`/`Config::load_or_default`.
 fn write_ninja_cache(
     data_dir: &Path,
     connection_id: &str,
@@ -220,11 +218,11 @@ fn write_ninja_cache(
     Ok(())
 }
 
-/// Liest eine zuvor über `write_ninja_cache` geschriebene Momentaufnahme
-/// zurück. `Ok(None)`, wenn für diese Verbindung noch nie synchronisiert
-/// wurde (Datei existiert nicht) -- kein Fehlerfall. Als eigene Funktion
-/// herausgezogen (statt Inline-Code im Tauri-Kommando), damit sie sich ohne
-/// `State<AppState>` isoliert testen lässt.
+/// Reads back a snapshot previously written via `write_ninja_cache`.
+/// `Ok(None)` if this connection was never synced (file doesn't exist) --
+/// not an error case. Extracted into its own function (instead of inline
+/// code in the Tauri command), so it can be tested in isolation without
+/// `State<AppState>`.
 fn read_ninja_cache(
     data_dir: &Path,
     connection_id: &str,
@@ -261,13 +259,13 @@ fn to_external_system_dto(
     }
 }
 
-/// Zwischenergebnis der reinen Gruppierungslogik: eine Organisation samt
-/// ihrer Geräte (noch als `NinjaDevice`, nicht als DTO) und -- falls
-/// zugeordnet -- der lokalen `customer_id`. Getrennt von
-/// `NinjaOrgDeviceGroupDto`, weil Letzteres bereits fertige `ExternalSystemDto`-
-/// Werte erwartet (inkl. `ninja_url`/`linked_system_id`), die erst nach dieser
-/// Gruppierung gebaut werden können (`ninja_url` braucht `base_url`,
-/// `linked_system_id` braucht einen Datenbankzugriff).
+/// Intermediate result of the pure grouping logic: an organization along
+/// with its devices (still as `NinjaDevice`, not as a DTO) and -- if mapped
+/// -- the local `customer_id`. Kept separate from `NinjaOrgDeviceGroupDto`,
+/// because the latter already expects finished `ExternalSystemDto` values
+/// (including `ninja_url`/`linked_system_id`), which can only be built
+/// after this grouping (`ninja_url` needs `base_url`, `linked_system_id`
+/// needs a database access).
 struct OrgGroup {
     organization_id: String,
     organization_name: String,
@@ -275,16 +273,16 @@ struct OrgGroup {
     devices: Vec<NinjaDevice>,
 }
 
-/// Gruppiert Geräte nach Organisation und reichert jede Gruppe um die
-/// konfigurierte `customer_id`-Zuordnung an (falls vorhanden). Reine
-/// Funktion -- kein Netzwerk-, kein Datenbankzugriff -- deshalb mit
-/// hartkodierten `NinjaOrganization`/`NinjaDevice`/`NinjaOrgMapping`-Werten
-/// testbar. Eine Organisation ganz ohne Geräte erscheint trotzdem als Gruppe
-/// (leere `devices`-Liste), damit eine künftige UI sie zum Zuordnen anzeigen
-/// kann. Geräte, deren `organizationId` auf keine von `organizations`
-/// gemeldete Organisation passt (sollte laut Ninjas Datenmodell nicht
-/// vorkommen), werden nicht stillschweigend verworfen, sondern als eigene
-/// Gruppe unter der rohen Organisations-ID angehängt.
+/// Groups devices by organization and enriches each group with the
+/// configured `customer_id` mapping (if any). Pure function -- no network
+/// access, no database access -- so it's testable with hardcoded
+/// `NinjaOrganization`/`NinjaDevice`/`NinjaOrgMapping` values. An
+/// organization with no devices at all still appears as a group (empty
+/// `devices` list), so a future UI can show it for mapping. Devices whose
+/// `organizationId` doesn't match any organization reported by
+/// `organizations` (shouldn't happen per Ninja's data model) are not
+/// silently dropped, but appended as their own group under the raw
+/// organization ID.
 fn group_devices_by_organization(
     organizations: &[NinjaOrganization],
     devices: &[NinjaDevice],
@@ -391,8 +389,8 @@ pub fn remove_ninja_connection(state: State<AppState>, id: String) -> Result<(),
             "Ninja-Verbindung {id} nicht gefunden"
         )));
     }
-    // Aufräumen: Organisations-Zuordnungen dieser Verbindung sind ohne die
-    // Verbindung bedeutungslos und würden sonst als Datenleiche liegen bleiben.
+    // Cleanup: organization mappings for this connection are meaningless
+    // without the connection and would otherwise be left behind as dead data.
     config.ninja_org_mappings.retain(|m| m.connection_id != id);
     let data_dir = config.data_dir.clone();
     let config_path = config.data_dir.join("config.toml");
@@ -404,10 +402,10 @@ pub fn remove_ninja_connection(state: State<AppState>, id: String) -> Result<(),
         eprintln!("Schlüsselspeicher-Eintrag für {plugin_id} konnte nicht entfernt werden (ignoriert): {e}");
     }
 
-    // Ebenfalls bestes Bemühen: eine übrig gebliebene Cache-Datei für eine
-    // entfernte Verbindung ist nur totes Gewicht, ihr Fehlen aber unschädlich
-    // (Erstellen einer neuen Verbindung mit derselben ID ist praktisch
-    // ausgeschlossen, siehe `generate_connection_id`).
+    // Also best-effort: a leftover cache file for a removed connection is
+    // just dead weight, but its absence is harmless (creating a new
+    // connection with the same ID is practically impossible, see
+    // `generate_connection_id`).
     let cache_path = ninja_cache_path(&data_dir, &id);
     if cache_path.exists() {
         if let Err(e) = std::fs::remove_file(&cache_path) {
@@ -485,11 +483,11 @@ pub fn unmap_ninja_organization(
     organization_id: String,
 ) -> Result<(), AppError> {
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
-    // Kein Fehler, wenn keine passende Zuordnung existiert -- das Ergebnis
-    // (keine Zuordnung mehr vorhanden) ist dasselbe, analog zu
-    // `db::external_refs::delete`. Bestehende `external_refs`-Verknüpfungen
-    // bleiben unangetastet: Entzuordnen einer Organisation ist bewusst keine
-    // automatische Entverknüpfung ihrer bereits verknüpften Geräte.
+    // Not an error if no matching mapping exists -- the result (no mapping
+    // present anymore) is the same, analogous to `db::external_refs::delete`.
+    // Existing `external_refs` links are left untouched: unmapping an
+    // organization is deliberately not an automatic unlinking of its
+    // already-linked devices.
     config
         .ninja_org_mappings
         .retain(|m| !(m.connection_id == connection_id && m.organization_id == organization_id));
@@ -532,20 +530,20 @@ pub fn sync_ninja_connection(
     let tz = time::system_timezone()?;
     let plugin_id = plugin.id().to_string();
 
-    // Umkehr-Index externe-ID -> lokale system_id, aus ALLEN external_refs
-    // dieses Plugins aufgebaut -- EINMAL für die ganze Verbindung, nicht neu
-    // je Gruppe und nicht auf die Systeme des Gruppen-`customer_id`
-    // beschränkt. Vorher wurde hier je Gruppe nur innerhalb
-    // `list_by_customer(group.customer_id)` gesucht; das ließ ein tatsächlich
-    // verknüpftes Gerät fälschlich als "nicht verknüpft" (linked_system_id:
-    // None) erscheinen, sobald seine Organisation NACH dem Verknüpfen einem
-    // ANDEREN Kunden zugeordnet wurde (z. B. weil die ursprüngliche Zuordnung
-    // ein Versehen war und korrigiert wurde) -- das verknüpfte System liegt
-    // dann unter dem alten Kunden, nicht unter `group.customer_id`, wurde
-    // also nie gefunden. `db::external_refs::list_for_plugin` sucht bewusst
-    // kundenunabhängig (siehe deren Doc-Kommentar), passend dazu, dass
-    // `unmap_ninja_organization` Verknüpfungen ausdrücklich NICHT antastet,
-    // wenn sich nur die Zuordnung ändert.
+    // Reverse index external-id -> local system_id, built from ALL
+    // external_refs of this plugin -- ONCE for the whole connection, not
+    // rebuilt per group and not restricted to the systems of the group's
+    // `customer_id`. Previously this searched per group only within
+    // `list_by_customer(group.customer_id)`; that made an actually linked
+    // device incorrectly appear as "not linked" (linked_system_id: None) as
+    // soon as its organization was mapped to a DIFFERENT customer AFTER
+    // linking (e.g. because the original mapping was a mistake and got
+    // corrected) -- the linked system then sits under the old customer, not
+    // under `group.customer_id`, so it was never found.
+    // `db::external_refs::list_for_plugin` deliberately searches
+    // independent of customer (see its doc comment), matching the fact
+    // that `unmap_ninja_organization` deliberately does NOT touch links
+    // when only the mapping changes.
     let linked_by_external_id: HashMap<String, i64> =
         db::external_refs::list_for_plugin(&conn, &plugin_id)?
             .into_iter()

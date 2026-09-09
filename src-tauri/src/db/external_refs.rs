@@ -27,11 +27,10 @@ fn row_to_external_ref(row: &Row) -> rusqlite::Result<ExternalRef> {
     })
 }
 
-/// Fügt eine Verknüpfung zwischen einem lokalen System und einem externen
-/// Plugin-System ein oder aktualisiert sie -- ein System hat höchstens eine
-/// Zeile je Plugin (`system_id`, `plugin_id`). Erneutes Synchronisieren
-/// aktualisiert `payload_json`/`synced_at_*` in derselben Zeile, statt
-/// Duplikate anzusammeln.
+/// Inserts or updates a link between a local system and an external plugin
+/// system -- a system has at most one row per plugin (`system_id`,
+/// `plugin_id`). Re-syncing updates `payload_json`/`synced_at_*` in the same
+/// row instead of accumulating duplicates.
 pub fn upsert(
     conn: &Connection,
     system_id: i64,
@@ -88,20 +87,18 @@ pub fn list_for_system(conn: &Connection, system_id: i64) -> Result<Vec<External
     Ok(result)
 }
 
-/// Alle Verknüpfungen für ein Plugin (z. B. `"ninja:<connection_id>"`),
-/// UNABHÄNGIG davon, welchem Kunden das jeweils verknüpfte lokale System
-/// gerade zugeordnet ist. Für `commands::plugins::sync_ninja_connection`, das
-/// den "bereits verknüpft"-Status jedes externen Geräts berichten muss --
-/// auch dann korrekt, wenn die Ninja-Organisation NACH dem Verknüpfen einem
-/// anderen lokalen Kunden zugeordnet wurde als dem, unter dem das verknüpfte
-/// System tatsächlich liegt (Organisations-Zuordnungen lassen sich jederzeit
-/// ändern/korrigieren, siehe `NinjaOrgMapping`; laut
-/// `unmap_ninja_organization`s eigener Dokumentation ist das Entzuordnen
-/// einer Organisation bewusst KEINE automatische Entverknüpfung ihrer
-/// bereits verknüpften Geräte -- Verknüpfungen bleiben über
-/// Zuordnungsänderungen hinweg bestehen, müssen also unabhängig von der
-/// aktuellen `customer_id` auffindbar sein statt nur innerhalb der Systeme
-/// EINES Kunden gesucht zu werden).
+/// All links for a plugin (e.g. `"ninja:<connection_id>"`), REGARDLESS of
+/// which customer the respective linked local system is currently assigned
+/// to. For `commands::plugins::sync_ninja_connection`, which must report the
+/// "already linked" status of every external device -- correctly even when
+/// the Ninja organization was mapped to a different local customer AFTER
+/// linking than the one the linked system actually lives under
+/// (organization mappings can be changed/corrected at any time, see
+/// `NinjaOrgMapping`; per `unmap_ninja_organization`'s own documentation,
+/// unmapping an organization is deliberately NOT an automatic unlinking of
+/// its already-linked devices -- links persist across mapping changes, so
+/// they must be findable independent of the current `customer_id` rather
+/// than only being searched for within the systems of ONE customer).
 pub fn list_for_plugin(conn: &Connection, plugin_id: &str) -> Result<Vec<ExternalRef>, AppError> {
     let mut stmt =
         conn.prepare("SELECT * FROM external_refs WHERE plugin_id = ?1 ORDER BY external_id")?;
@@ -113,9 +110,9 @@ pub fn list_for_plugin(conn: &Connection, plugin_id: &str) -> Result<Vec<Externa
     Ok(result)
 }
 
-/// Löscht die Verknüpfung eines lokalen Systems zu einem Plugin (z. B. beim
-/// Aufheben einer Ninja-Verknüpfung). Kein Fehler, wenn keine solche Zeile
-/// existiert -- das Ergebnis (keine Verknüpfung mehr vorhanden) ist dasselbe.
+/// Deletes the link between a local system and a plugin (e.g. when removing
+/// a Ninja link). Not an error if no such row exists -- the result (no link
+/// left) is the same.
 pub fn delete(conn: &Connection, system_id: i64, plugin_id: &str) -> Result<(), AppError> {
     conn.execute(
         "DELETE FROM external_refs WHERE system_id = ?1 AND plugin_id = ?2",

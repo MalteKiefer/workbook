@@ -1,25 +1,24 @@
-//! Dünner Wrapper um die `keyring`-Crate für Plugin-Zugangsdaten. Speichert
-//! ausschließlich im OS-Schlüsselspeicher (Windows Credential Manager /
-//! Secret Service unter Linux) -- laut Spec dürfen Plugin-Secrets nie in
-//! `config.toml` oder der Datenbank landen, nur hier.
+//! Thin wrapper around the `keyring` crate for plugin credentials. Stores
+//! exclusively in the OS keyring (Windows Credential Manager / Secret
+//! Service on Linux) -- per spec, plugin secrets must never end up in
+//! `config.toml` or the database, only here.
 //!
-//! Bewusst kein `#[cfg(test)]`-Block, der `store_secret`/`load_secret` gegen
-//! den echten OS-Schlüsselspeicher aufruft: das würde auf diesem Rechner
-//! einen verwaisten, schwer aufzuräumenden Credential-Eintrag hinterlassen,
-//! und Sandbox-/CI-Umgebungen haben oft gar keinen echten Schlüsselspeicher
-//! verfügbar. Die Korrektheit dieses Moduls stützt sich auf die Testsuite der
-//! `keyring`-Crate selbst plus sauberes Kompilieren/Typchecking gegen deren
-//! reale API (verifiziert gegen `keyring` 4.2.0, siehe
-//! `docs/PLUGIN_ARCHITECTURE.md`).
+//! Deliberately no `#[cfg(test)]` block that calls `store_secret`/
+//! `load_secret` against the real OS keyring: that would leave an orphaned,
+//! hard-to-clean-up credential entry on this machine, and sandbox/CI
+//! environments often have no real keyring available at all. This module's
+//! correctness relies on the `keyring` crate's own test suite plus clean
+//! compiling/type-checking against its real API (verified against `keyring`
+//! 4.2.0, see `docs/PLUGIN_ARCHITECTURE.md`).
 
 use crate::error::AppError;
 
 const SERVICE_NAME: &str = "wartungsdoku";
 
-/// Speichert ein Plugin-Zugangsdatum im OS-Schlüsselspeicher, geschlüsselt
-/// über die Plugin-ID. Diese Funktion nie mit einem Wert aufrufen, der auch
-/// in `config.toml` oder der Datenbank stehen sollte -- laut Spec leben
-/// Plugin-Secrets AUSSCHLIESSLICH hier.
+/// Stores a plugin credential in the OS keyring, keyed by the plugin ID.
+/// Never call this function with a value that should also live in
+/// `config.toml` or the database -- per spec, plugin secrets live
+/// EXCLUSIVELY here.
 pub fn store_secret(plugin_id: &str, secret: &str) -> Result<(), AppError> {
     let entry = keyring::Entry::new(SERVICE_NAME, plugin_id)
         .map_err(|e| AppError::Config(format!("Schlüsselspeicher nicht verfügbar: {e}")))?;
@@ -30,8 +29,8 @@ pub fn store_secret(plugin_id: &str, secret: &str) -> Result<(), AppError> {
     })
 }
 
-/// Liest ein zuvor gespeichertes Plugin-Zugangsdatum. `Ok(None)`, wenn für
-/// diese Plugin-ID noch nichts hinterlegt wurde.
+/// Reads a previously stored plugin credential. `Ok(None)` if nothing has
+/// been stored yet for this plugin ID.
 pub fn load_secret(plugin_id: &str) -> Result<Option<String>, AppError> {
     let entry = keyring::Entry::new(SERVICE_NAME, plugin_id)
         .map_err(|e| AppError::Config(format!("Schlüsselspeicher nicht verfügbar: {e}")))?;

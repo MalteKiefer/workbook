@@ -175,7 +175,7 @@ export default function JournalView() {
         <span style={{ display: "flex", gap: "0.5rem" }}>
           <button
             onClick={() => {
-              // ExportDialog seeds both its Kunde and System fields from the
+              // ExportDialog seeds both its customer and system fields from the
               // global selectedCustomerId/selectedSystemId, not from this
               // view's own local `customerId`/`systemId` filters — sync both
               // first so the Export button actually exports whatever the

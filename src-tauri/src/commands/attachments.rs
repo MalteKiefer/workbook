@@ -114,9 +114,9 @@ pub fn copy_attachment_to(
     Ok(())
 }
 
-/// Ergebnis eines expliziten Aufräum-Laufs. Wird ausschließlich manuell über
-/// `cleanup_orphans` ausgelöst, nie automatisch im Hintergrund (siehe Spec,
-/// Abschnitt "Fehlerbehandlung & Transaktionen").
+/// Result of an explicit cleanup run. Triggered exclusively manually via
+/// `cleanup_orphans`, never automatically in the background (see spec,
+/// section "Error handling & transactions").
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CleanupResult {
     pub removed_count: u32,

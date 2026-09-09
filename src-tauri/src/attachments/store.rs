@@ -32,7 +32,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
-/// Eine Datei, die tatsächlich im Content-Addressed-Store auf der Platte liegt.
+/// A file that actually resides in the content-addressed store on disk.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredFile {
     pub sha256: String,
@@ -40,15 +40,15 @@ pub struct StoredFile {
     pub size_bytes: u64,
 }
 
-/// Listet alle Dateien unter `data_dir/attachments/`, unabhängig davon, ob sie
-/// noch von einer `attachments`-DB-Zeile referenziert werden. Grundlage für die
-/// explizite, niemals automatische Orphan-Bereinigung (`cleanup_orphans`).
+/// Lists all files under `data_dir/attachments/`, regardless of whether they
+/// are still referenced by an `attachments` DB row. Basis for the explicit,
+/// never automatic orphan cleanup (`cleanup_orphans`).
 ///
-/// Der Hash wird aus dem Dateinamen (Stem) gelesen statt neu berechnet, da der
-/// Speicherort per `relative_path_for` deterministisch danach benannt ist. Ein
-/// Dateiname, der nicht wie ein Hash aussieht, wird bewusst nicht herausgefiltert:
-/// der `attachments/`-Ordner gehört exklusiv dieser App, und ein Fremdkörper darin
-/// soll konservativ als "nicht referenziert" gelten.
+/// The hash is read from the file name (stem) instead of recomputed, since the
+/// storage location is deterministically named after it via `relative_path_for`.
+/// A file name that doesn't look like a hash is deliberately not filtered out:
+/// the `attachments/` folder belongs exclusively to this app, and a foreign
+/// object in there should conservatively be treated as "unreferenced".
 pub fn list_all_stored_files(data_dir: &Path) -> Result<Vec<StoredFile>, AppError> {
     let attachments_dir = data_dir.join("attachments");
     if !attachments_dir.exists() {

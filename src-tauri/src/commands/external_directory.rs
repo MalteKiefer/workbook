@@ -1,38 +1,38 @@
-//! Reine Lesezugriffs-Aggregation über alle konfigurierten RMM-/Asset-
-//! Management-Plugin-Verbindungen (Ninja, Level, Snipe-IT) für einen
-//! gegebenen lokalen Kunden: liefert alle Geräte/Assets, die (a) laut den
-//! zuletzt synchronisierten Plugin-Caches zu diesem Kunden gehören und (b)
-//! noch mit keinem lokalen System verknüpft sind.
+//! Pure read-access aggregation across all configured RMM/asset management
+//! plugin connections (Ninja, Level, Snipe-IT) for a given local customer:
+//! returns all devices/assets that (a) belong to this customer according to
+//! the most recently synced plugin caches, and (b) are not yet linked to any
+//! local system.
 //!
-//! Hintergrund: das System-Feld beim Anlegen eines Wartungseintrags
-//! (`EntryEditor.tsx`/`QuickCapture.tsx`) durchsucht bisher nur bereits
-//! existierende lokale `systems`-Zeilen -- Plugin-Geräte, die noch nie über
-//! die Plugins-Seite manuell verknüpft wurden, sind dort unsichtbar. Dieses
-//! Modul stellt die dafür nötige Auflistung bereit, rein offline (nur
-//! `Config` + bereits auf der Platte liegende JSON-Cache-Dateien, kein
-//! Netzwerkzugriff), damit sie bei jedem Tastendruck/Kundenwechsel im
-//! Frontend aufgerufen werden kann, ohne auf Netzwerklatenz zu warten.
+//! Background: the system field when creating a maintenance entry
+//! (`EntryEditor.tsx`/`QuickCapture.tsx`) has so far only searched existing
+//! local `systems` rows -- plugin devices that were never manually linked via
+//! the Plugins page are invisible there. This module provides the listing
+//! needed for that, purely offline (only `Config` plus JSON cache files
+//! already on disk, no network access), so it can be called on every
+//! keystroke/customer switch in the frontend without waiting on network
+//! latency.
 //!
-//! Wiederverwendet bewusst die echten, bereits `Deserialize`-fähigen
-//! Cache-DTOs der drei Plugin-Module (`commands::plugins::CachedNinjaSyncDto`,
+//! Deliberately reuses the real, already `Deserialize`-capable cache DTOs of
+//! the three plugin modules (`commands::plugins::CachedNinjaSyncDto`,
 //! `commands::level::CachedLevelSyncDto`, `commands::snipeit::CachedSnipeitSyncDto`),
-//! statt die JSON-Form hier ein zweites Mal zu definieren -- so bleibt dieses
-//! Modul automatisch synchron, falls sich eine dieser Formen künftig ändert.
+//! instead of defining the JSON shape here a second time -- that way this
+//! module stays automatically in sync if one of those shapes ever changes.
 //!
-//! Die Cache-PFAD-Konvention (`data_dir/plugin-cache/<plugin>-<connection_id>.json`)
-//! und das Lesen selbst (`std::fs::read_to_string` + `serde_json::from_str`)
-//! sind hier trotzdem inline nachgebaut statt die `read_*_cache`-Hilfsfunktionen
-//! der drei Module direkt aufzurufen: die sind dort bewusst privat (`fn`, nicht
-//! `pub fn`), und dieses Änderungspaket darf `commands/plugins.rs`,
-//! `commands/level.rs` und `commands/snipeit.rs` nicht anfassen (Aufteilung
-//! mit einer parallel arbeitenden Änderung, die genau diese Dateien besitzt).
-//! Ein `pub(crate)`-Aufweichen dort hätte diese Grenze verletzt; der
-//! Pfad-Konvention und den echten DTO-Typen folgend nachzubauen ist die
-//! einzige Option, die diese Grenze respektiert, ohne die JSON-FORM selbst zu
-//! duplizieren -- dupliziert wird nur die triviale Ein-Zeiler-Pfadkonstruktion/
-//! der Datei-Read selbst, exakt wie es die drei Plugin-Module ohnehin schon je
-//! einmal für sich selbst tun (`plugin_cache_dir` ist zwischen allen dreien
-//! bereits identisch dupliziert).
+//! The cache path convention (`data_dir/plugin-cache/<plugin>-<connection_id>.json`)
+//! and the reading itself (`std::fs::read_to_string` + `serde_json::from_str`)
+//! are nonetheless rebuilt inline here instead of calling the three modules'
+//! `read_*_cache` helper functions directly: those are deliberately private
+//! there (`fn`, not `pub fn`), and this change set is not allowed to touch
+//! `commands/plugins.rs`, `commands/level.rs`, or `commands/snipeit.rs` (split
+//! with a change being worked on in parallel that owns exactly those files).
+//! Loosening the visibility to `pub(crate)` there would have violated that
+//! boundary; rebuilding it following the path convention and the real DTO
+//! types is the only option that respects that boundary without duplicating
+//! the JSON shape itself -- only the trivial one-liner path construction/the
+//! file read itself is duplicated, exactly as the three plugin modules already
+//! each do for themselves (`plugin_cache_dir` is already identically
+//! duplicated across all three).
 
 use std::path::{Path, PathBuf};
 
@@ -54,8 +54,8 @@ pub struct UnlinkedExternalSystemDto {
     pub ip_address: Option<String>,
 }
 
-/// Dasselbe `data_dir/plugin-cache/`-Verzeichnis, das `commands::plugins`/
-/// `commands::level`/`commands::snipeit` jeweils für sich selbst verwenden.
+/// The same `data_dir/plugin-cache/` directory that `commands::plugins`/
+/// `commands::level`/`commands::snipeit` each use for themselves.
 fn plugin_cache_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("plugin-cache")
 }
@@ -102,16 +102,16 @@ fn read_snipeit_cache_file(
     Ok(Some(cached))
 }
 
-/// Ninja: eine Organisation zählt für `customer_id`, wenn
-/// `config.ninja_org_mappings` gerade JETZT eine passende Zeile für
-/// (Verbindung, Organisation) hat -- nicht das evtl. veraltete, zum letzten
-/// Sync-Zeitpunkt in der Cache-Datei eingefrorene `customer_id`-Feld. Sonst
-/// würde ein frisches Zuordnen einer Organisation über die Plugins-Seite
-/// hier erst nach dem nächsten manuellen Sync sichtbar -- genau das Problem,
-/// das `commands::plugins::get_cached_ninja_sync` für denselben Cache aus
-/// demselben Grund bereits löst (dortiger Kommentar), und genau der Zweck
-/// dieser Funktion (Geräte "automatisch" auftauchen lassen) würde sonst für
-/// gerade erst zugeordnete Organisationen verfehlt.
+/// Ninja: an organization counts for `customer_id` when
+/// `config.ninja_org_mappings` has a matching row for (connection,
+/// organization) right NOW -- not the potentially stale `customer_id` field
+/// frozen in the cache file at the last sync time. Otherwise, freshly mapping
+/// an organization via the Plugins page would only become visible here after
+/// the next manual sync -- exactly the problem that
+/// `commands::plugins::get_cached_ninja_sync` already solves for the same
+/// cache for the same reason (see the comment there), and exactly the
+/// purpose of this function (making devices show up "automatically") would
+/// otherwise be missed for organizations that were just mapped.
 fn collect_ninja(
     config: &Config,
     data_dir: &Path,
@@ -151,11 +151,11 @@ fn collect_ninja(
     Ok(())
 }
 
-/// Level: keine separate Organisations-/Zuordnungsebene -- eine Verbindung
-/// gehört direkt zu genau einem Kunden (`LevelConnectionMeta.customer_id`),
-/// siehe `commands::level`-Moduldokumentation. Kein Staleness-Problem wie bei
-/// Ninja/Snipe-IT: `customer_id` ist ein direktes Verbindungsfeld, nicht in
-/// einer Cache-Datei eingefroren.
+/// Level: no separate organization/mapping layer -- a connection belongs
+/// directly to exactly one customer (`LevelConnectionMeta.customer_id`), see
+/// the `commands::level` module documentation. No staleness problem like
+/// with Ninja/Snipe-IT: `customer_id` is a direct connection field, not
+/// frozen in a cache file.
 fn collect_level(
     config: &Config,
     data_dir: &Path,
@@ -186,15 +186,15 @@ fn collect_level(
     Ok(())
 }
 
-/// Snipe-IT: exakt dasselbe Muster wie Ninja (`collect_ninja`), inklusive
-/// Neu-Abgleich gegen aktuelle `config.snipeit_company_mappings` statt des
-/// eingefrorenen Cache-Werts. `hostname`/`ip_address` sind bei Snipe-IT-
-/// Assets praktisch immer `None` (Snipe-IT kennt diese Felder nicht nativ,
-/// siehe `plugin::snipeit`-Moduldokumentation) -- `name` ist trotzdem
-/// sinnvoll gefüllt, weil Snipe-ITs eigene Geräte-Mapping-Logik
-/// (`plugin::snipeit`) bereits selbst von `name` über `asset_tag` und
-/// `serial` bis zur externen ID zurückfällt, bevor der Wert überhaupt in den
-/// Cache gelangt.
+/// Snipe-IT: exactly the same pattern as Ninja (`collect_ninja`), including
+/// re-checking against the current `config.snipeit_company_mappings` instead
+/// of the frozen cache value. `hostname`/`ip_address` are practically always
+/// `None` for Snipe-IT assets (Snipe-IT doesn't natively know these fields,
+/// see the `plugin::snipeit` module documentation) -- `name` is nonetheless
+/// meaningfully populated, because Snipe-IT's own device mapping logic
+/// (`plugin::snipeit`) already falls back itself from `name` through
+/// `asset_tag` and `serial` down to the external ID, before the value even
+/// reaches the cache.
 fn collect_snipeit(
     config: &Config,
     data_dir: &Path,
@@ -232,16 +232,15 @@ fn collect_snipeit(
     Ok(())
 }
 
-/// Reine Kernlogik, ohne `State<AppState>` -- testbar mit einer
-/// hartkodierten `Config` plus einem `tempfile::tempdir()`, analog zu
-/// `commands::plugins::group_devices_by_organization`. Der
-/// `#[tauri::command]`-Wrapper unten holt lediglich eine geklonte `Config`
-/// (geklont, damit der Config-Mutex nicht während der Datei-I/O gehalten
-/// bleibt -- siehe `commands::plugins::get_cached_ninja_sync`, das genau
-/// dasselbe für denselben Zweck tut) aus `State<AppState>` und reicht sie
-/// hier durch. Reine Funktion -- kein Netzwerk-, kein Datenbankzugriff,
-/// nur `Config` (bereits im Speicher) plus bereits auf der Platte liegende
-/// JSON-Dateien.
+/// Pure core logic, without `State<AppState>` -- testable with a hardcoded
+/// `Config` plus a `tempfile::tempdir()`, analogous to
+/// `commands::plugins::group_devices_by_organization`. The
+/// `#[tauri::command]` wrapper below merely takes a cloned `Config` (cloned
+/// so the config mutex isn't held during file I/O -- see
+/// `commands::plugins::get_cached_ninja_sync`, which does exactly the same
+/// for the same reason) out of `State<AppState>` and passes it through here.
+/// Pure function -- no network access, no database access, only `Config`
+/// (already in memory) plus JSON files already on disk.
 pub fn list_unlinked_external_systems_for_customer_pure(
     config: &Config,
     data_dir: &Path,
@@ -338,9 +337,9 @@ mod tests {
             groups: vec![NinjaOrgDeviceGroupDto {
                 organization_id: "org-1".to_string(),
                 organization_name: "ACME Hauptsitz".to_string(),
-                // Bewusst veraltet/`None` gelassen -- die Zuordnung kommt aus
-                // `config.ninja_org_mappings`, nicht aus diesem eingefrorenen
-                // Feld (siehe Kommentar an `collect_ninja`).
+                // Deliberately left stale/`None` -- the mapping comes from
+                // `config.ninja_org_mappings`, not from this frozen field
+                // (see the comment on `collect_ninja`).
                 customer_id: None,
                 devices: vec![ninja_device("dev-1", None)],
             }],
@@ -381,7 +380,7 @@ mod tests {
     #[test]
     fn ninja_device_mapped_to_a_different_customer_is_excluded() {
         let dir = tempdir().unwrap();
-        // Organisation ist Kunde 99 zugeordnet, wir fragen nach Kunde 42.
+        // Organization is mapped to customer 99, we're asking about customer 42.
         let config = ninja_config_with_connection("conn-1", "org-1", Some(99));
         let cache = CachedNinjaSyncDto {
             synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
@@ -403,8 +402,8 @@ mod tests {
     #[test]
     fn unmapped_ninja_organization_is_excluded() {
         let dir = tempdir().unwrap();
-        // Verbindung existiert, aber die Organisation ist (noch) gar keinem
-        // Kunden zugeordnet -- `mapped_customer_id` bleibt `None`.
+        // Connection exists, but the organization isn't mapped to any
+        // customer (yet) -- `mapped_customer_id` stays `None`.
         let config = ninja_config_with_connection("conn-1", "org-1", None);
         let cache = CachedNinjaSyncDto {
             synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
@@ -426,8 +425,7 @@ mod tests {
     #[test]
     fn ninja_connection_never_synced_is_skipped_gracefully_not_as_an_error() {
         let dir = tempdir().unwrap();
-        // Keine Cache-Datei für "conn-1" geschrieben -- simuliert "noch nie
-        // synchronisiert".
+        // No cache file written for "conn-1" -- simulates "never synced".
         let config = ninja_config_with_connection("conn-1", "org-1", Some(42));
 
         let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 42);

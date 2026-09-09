@@ -12,12 +12,12 @@ use crate::db::{
 use crate::error::AppError;
 use crate::time;
 
-/// Exportiert alle (per `filter` eingegrenzten) Einträge eines Kunden als
-/// Markdown: ein Verzeichnis mit einer Datei je System (plus einer
-/// "Ohne System"-Datei für kundenweite Einträge), Anhänge unter derselben
-/// relativen `attachments/{prefix}/{hash}.ext`-Struktur mitkopiert wie sie
-/// bereits in `entry.body_md` referenziert wird — dadurch bleibt `body_md`
-/// unverändert lesbar, ohne jede Pfad-Neuschreibung.
+/// Exports all entries of a customer (narrowed by `filter`) as Markdown: a
+/// directory with one file per system (plus an "Ohne System" file for
+/// customer-wide entries), attachments copied along under the same relative
+/// `attachments/{prefix}/{hash}.ext` structure already referenced in
+/// `entry.body_md` -- this keeps `body_md` readable unchanged, without any
+/// path rewriting.
 pub fn export_markdown(
     conn: &Connection,
     data_dir: &Path,
@@ -32,7 +32,7 @@ pub fn export_markdown(
         all_systems.into_iter().map(|s| (s.id, s.name)).collect();
 
     let mut entries_list = entries::list(conn, filter)?;
-    entries_list.reverse(); // list() liefert DESC; Export liest chronologisch, älteste zuerst
+    entries_list.reverse(); // list() returns DESC; export reads chronologically, oldest first
 
     let system_tz = time::system_timezone()?;
     let (generated_at_utc, generated_at_tz) = time::now_with_tz(&system_tz);
@@ -41,8 +41,8 @@ pub fn export_markdown(
 
     std::fs::create_dir_all(dest_dir)?;
 
-    // Gruppiert nach system_id (None -> "Ohne System"), erhält innerhalb jeder
-    // Gruppe die oben hergestellte chronologische Reihenfolge.
+    // Grouped by system_id (None -> "Ohne System"), preserving within each
+    // group the chronological order established above.
     let mut grouped: BTreeMap<Option<i64>, Vec<&Entry>> = BTreeMap::new();
     for entry in &entries_list {
         grouped.entry(entry.system_id).or_default().push(entry);
@@ -119,10 +119,9 @@ fn category_label(category: entries::Category) -> &'static str {
     }
 }
 
-/// `None`, wenn der Eintrag zeitnah erfasst wurde; sonst ein deutschsprachiger
-/// Hinweistext samt formatiertem `created_at`, sobald die Differenz zwischen
-/// `created_at_utc` und `performed_at_utc` den Schwellwert erreicht oder
-/// überschreitet.
+/// `None` if the entry was recorded promptly; otherwise a German-language
+/// note text with formatted `created_at`, once the difference between
+/// `created_at_utc` and `performed_at_utc` reaches or exceeds the threshold.
 fn late_entry_note(entry: &Entry, threshold_hours: i64) -> Result<Option<String>, AppError> {
     let performed = DateTime::parse_from_rfc3339(&entry.performed_at_utc)
         .map_err(|e| AppError::InvalidTimestamp(format!("{}: {e}", entry.performed_at_utc)))?;

@@ -1,12 +1,12 @@
-//! Passwortbasierte Verschlüsselung für Backup-Zip-Dateien. AES-256-GCM für
-//! die eigentliche Verschlüsselung, Argon2id zur Ableitung des Schlüssels aus
-//! dem Nutzerpasswort -- beides reine, gut geprüfte Rust-Implementierungen
-//! (RustCrypto), keine externen Systembibliotheken nötig.
+//! Password-based encryption for backup zip files. AES-256-GCM for the
+//! actual encryption, Argon2id to derive the key from the user's password --
+//! both pure, well-audited Rust implementations (RustCrypto), no external
+//! system libraries needed.
 //!
-//! Das Passwort selbst liegt nie in `config.toml`, nur im OS-Schlüsselspeicher
-//! (siehe `plugin::secrets`, hier unter der festen ID [`SECRET_ID`]
-//! wiederverwendet -- das Modul ist generisch genug, um auch für
-//! Backup-Zwecke zu passen).
+//! The password itself never lives in `config.toml`, only in the OS key
+//! store (see `plugin::secrets`, reused here under the fixed ID
+//! [`SECRET_ID`] -- that module is generic enough to also fit backup
+//! purposes).
 
 use std::fs::File;
 use std::io::Read;
@@ -19,13 +19,13 @@ use rand::RngCore;
 
 use crate::error::AppError;
 
-/// Schlüsselspeicher-ID für das Backup-Verschlüsselungspasswort, siehe
+/// Key store ID for the backup encryption password, see
 /// `plugin::secrets::store_secret`/`load_secret`.
 pub const SECRET_ID: &str = "backup-encryption";
 
-/// Kennzeichnet eine Datei als von diesem Modul verschlüsselt, inklusive
-/// Formatversion -- falls sich Salt-/Nonce-Länge oder KDF-Parameter je einmal
-/// ändern müssen, kann `is_encrypted_file` anhand davon unterscheiden.
+/// Marks a file as encrypted by this module, including a format version --
+/// if salt/nonce length or KDF parameters ever need to change,
+/// `is_encrypted_file` can distinguish based on this.
 const MAGIC: &[u8; 8] = b"WDBKENC1";
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 12;
@@ -38,10 +38,10 @@ fn derive_key(passphrase: &str, salt: &[u8]) -> Result<[u8; 32], AppError> {
     Ok(key)
 }
 
-/// Verschlüsselt die Datei `src` komplett (z. B. ein fertiges Backup-Zip) und
-/// schreibt das Ergebnis nach `dest`. Layout: `MAGIC || salt || nonce ||
-/// ciphertext`, Salt und Nonce zufällig je Aufruf, damit dasselbe Passwort nie
-/// denselben Schlüssel/Nonce zweimal verwendet.
+/// Encrypts the file `src` in full (e.g. a finished backup zip) and writes
+/// the result to `dest`. Layout: `MAGIC || salt || nonce || ciphertext`,
+/// salt and nonce random on every call so the same password never reuses the
+/// same key/nonce twice.
 pub fn encrypt_file(src: &Path, dest: &Path, passphrase: &str) -> Result<(), AppError> {
     let plaintext = std::fs::read(src)?;
 
@@ -66,10 +66,10 @@ pub fn encrypt_file(src: &Path, dest: &Path, passphrase: &str) -> Result<(), App
     Ok(())
 }
 
-/// Kehrt `encrypt_file` um. Ein falsches Passwort oder eine beschädigte Datei
-/// führen beide zu demselben Fehler -- AES-GCM authentifiziert die
-/// Entschlüsselung, sodass es keinen Unterschied zwischen "falsches Passwort"
-/// und "manipulierte/kaputte Datei" auf Byte-Ebene gibt.
+/// Reverses `encrypt_file`. A wrong password or a corrupted file both lead
+/// to the same error -- AES-GCM authenticates decryption, so there's no
+/// byte-level difference between "wrong password" and
+/// "tampered with/corrupted file".
 pub fn decrypt_file(src: &Path, dest: &Path, passphrase: &str) -> Result<(), AppError> {
     let data = std::fs::read(src)?;
     let header_len = MAGIC.len() + SALT_LEN + NONCE_LEN;
@@ -96,8 +96,8 @@ pub fn decrypt_file(src: &Path, dest: &Path, passphrase: &str) -> Result<(), App
     Ok(())
 }
 
-/// Ob `path` mit `encrypt_file` verschlüsselt wurde -- geprüft anhand der
-/// magischen Kennung am Dateianfang, ohne die restliche Datei zu lesen.
+/// Whether `path` was encrypted with `encrypt_file` -- checked via the magic
+/// marker at the start of the file, without reading the rest of the file.
 pub fn is_encrypted_file(path: &Path) -> Result<bool, AppError> {
     let mut buf = [0u8; 8];
     let mut file = File::open(path)?;
@@ -154,8 +154,8 @@ mod tests {
 
     #[test]
     fn two_encryptions_of_same_content_produce_different_ciphertext() {
-        // Zufälliges Salt+Nonce je Aufruf -- wichtig, damit dasselbe Passwort
-        // niemals denselben Schlüsselstrom zweimal benutzt.
+        // Random salt+nonce on every call -- important so the same password
+        // never uses the same keystream twice.
         let dir = tempdir().unwrap();
         let src = dir.path().join("plain.zip");
         std::fs::write(&src, b"identical content").unwrap();

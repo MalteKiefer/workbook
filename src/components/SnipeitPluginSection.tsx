@@ -346,15 +346,14 @@ function DeviceSummaryLine({ device }: { device: ExternalSystemDto }) {
   );
 }
 
-// Snipe-IT hat kein Hostname-/IP-Feld auf dem Kern-Asset (siehe
-// plugin::snipeit-Moduldokumentation) -- als Vorschlags-Abgleichsschlüssel
-// für "Mit bestehendem System verknüpfen" wird deshalb nicht wie bei
-// Ninja/Level auf device.hostname verglichen, sondern in dieser Reihenfolge
-// das erste vorhandene, wirklich identifizierende Snipe-IT-Feld genommen:
-// asset_tag zuerst (Snipe-ITs primäres Identifikationsfeld), dann hostname
-// (falls doch einmal vorhanden), zuletzt serial. Verglichen wird dieser Wert
-// weiterhin gegen das einzige freie Textfeld, das ein lokales System dafür
-// hat -- System.hostname --, exakt wie bei Ninja/Level.
+// Snipe-IT has no hostname/IP field on the core asset (see the
+// plugin::snipeit module docs) -- so the suggested match key for "Link to
+// existing system" isn't compared against device.hostname like it is for
+// Ninja/Level; instead, the first present, genuinely identifying Snipe-IT
+// field is taken in this order: asset_tag first (Snipe-IT's primary
+// identifier), then hostname (in case it's present after all), and finally
+// serial. This value is still compared against the only free-text field a
+// local system has for it -- System.hostname -- exactly as with Ninja/Level.
 function matchKeyForDevice(device: ExternalSystemDto): string {
   return (device.asset_tag || device.hostname || device.serial || "").trim().toLowerCase();
 }

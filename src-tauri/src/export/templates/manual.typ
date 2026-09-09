@@ -1,11 +1,11 @@
-// Wartungsdoku -- PDF-Handbuch-Vorlage.
+// Wartungsdoku -- PDF manual template.
 //
-// Empfängt die komplette Eintragsliste über `sys.inputs` (siehe
-// `export::pdf::render_manual_pdf`, das dieses Template mit `typst-as-lib`
-// kompiliert). Erwartete Struktur von `inputs`:
+// Receives the complete entry list via `sys.inputs` (see
+// `export::pdf::render_manual_pdf`, which compiles this template with
+// `typst-as-lib`). Expected structure of `inputs`:
 //
 //   customer_name:  str
-//   generated_at:   str   -- bereits fertig formatiert (Datum/Zeit/Zone)
+//   generated_at:   str   -- already fully formatted (date/time/zone)
 //   sections: array of (
 //     system_name: str,
 //     entries: array of (
@@ -14,9 +14,9 @@
 //       performed_at_display: str,
 //       late_entry_note: str | none,
 //       tags: array of str,
-//       body_typst: str    -- bereits von markdown_to_typst::convert() erzeugt,
-//                             wird unten per #eval(..., mode: "markup") gerendert
-//       image_paths: array of str -- relativ zu data_dir, absolut über "/" aufgelöst
+//       body_typst: str    -- already produced by markdown_to_typst::convert(),
+//                             rendered below via #eval(..., mode: "markup")
+//       image_paths: array of str -- relative to data_dir, resolved absolute via "/"
 //     )
 //   )
 
@@ -31,7 +31,7 @@
 #set page(paper: "a4", margin: (top: 3.2cm, bottom: 2.8cm, x: 2.5cm))
 #set par(justify: true)
 
-// -- Deckblatt --------------------------------------------------------------
+// -- Cover page ---------------------------------------------------------
 #align(center + horizon)[
   #text(28pt, weight: "bold")[Wartungsdokumentation]
   #v(1.5em)
@@ -42,12 +42,12 @@
 
 #pagebreak()
 
-// -- Inhaltsverzeichnis -------------------------------------------------------
+// -- Table of contents ----------------------------------------------------
 #outline(title: "Inhaltsverzeichnis", depth: 2)
 
 #pagebreak()
 
-// -- Ab hier: Kopf-/Fußzeile mit Kundenname und Erstellungsdatum auf jeder Seite --
+// -- From here on: header/footer with customer name and creation date on every page --
 #set page(
   header: [
     #set text(size: 9pt, fill: gray)
@@ -65,7 +65,7 @@
   ],
 )
 
-// -- Inhalt, gegliedert nach System -------------------------------------------
+// -- Content, grouped by system -------------------------------------------
 #for section in sections [
   = #section.system_name
 

@@ -18,7 +18,7 @@ import Modal from "./Modal";
 // Simpler than Ninja in one structural way: Level's own API has no
 // organizations/multi-tenancy concept (confirmed against Level's developer
 // docs — the API operates at account level, no org/site filtering exists),
-// so a Level connection maps 1:1 to exactly one local Kunde
+// so a Level connection maps 1:1 to exactly one local customer
 // (`customer_id` lives directly on the connection). No org-mapping UI, no
 // per-organization customer assignment needed.
 //
@@ -31,7 +31,7 @@ import Modal from "./Modal";
 // `ExternalSystemDto[]` the backend already returns — no separate
 // "list groups" call, no per-group customer mapping (unlike Ninja's
 // organizations, a Level group isn't its own tenant, so there's nothing to
-// map to a Kunde). Groups render collapsed by default (click a header to
+// map to a customer). Groups render collapsed by default (click a header to
 // expand); an expanded group's devices are paginated 10 per page, with the
 // single connection-wide filter box narrowing the device set *before*
 // pagination — see getDeviceGroupsList/getGroupPageInfo below. Groups can be
@@ -101,7 +101,7 @@ type CompareField = "name" | "hostname" | "ip_address";
 const NAME_KEYS = ["nickname", "hostname"];
 const HOSTNAME_KEYS = ["hostname"];
 
-// Sentinel option value for the Kunde <select>'s "create a new customer"
+// Sentinel option value for the customer <select>'s "create a new customer"
 // convenience entry — never a real customer id, so it can't collide.
 const CREATE_NEW_CUSTOMER = "__create_new__";
 
@@ -157,7 +157,7 @@ function sortDevicesByName(devices: ExternalSystemDto[]): ExternalSystemDto[] {
 // Group-by-Level-group display: collapsed-by-default groups, 10 devices per
 // page within an expanded one — mirrors the org-grouping/pagination
 // conventions NinjaPluginSection.tsx applies to organizations, adapted for
-// Level's simpler "just a display grouping, no per-group Kunde mapping"
+// Level's simpler "just a display grouping, no per-group customer mapping"
 // shape (see the module doc comment above).
 const GROUP_PAGE_SIZE = 10;
 
@@ -359,7 +359,7 @@ export default function LevelPluginSection() {
   const [customersRefreshBusy, setCustomersRefreshBusy] = useState(false);
   const kundeSelectRef = useRef<HTMLSelectElement>(null);
   // Set when the user picks "+ Neuen Kunden anlegen…" in the add-connection
-  // form's Kunde select — tells the customerEditorTarget-closed effect below
+  // form's customer select — tells the customerEditorTarget-closed effect below
   // (mirroring CustomerListView.tsx's own reload-on-close pattern) that it
   // should not just refresh the customer list but also try to auto-select
   // whichever customer the CustomerForm modal just created, instead of
@@ -461,7 +461,7 @@ export default function LevelPluginSection() {
   // close follows the "+ Neuen Kunden anlegen…" option (awaitingNewCustomer)
   // it also diffs the freshly-fetched list against whatever was in state
   // just before the fetch to find the newly-created customer and auto-select
-  // it in this form's Kunde select.
+  // it in this form's customer select.
   const prevCustomerEditorTargetRef = useRef(customerEditorTarget);
   useEffect(() => {
     const prevTarget = prevCustomerEditorTargetRef.current;
@@ -478,7 +478,7 @@ export default function LevelPluginSection() {
         // Exactly one new customer: the common case (the user actually
         // created one) — auto-select it. Zero (the user cancelled instead)
         // or more than one (rare: concurrent creation elsewhere) both just
-        // fall through to leaving the Kunde select as-is; the list itself is
+        // fall through to leaving the customer select as-is; the list itself is
         // still refreshed either way.
         if (newlyCreated.length === 1) {
           setNewCustomerId(newlyCreated[0].id);

@@ -31,15 +31,15 @@ async function fileToPickedFile(file: File): Promise<PickedFile> {
 }
 
 /**
- * Generic, presentational file-picker + drag&drop surface for Anhänge. Turns
+ * Generic, presentational file-picker + drag&drop surface for attachments. Turns
  * whatever File objects the user picks or drops into {bytesBase64, filename,
  * mimeType} and hands them to onFilesAdded. Knows nothing about Tauri commands,
  * entry IDs, or the attachment data model — the consumer wires that up.
  *
  * Deliberately does NOT handle clipboard paste: that input method already exists
  * inside the relevant editor's own onPaste handler (see QuickCapture.tsx). This
- * component covers only the other two Anhänge input methods from the spec:
- * Dateiauswahl (tastaturbedienbar) and Drag & Drop.
+ * component covers only the other two attachment input methods from the spec:
+ * file selection (keyboard-operable) and drag and drop.
  */
 export default function AttachmentDropzone({ onFilesAdded, children }: AttachmentDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);

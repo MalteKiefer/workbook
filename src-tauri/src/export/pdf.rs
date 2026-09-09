@@ -1,4 +1,4 @@
-//! Assembles the durchgehendes PDF-Handbuch (cover page, table of contents,
+//! Assembles the comprehensive PDF manual (cover page, table of contents,
 //! one section per system, embedded images, header/footer with customer name
 //! and creation date) described in the "Export" section of the design spec.
 //!

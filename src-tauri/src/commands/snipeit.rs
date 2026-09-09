@@ -1,20 +1,19 @@
-//! Tauri-Kommandos für die Snipe-IT-Plugin-Integration (siehe
-//! `plugin::snipeit` und `docs/PLUGIN_ARCHITECTURE.md`). Dünne Wrapper nach
-//! genau demselben Muster wie `commands::plugins` (NinjaOne) -- eine
-//! Snipe-IT-"Verbindung" ist ein vom Nutzer angelegter Datensatz (Basis-URL +
-//! Personal Access Token) für genau eine Snipe-IT-Instanz, NICHT für genau
-//! einen lokalen Kunden. Eine einzelne Instanz kann Assets mehrerer Firmen
-//! verwalten (z. B. weil der Nutzer, der die Verbindung anlegt, selbst ein
-//! MSP ist und mehrere eigene Kunden als getrennte Firmen in Snipe-IT führt).
-//! Welche Firma welchem lokalen Kunden entspricht (falls überhaupt), ist eine
-//! separate, granulare Zuordnung
-//! (`SnipeitCompanyMapping`/`Config::snipeit_company_mappings`), die dieses
-//! Modul über `map_snipeit_company`/`unmap_snipeit_company` pflegt. Der
-//! vollqualifizierte Bezeichner `"snipeit:<connection_id>"` dient sowohl als
-//! Schlüsselspeicher-Konto (`plugin::secrets`) als auch als
-//! `external_refs.plugin_id`, sodass die bestehende
-//! Ein-Zeile-je-(system_id,plugin_id)-Upsert-Semantik unverändert
-//! weiterfunktioniert.
+//! Tauri commands for the Snipe-IT plugin integration (see
+//! `plugin::snipeit` and `docs/PLUGIN_ARCHITECTURE.md`). Thin wrappers
+//! following exactly the same pattern as `commands::plugins` (NinjaOne) -- a
+//! Snipe-IT "connection" is a user-created record (base URL + personal
+//! access token) for exactly one Snipe-IT instance, NOT for exactly one
+//! local customer. A single instance can manage assets for multiple
+//! companies (e.g. because the user setting up the connection is themselves
+//! an MSP who runs several of their own customers as separate companies in
+//! Snipe-IT). Which company corresponds to which local customer (if any) is
+//! a separate, granular mapping
+//! (`SnipeitCompanyMapping`/`Config::snipeit_company_mappings`), maintained
+//! by this module via `map_snipeit_company`/`unmap_snipeit_company`. The
+//! fully qualified identifier `"snipeit:<connection_id>"` serves both as the
+//! keyring account (`plugin::secrets`) and as `external_refs.plugin_id`, so
+//! the existing one-row-per-(system_id,plugin_id) upsert semantics keep
+//! working unchanged.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -40,28 +39,28 @@ pub struct SnipeitConnectionDto {
 pub struct ExternalSystemDto {
     pub external_id: String,
     pub name: String,
-    /// Immer `None` -- Snipe-IT liefert kein Hostname-Feld auf dem Asset-
-    /// Kernobjekt, siehe `plugin::snipeit`-Moduldokumentation. Als Feld
-    /// trotzdem vorhanden, damit dieser DTO-Typ strukturell zu Ninjas/Levels
-    /// Gegenstück passt.
+    /// Always `None` -- Snipe-IT provides no hostname field on the core
+    /// asset object, see the `plugin::snipeit` module documentation. Kept as
+    /// a field anyway so this DTO type structurally matches its Ninja/Level
+    /// counterpart.
     pub hostname: Option<String>,
-    /// Immer `None`, aus demselben Grund wie `hostname`.
+    /// Always `None`, for the same reason as `hostname`.
     pub ip_address: Option<String>,
-    /// Snipe-ITs eigenes, primäres Identifikationsfeld für ein Asset.
+    /// Snipe-IT's own primary identification field for an asset.
     pub asset_tag: Option<String>,
-    /// Snipe-ITs Seriennummer-Feld.
+    /// Snipe-IT's serial number field.
     pub serial: Option<String>,
-    /// Direktlink auf die Asset-Detailseite in Snipe-ITs eigener
-    /// Weboberfläche (`{base_url}/hardware/{id}`), aus `base_url` der
-    /// Verbindung und der externen Asset-ID konstruiert -- verifiziert über
-    /// Snipe-ITs `routes/web/hardware.php` (siehe
-    /// `plugin::snipeit`-Moduldokumentation), kein erfundenes URL-Schema.
+    /// Direct link to the asset detail page in Snipe-IT's own web UI
+    /// (`{base_url}/hardware/{id}`), constructed from the connection's
+    /// `base_url` and the external asset ID -- verified against Snipe-IT's
+    /// `routes/web/hardware.php` (see the `plugin::snipeit` module
+    /// documentation), not a made-up URL scheme.
     pub snipeit_url: String,
-    /// `Some(id)`, wenn irgendein lokales System bereits mit dieser externen
-    /// ID für diese Verbindung verknüpft ist (`external_refs`-Zeile mit
-    /// passendem `plugin_id`/`external_id`), sonst `None`. Bei Assets einer
-    /// nicht zugeordneten Firma immer `None` -- ohne `customer_id` lässt
-    /// sich nicht sinnvoll gegen `external_refs` querverweisen.
+    /// `Some(id)` if some local system is already linked to this external ID
+    /// for this connection (an `external_refs` row with matching
+    /// `plugin_id`/`external_id`), otherwise `None`. Always `None` for
+    /// assets of an unmapped company -- without a `customer_id` there's no
+    /// meaningful way to cross-reference against `external_refs`.
     pub linked_system_id: Option<i64>,
 }
 
@@ -69,9 +68,9 @@ pub struct ExternalSystemDto {
 pub struct SnipeitCompanyDto {
     pub id: String,
     pub name: String,
-    /// `None`, solange diese Firma noch keinem lokalen Kunden zugeordnet
-    /// wurde (`Config::snipeit_company_mappings` hat keine passende Zeile
-    /// für diese Verbindung+Firma).
+    /// `None` as long as this company hasn't been mapped to a local
+    /// customer yet (`Config::snipeit_company_mappings` has no matching row
+    /// for this connection+company).
     pub mapped_customer_id: Option<i64>,
 }
 
@@ -79,18 +78,18 @@ pub struct SnipeitCompanyDto {
 pub struct SnipeitCompanyDeviceGroupDto {
     pub company_id: String,
     pub company_name: String,
-    /// `None`, wenn diese Firma (noch) keinem lokalen Kunden zugeordnet ist
-    /// -- das Frontend zeigt in diesem Fall "nicht zugeordnet" an und
-    /// deaktiviert das Verknüpfen der Assets dieser Gruppe.
+    /// `None` if this company is not (yet) mapped to a local customer --
+    /// in that case the frontend shows "not mapped" and disables linking
+    /// this group's assets.
     pub customer_id: Option<i64>,
     pub devices: Vec<ExternalSystemDto>,
 }
 
-/// Momentaufnahme des letzten `sync_snipeit_connection`-Laufs, unter
-/// `data_dir/plugin-cache/snipeit-<connection_id>.json` zwischengespeichert
-/// (siehe `write_snipeit_cache`/`read_snipeit_cache`), damit
-/// `get_cached_snipeit_sync` ohne Netzwerkzugriff funktioniert -- exakt
-/// dasselbe Muster wie `commands::plugins::CachedNinjaSyncDto`.
+/// Snapshot of the last `sync_snipeit_connection` run, cached under
+/// `data_dir/plugin-cache/snipeit-<connection_id>.json` (see
+/// `write_snipeit_cache`/`read_snipeit_cache`) so `get_cached_snipeit_sync`
+/// works without network access -- exactly the same pattern as
+/// `commands::plugins::CachedNinjaSyncDto`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CachedSnipeitSyncDto {
     pub synced_at_utc: String,
@@ -105,14 +104,14 @@ fn to_dto(meta: &SnipeitConnectionMeta) -> SnipeitConnectionDto {
     }
 }
 
-/// Der vollqualifizierte `plugin_id`-Wert für eine Snipe-IT-Verbindung --
-/// sowohl Schlüsselspeicher-Konto als auch `external_refs.plugin_id`.
+/// The fully qualified `plugin_id` value for a Snipe-IT connection --
+/// both the keyring account and `external_refs.plugin_id`.
 fn plugin_id_for(connection_id: &str) -> String {
     format!("snipeit:{connection_id}")
 }
 
-/// Erzeugt aus einem Nutzer-Label eine stabile, kollisionsarme
-/// Verbindungs-ID, exakt nach dem Muster von
+/// Generates a stable, low-collision connection ID from a user label,
+/// following exactly the pattern of
 /// `commands::plugins::generate_connection_id`.
 fn generate_connection_id(label: &str) -> String {
     let slug = slugify(label);
@@ -160,11 +159,11 @@ fn find_connection(
         })
 }
 
-/// Baut aus einer Verbindungs-Metadatenzeile das lauffähige Plugin-Objekt
-/// plus die dazugehörigen Zugangsdaten (den Personal Access Token) aus dem
-/// Schlüsselspeicher. Anders als bei Ninja ist der Snipe-IT-Token bereits der
-/// vollständige Secret-String -- keine JSON-Kodierung nötig, da Snipe-IT nur
-/// einen einzigen Geheimwert braucht (wie Level.io).
+/// Builds the runnable plugin object from a connection metadata row, plus
+/// the associated credentials (the personal access token) from the keyring.
+/// Unlike Ninja, the Snipe-IT token is already the complete secret string --
+/// no JSON encoding needed, since Snipe-IT only needs a single secret value
+/// (like Level.io).
 fn build_plugin(
     meta: &SnipeitConnectionMeta,
 ) -> Result<(SnipeitPlugin, PluginCredentials), AppError> {
@@ -181,7 +180,7 @@ fn build_plugin(
     ))
 }
 
-/// Bestes Bemühen, analog zu
+/// Best-effort, analogous to
 /// `commands::plugins::delete_keyring_secret_best_effort`.
 fn delete_keyring_secret_best_effort(plugin_id: &str) -> Result<(), keyring::Error> {
     let entry = keyring::Entry::new("wartungsdoku", plugin_id)?;
@@ -192,9 +191,9 @@ fn delete_keyring_secret_best_effort(plugin_id: &str) -> Result<(), keyring::Err
     }
 }
 
-/// Dasselbe `data_dir/plugin-cache/`-Verzeichnis wie `commands::plugins`/
-/// `commands::level` -- ein gemeinsamer Ordner für alle Plugin-Zwischen-
-/// speicher-Dateien, nur mit unterschiedlichem Dateiname-Präfix je Plugin.
+/// The same `data_dir/plugin-cache/` directory as `commands::plugins`/
+/// `commands::level` -- one shared folder for all plugin cache files, just
+/// with a different filename prefix per plugin.
 fn plugin_cache_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("plugin-cache")
 }
@@ -203,8 +202,8 @@ fn snipeit_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
     plugin_cache_dir(data_dir).join(format!("snipeit-{connection_id}.json"))
 }
 
-/// Schreibt eine Momentaufnahme des Sync-Ergebnisses als JSON-Datei, analog
-/// zu `commands::plugins::write_ninja_cache`.
+/// Writes a snapshot of the sync result as a JSON file, analogous to
+/// `commands::plugins::write_ninja_cache`.
 fn write_snipeit_cache(
     data_dir: &Path,
     connection_id: &str,
@@ -224,9 +223,9 @@ fn write_snipeit_cache(
     Ok(())
 }
 
-/// Liest eine zuvor über `write_snipeit_cache` geschriebene Momentaufnahme
-/// zurück. `Ok(None)`, wenn für diese Verbindung noch nie synchronisiert
-/// wurde -- kein Fehlerfall, analog zu `commands::plugins::read_ninja_cache`.
+/// Reads back a snapshot previously written via `write_snipeit_cache`.
+/// `Ok(None)` if this connection has never been synced -- not an error case,
+/// analogous to `commands::plugins::read_ninja_cache`.
 fn read_snipeit_cache(
     data_dir: &Path,
     connection_id: &str,
@@ -262,9 +261,9 @@ fn to_external_system_dto(
     }
 }
 
-/// Zwischenergebnis der reinen Gruppierungslogik: eine Firma samt ihrer
-/// Assets (noch als `SnipeitDevice`, nicht als DTO) und -- falls zugeordnet
-/// -- der lokalen `customer_id`. Analog zu `commands::plugins::OrgGroup`.
+/// Intermediate result of the pure grouping logic: a company along with its
+/// assets (still as `SnipeitDevice`, not as a DTO) and -- if mapped -- the
+/// local `customer_id`. Analogous to `commands::plugins::OrgGroup`.
 struct CompanyGroup {
     company_id: String,
     company_name: String,
@@ -272,18 +271,18 @@ struct CompanyGroup {
     devices: Vec<SnipeitDevice>,
 }
 
-/// Gruppiert Assets nach Firma und reichert jede Gruppe um die konfigurierte
-/// `customer_id`-Zuordnung an (falls vorhanden). Reine Funktion -- kein
-/// Netzwerk-, kein Datenbankzugriff -- deshalb mit hartkodierten
-/// `SnipeitCompany`/`SnipeitDevice`/`SnipeitCompanyMapping`-Werten testbar,
-/// analog zu `commands::plugins::group_devices_by_organization`. Eine Firma
-/// ganz ohne Assets erscheint trotzdem als Gruppe (leere `devices`-Liste),
-/// damit eine künftige UI sie zum Zuordnen anzeigen kann. Assets, deren
-/// `company_id` auf keine von `companies` gemeldete Firma passt -- inklusive
-/// `UNASSIGNED_COMPANY_ID` für Assets ganz ohne Firmenzuordnung in Snipe-IT
-/// selbst --, werden nicht stillschweigend verworfen, sondern als eigene
-/// Gruppe angehängt; für `UNASSIGNED_COMPANY_ID` mit einem lesbaren Namen
-/// statt der rohen Sentinel-ID.
+/// Groups assets by company and enriches each group with the configured
+/// `customer_id` mapping (if any). A pure function -- no network, no
+/// database access -- so it's testable with hardcoded
+/// `SnipeitCompany`/`SnipeitDevice`/`SnipeitCompanyMapping` values,
+/// analogous to `commands::plugins::group_devices_by_organization`. A
+/// company with no assets at all still shows up as a group (empty `devices`
+/// list) so a future UI can display it for mapping. Assets whose
+/// `company_id` doesn't match any company reported by `companies` --
+/// including `UNASSIGNED_COMPANY_ID` for assets with no company assignment
+/// in Snipe-IT itself -- are not silently dropped but appended as their own
+/// group; for `UNASSIGNED_COMPANY_ID` with a readable name instead of the
+/// raw sentinel ID.
 fn group_devices_by_company(
     companies: &[SnipeitCompany],
     devices: &[SnipeitDevice],
@@ -387,8 +386,8 @@ pub fn remove_snipeit_connection(state: State<AppState>, id: String) -> Result<(
             "Snipe-IT-Verbindung {id} nicht gefunden"
         )));
     }
-    // Aufräumen: Firmen-Zuordnungen dieser Verbindung sind ohne die
-    // Verbindung bedeutungslos und würden sonst als Datenleiche liegen bleiben.
+    // Cleanup: company mappings for this connection are meaningless without
+    // the connection and would otherwise be left behind as orphaned data.
     config
         .snipeit_company_mappings
         .retain(|m| m.connection_id != id);
@@ -414,10 +413,10 @@ pub fn remove_snipeit_connection(state: State<AppState>, id: String) -> Result<(
     Ok(())
 }
 
-/// Live-Abruf der Firmenliste einer Verbindung. Analog zu
-/// `commands::plugins::list_ninja_organizations`, gehalten für Symmetrie und
-/// einen möglichen Ersteinrichtungs-Anwendungsfall -- die normale Bedienung
-/// des Frontends braucht diesen Befehl nicht (Cache-first, siehe
+/// Live fetch of a connection's company list. Analogous to
+/// `commands::plugins::list_ninja_organizations`, kept for symmetry and a
+/// possible initial-setup use case -- normal frontend operation doesn't need
+/// this command (cache-first, see
 /// `get_cached_snipeit_sync`/`sync_snipeit_connection`).
 #[tauri::command]
 pub fn list_snipeit_companies(
@@ -484,11 +483,10 @@ pub fn unmap_snipeit_company(
     company_id: String,
 ) -> Result<(), AppError> {
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
-    // Kein Fehler, wenn keine passende Zuordnung existiert -- das Ergebnis
-    // (keine Zuordnung mehr vorhanden) ist dasselbe, analog zu
-    // `db::external_refs::delete`. Bestehende `external_refs`-Verknüpfungen
-    // bleiben unangetastet: Entzuordnen einer Firma ist bewusst keine
-    // automatische Entverknüpfung ihrer bereits verknüpften Assets.
+    // Not an error if no matching mapping exists -- the result (no mapping
+    // left) is the same, analogous to `db::external_refs::delete`. Existing
+    // `external_refs` links are left untouched: unmapping a company is
+    // deliberately not an automatic unlinking of its already-linked assets.
     config
         .snipeit_company_mappings
         .retain(|m| !(m.connection_id == connection_id && m.company_id == company_id));
@@ -533,9 +531,9 @@ pub fn sync_snipeit_connection(
 
     let mut result = Vec::with_capacity(groups.len());
     for group in groups {
-        // Umkehr-Index externe-ID -> lokale system_id, nur für zugeordnete
-        // Firmen aufgebaut -- ohne `customer_id` gibt es keine sinnvolle
-        // Menge lokaler Systeme, gegen die man querverweisen könnte.
+        // Reverse index external-ID -> local system_id, only built for mapped
+        // companies -- without a `customer_id` there's no meaningful set of
+        // local systems to cross-reference against.
         let mut linked_by_external_id: HashMap<String, i64> = HashMap::new();
         if let Some(customer_id) = group.customer_id {
             for system in db::systems::list_by_customer(&conn, customer_id, true)? {
@@ -594,12 +592,12 @@ pub fn get_cached_snipeit_sync(
         (config.data_dir.clone(), mappings)
     };
     let mut cached = read_snipeit_cache(&data_dir, &connection_id)?;
-    // `customer_id` je Gruppe wird hier gegen die AKTUELLEN Firmen-
-    // Zuordnungen neu verknüpft statt den in der Cache-Datei beim letzten
-    // `sync_snipeit_connection`-Lauf eingefrorenen Wert zu übernehmen --
-    // sonst würde ein Zu-/Entzuordnen einer Firma erst nach dem nächsten
-    // Live-Sync sichtbar, obwohl genau dieser Befehl dem Frontend einen
-    // aktuellen Zuordnungsstand ohne Netzwerkzugriff zeigen soll (analog zu
+    // `customer_id` per group is re-resolved here against the CURRENT
+    // company mappings instead of using the value frozen into the cache file
+    // during the last `sync_snipeit_connection` run -- otherwise mapping or
+    // unmapping a company would only become visible after the next live
+    // sync, even though this exact command is meant to show the frontend the
+    // current mapping state without network access (analogous to
     // `commands::plugins::get_cached_ninja_sync`).
     if let Some(cache) = cached.as_mut() {
         for group in &mut cache.groups {

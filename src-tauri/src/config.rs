@@ -6,28 +6,28 @@ use crate::plugin::level::LevelConnectionMeta;
 use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
 use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
 
-/// Theme-Präferenz für die Oberfläche (siehe `src/styles/theme.css` und
-/// `src/lib/theme.ts` auf der Frontend-Seite). Reines TOML/JSON-Serde --
-/// keine DB-Spalte -- daher genügen einfache Serde-Derives; `rename_all =
-/// "snake_case"` sorgt dafür, dass die Werte in `config.toml` und über den
-/// Tauri-Command als `"light"`/`"dark"`/`"system"` erscheinen statt in Rusts
-/// Standard-Schreibweise `Light`/`Dark`/`System` (dieselbe Konvention wie
+/// Theme preference for the UI (see `src/styles/theme.css` and
+/// `src/lib/theme.ts` on the frontend side). Pure TOML/JSON serde -- no DB
+/// column -- so plain serde derives are enough; `rename_all = "snake_case"`
+/// makes the values appear in `config.toml` and via the Tauri command as
+/// `"light"`/`"dark"`/`"system"` instead of Rust's default
+/// `Light`/`Dark`/`System` spelling (same convention as
 /// `db::entries::Category`).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThemePreference {
     Light,
-    // Die App war bislang ausschließlich dunkel -- eine config.toml, die
-    // dieses Feld zum ersten Mal bekommt (bestehender Nutzer, altes
-    // Backup), darf sich dadurch NICHT optisch verändern. Nur eine
-    // explizite künftige Auswahl darf das Erscheinungsbild umstellen.
+    // The app has so far been exclusively dark -- a config.toml that gets
+    // this field for the first time (existing user, old backup) must NOT
+    // change its appearance because of that. Only an explicit future
+    // choice may change the look.
     #[default]
     Dark,
     System,
 }
 
-/// Häufigkeit automatischer Backups (Einstellungen → Backup). Reines
-/// TOML/Serde-Enum, dieselbe Konvention wie `ThemePreference`.
+/// Frequency of automatic backups (Settings → Backup). Pure TOML/serde
+/// enum, same convention as `ThemePreference`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AutoBackupFrequency {
@@ -65,74 +65,73 @@ pub struct Config {
     pub hotkeys: HotkeyConfig,
     pub last_customer_id: Option<i64>,
     pub last_system_id: Option<i64>,
-    /// Nicht-geheime Metadaten je konfigurierter Ninja-Verbindung (ein Satz
-    /// OAuth2-Zugangsdaten für genau einen Ninja-Mandanten; ein Nutzer kann
-    /// beliebig viele Verbindungen anlegen). Eine Verbindung ist NICHT an
-    /// genau einen lokalen Kunden gebunden -- siehe `ninja_org_mappings`.
-    /// Zugehörige Client-ID/-Secret liegen ausschließlich im
-    /// OS-Schlüsselspeicher, siehe `plugin::secrets`.
+    /// Non-secret metadata per configured Ninja connection (one set of
+    /// OAuth2 credentials for exactly one Ninja tenant; a user can create as
+    /// many connections as they like). A connection is NOT bound to exactly
+    /// one local customer -- see `ninja_org_mappings`. The associated
+    /// client ID/secret live exclusively in the OS keyring, see
+    /// `plugin::secrets`.
     pub ninja_connections: Vec<NinjaConnectionMeta>,
-    /// Zuordnung einzelner Ninja-"Organizations" (innerhalb einer Verbindung)
-    /// zu lokalen Kunden. Ein einzelner Ninja-Mandant (eine Verbindung) kann
-    /// mehrere Organisationen sehen -- z. B. weil der Nutzer selbst ein MSP
-    /// ist, der seinerseits mehrere eigene Kunden als getrennte
-    /// Organisationen in Ninja führt --, deshalb diese separate, granulare
-    /// Zuordnungstabelle statt eines `customer_id`-Felds direkt an der
-    /// Verbindung. `#[serde(default)]`-kompatibel mit Konfigurationen von vor
-    /// dieser Änderung, die dieses Feld noch nicht kennen (siehe
-    /// `ninja_connections` oben für dasselbe Muster).
+    /// Mapping of individual Ninja "organizations" (within a connection) to
+    /// local customers. A single Ninja tenant (one connection) can see
+    /// multiple organizations -- e.g. because the user is themselves an MSP
+    /// who runs several of their own customers as separate organizations in
+    /// Ninja -- hence this separate, granular mapping table instead of a
+    /// `customer_id` field directly on the connection. `#[serde(default)]`-
+    /// compatible with configs from before this change that don't know this
+    /// field yet (see `ninja_connections` above for the same pattern).
     pub ninja_org_mappings: Vec<NinjaOrgMapping>,
-    /// Nicht-geheime Metadaten je konfigurierter Level.io-Verbindung. Anders
-    /// als eine Ninja-Verbindung ist eine Level-Verbindung direkt an genau
-    /// einen lokalen Kunden gebunden (`LevelConnectionMeta.customer_id`) --
-    /// Level kennt kein Organisationskonzept, siehe `plugin::level`. Der
-    /// zugehörige API-Key liegt ausschließlich im OS-Schlüsselspeicher, siehe
-    /// `plugin::secrets`. `#[serde(default)]`-kompatibel mit
-    /// Konfigurationen von vor dieser Änderung, analog zu
-    /// `ninja_connections` oben.
+    /// Non-secret metadata per configured Level.io connection. Unlike a
+    /// Ninja connection, a Level connection is bound directly to exactly one
+    /// local customer (`LevelConnectionMeta.customer_id`) -- Level has no
+    /// concept of organizations, see `plugin::level`. The associated API key
+    /// lives exclusively in the OS keyring, see `plugin::secrets`.
+    /// `#[serde(default)]`-compatible with configs from before this change,
+    /// analogous to `ninja_connections` above.
     pub level_connections: Vec<LevelConnectionMeta>,
-    /// Nicht-geheime Metadaten je konfigurierter Snipe-IT-Verbindung (eine
-    /// selbst gehostete Snipe-IT-Instanz; ein Nutzer kann beliebig viele
-    /// Verbindungen anlegen). Wie eine Ninja-Verbindung ist eine
-    /// Snipe-IT-Verbindung NICHT an genau einen lokalen Kunden gebunden --
-    /// siehe `snipeit_company_mappings`. Der zugehörige Personal Access
-    /// Token liegt ausschließlich im OS-Schlüsselspeicher, siehe
-    /// `plugin::secrets`. `#[serde(default)]`-kompatibel mit Konfigurationen
-    /// von vor dieser Änderung, analog zu `ninja_connections` oben.
+    /// Non-secret metadata per configured Snipe-IT connection (a
+    /// self-hosted Snipe-IT instance; a user can create as many connections
+    /// as they like). Like a Ninja connection, a Snipe-IT connection is NOT
+    /// bound to exactly one local customer -- see
+    /// `snipeit_company_mappings`. The associated personal access token
+    /// lives exclusively in the OS keyring, see `plugin::secrets`.
+    /// `#[serde(default)]`-compatible with configs from before this change,
+    /// analogous to `ninja_connections` above.
     pub snipeit_connections: Vec<SnipeitConnectionMeta>,
-    /// Zuordnung einzelner Snipe-IT-"Companies" (innerhalb einer Verbindung)
-    /// zu lokalen Kunden. Eine einzelne Snipe-IT-Instanz (eine Verbindung)
-    /// kann mehrere Firmen verwalten -- z. B. weil der Nutzer selbst ein MSP
-    /// ist, der mehrere eigene Kunden als getrennte Firmen in einer
-    /// gemeinsamen Snipe-IT-Instanz führt --, deshalb diese separate,
-    /// granulare Zuordnungstabelle statt eines `customer_id`-Felds direkt an
-    /// der Verbindung -- exakt dasselbe Prinzip wie `ninja_org_mappings`.
-    /// `#[serde(default)]`-kompatibel mit Konfigurationen von vor dieser
-    /// Änderung.
+    /// Mapping of individual Snipe-IT "companies" (within a connection) to
+    /// local customers. A single Snipe-IT instance (one connection) can
+    /// manage multiple companies -- e.g. because the user is themselves an
+    /// MSP who runs several of their own customers as separate companies in
+    /// a shared Snipe-IT instance -- hence this separate, granular mapping
+    /// table instead of a `customer_id` field directly on the connection --
+    /// exactly the same principle as `ninja_org_mappings`.
+    /// `#[serde(default)]`-compatible with configs from before this change.
     pub snipeit_company_mappings: Vec<SnipeitCompanyMapping>,
-    /// Vom Nutzer gewählte Theme-Präferenz (Einstellungen → Allgemein).
-    /// `#[serde(default)]`-kompatibel mit Konfigurationen von vor Einführung
-    /// dieses Feldes, analog zu `ninja_connections` oben -- fehlt es, greift
-    /// `ThemePreference::default()` (= `Dark`), NICHT `System`, damit
-    /// bestehende Installationen optisch unverändert bleiben.
+    /// User-selected theme preference (Settings → General).
+    /// `#[serde(default)]`-compatible with configs from before this field
+    /// was introduced, analogous to `ninja_connections` above -- if missing,
+    /// `ThemePreference::default()` (= `Dark`) applies, NOT `System`, so
+    /// existing installations don't change appearance.
     pub theme_preference: ThemePreference,
-    /// Ob der Hintergrund-Scheduler (siehe `backup::schedule_auto_backups`)
-    /// automatisch Backups erstellen soll. `auto_backup_dir` muss zusätzlich
-    /// gesetzt sein, sonst bleibt die Funktion trotz `true` inaktiv (siehe
-    /// `backup::is_auto_backup_due`-Aufrufstelle im Scheduler).
+    /// Whether the background scheduler (see
+    /// `backup::schedule_auto_backups`) should create backups automatically.
+    /// `auto_backup_dir` must also be set, otherwise the feature stays
+    /// inactive despite `true` (see the `backup::is_auto_backup_due` call
+    /// site in the scheduler).
     pub auto_backup_enabled: bool,
-    /// Zielordner für automatische Backups. Getrennt vom manuellen
-    /// "Backup erstellen"-Dialog, der den Zielpfad jedes Mal explizit abfragt.
+    /// Target folder for automatic backups. Separate from the manual
+    /// "Create backup" dialog, which explicitly asks for the target path
+    /// every time.
     pub auto_backup_dir: Option<PathBuf>,
     pub auto_backup_frequency: AutoBackupFrequency,
-    /// RFC3339-Zeitstempel (UTC) des letzten erfolgreichen automatischen
-    /// Backups. `None` heißt "noch nie" -- der Scheduler behandelt das wie
-    /// eine sofort fällige erste Ausführung.
+    /// RFC3339 timestamp (UTC) of the last successful automatic backup.
+    /// `None` means "never" -- the scheduler treats that like an
+    /// immediately due first run.
     pub auto_backup_last_run_utc: Option<String>,
-    /// Ob sowohl manuell erstellte als auch automatische Backups mit dem im
-    /// OS-Schlüsselspeicher hinterlegten Passwort verschlüsselt werden (siehe
-    /// `backup::crypto`). Das Passwort selbst steht nie hier in
-    /// `config.toml`, nur dieses Flag.
+    /// Whether both manually created and automatic backups are encrypted
+    /// with the password stored in the OS keyring (see `backup::crypto`).
+    /// The password itself is never stored here in `config.toml`, only this
+    /// flag.
     pub backup_encryption_enabled: bool,
 }
 
@@ -282,9 +281,10 @@ mod tests {
     fn config_without_ninja_connections_field_defaults_to_empty() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        // Simuliert eine config.toml von vor Einführung der Ninja-Integration --
-        // das Feld fehlt komplett und muss dank `#[serde(default)]` klaglos auf
-        // eine leere Liste zurückfallen statt das Laden scheitern zu lassen.
+        // Simulates a config.toml from before the Ninja integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
         std::fs::write(&path, "autostart_enabled = true\n").unwrap();
 
         let loaded = Config::load_or_default(&path).unwrap();
@@ -322,10 +322,10 @@ mod tests {
     fn config_without_ninja_org_mappings_field_defaults_to_empty() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        // Simuliert eine config.toml von vor Einführung der Organisations-
-        // Zuordnung -- das Feld fehlt komplett und muss dank
-        // `#[serde(default)]` klaglos auf eine leere Liste zurückfallen statt
-        // das Laden scheitern zu lassen.
+        // Simulates a config.toml from before the organization mapping was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
         std::fs::write(&path, "autostart_enabled = true\n").unwrap();
 
         let loaded = Config::load_or_default(&path).unwrap();
@@ -357,10 +357,10 @@ mod tests {
     fn config_without_level_connections_field_defaults_to_empty() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        // Simuliert eine config.toml von vor Einführung der Level.io-Integration
-        // -- das Feld fehlt komplett und muss dank `#[serde(default)]` klaglos
-        // auf eine leere Liste zurückfallen statt das Laden scheitern zu
-        // lassen.
+        // Simulates a config.toml from before the Level.io integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
         std::fs::write(&path, "autostart_enabled = true\n").unwrap();
 
         let loaded = Config::load_or_default(&path).unwrap();
@@ -394,10 +394,10 @@ mod tests {
     fn config_without_snipeit_connections_field_defaults_to_empty() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        // Simuliert eine config.toml von vor Einführung der Snipe-IT-Integration
-        // -- das Feld fehlt komplett und muss dank `#[serde(default)]` klaglos
-        // auf eine leere Liste zurückfallen statt das Laden scheitern zu
-        // lassen.
+        // Simulates a config.toml from before the Snipe-IT integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
         std::fs::write(&path, "autostart_enabled = true\n").unwrap();
 
         let loaded = Config::load_or_default(&path).unwrap();
@@ -435,9 +435,10 @@ mod tests {
     fn config_without_snipeit_company_mappings_field_defaults_to_empty() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        // Simuliert eine config.toml von vor Einführung der Firmen-Zuordnung --
-        // das Feld fehlt komplett und muss dank `#[serde(default)]` klaglos auf
-        // eine leere Liste zurückfallen statt das Laden scheitern zu lassen.
+        // Simulates a config.toml from before the company mapping was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
         std::fs::write(&path, "autostart_enabled = true\n").unwrap();
 
         let loaded = Config::load_or_default(&path).unwrap();
@@ -463,10 +464,11 @@ mod tests {
     fn config_without_theme_preference_field_defaults_to_dark() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        // Simuliert eine config.toml von vor Einführung der Theme-Auswahl --
-        // das Feld fehlt komplett und muss dank `#[serde(default)]` klaglos
-        // auf `Dark` zurückfallen (NICHT `System`), damit sich das
-        // Erscheinungsbild bestehender Installationen nicht ungefragt ändert.
+        // Simulates a config.toml from before the theme selection was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to `Dark` (NOT `System`) thanks to `#[serde(default)]`,
+        // so the appearance of existing installations doesn't change without
+        // being asked.
         std::fs::write(&path, "autostart_enabled = true\n").unwrap();
 
         let loaded = Config::load_or_default(&path).unwrap();
@@ -511,8 +513,9 @@ mod tests {
     fn config_without_auto_backup_fields_defaults_to_disabled() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        // Simuliert eine config.toml von vor Einführung des Auto-Backups --
-        // muss dank `#[serde(default)]` klaglos auf "deaktiviert" zurückfallen.
+        // Simulates a config.toml from before auto-backup was introduced --
+        // must fall back gracefully to "disabled" thanks to
+        // `#[serde(default)]`.
         std::fs::write(&path, "autostart_enabled = true\n").unwrap();
 
         let loaded = Config::load_or_default(&path).unwrap();
@@ -526,7 +529,7 @@ mod tests {
 
     #[test]
     fn resolve_data_dir_honours_env_override() {
-        // SAFETY: Tests laufen sequenziell innerhalb dieses Prozesses für diese eine Variable.
+        // SAFETY: tests run sequentially within this process for this one variable.
         std::env::set_var("WARTUNGSDOKU_DATA_DIR", "/tmp/wartungsdoku-test-override");
         let resolved = resolve_data_dir();
         std::env::remove_var("WARTUNGSDOKU_DATA_DIR");

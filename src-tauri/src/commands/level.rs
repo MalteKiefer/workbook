@@ -1,13 +1,12 @@
-//! Tauri-Kommandos für die Level.io-Plugin-Integration (siehe
-//! `plugin::level` und `docs/PLUGIN_ARCHITECTURE.md`). Dünne Wrapper nach
-//! genau demselben Muster wie `commands::plugins` (NinjaOne) -- aber
-//! einfacher: Level.io hat kein Organisations-/Mandanten-Konzept (siehe
-//! `plugin::level`-Moduldokumentation), daher entspricht eine Level-
-//! "Verbindung" hier direkt genau einem lokalen Kunden
-//! (`LevelConnectionMeta.customer_id`). Keine granulare
-//! Organisations-Zuordnungsebene wie `NinjaOrgMapping`/
-//! `map_ninja_organization` nötig -- jedes synchronisierte Gerät gehört
-//! automatisch zum Kunden der Verbindung.
+//! Tauri commands for the Level.io plugin integration (see `plugin::level`
+//! and `docs/PLUGIN_ARCHITECTURE.md`). Thin wrappers following exactly the
+//! same pattern as `commands::plugins` (NinjaOne) -- but simpler: Level.io
+//! has no organization/tenant concept (see the `plugin::level` module
+//! documentation), so a Level "connection" here corresponds directly to
+//! exactly one local customer (`LevelConnectionMeta.customer_id`). No
+//! granular organization mapping layer like `NinjaOrgMapping`/
+//! `map_ninja_organization` is needed -- every synced device automatically
+//! belongs to the connection's customer.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -31,37 +30,36 @@ pub struct ExternalSystemDto {
     pub external_id: String,
     pub name: String,
     pub hostname: Option<String>,
-    /// Erste Adresse aus dem `network_interfaces`-Array der ersten
-    /// Schnittstelle (siehe `plugin::level::extract_ip_address`). Level hat
-    /// -- anders als Ninja -- kein per-Gerät-Dashboard-URL-Feld, das sich
-    /// verlässlich aus öffentlicher Doku konstruieren ließe, daher gibt es
-    /// hier bewusst kein `level_url`-Gegenstück zu Ninjas `ninja_url`.
+    /// First address from the `network_interfaces` array of the first
+    /// interface (see `plugin::level::extract_ip_address`). Unlike Ninja,
+    /// Level has no per-device dashboard URL field that could be reliably
+    /// constructed from public docs, so there's deliberately no `level_url`
+    /// counterpart to Ninja's `ninja_url` here.
     pub ip_address: Option<String>,
-    /// `Some(id)`, wenn irgendein lokales System bereits mit dieser externen
-    /// ID für diese Verbindung verknüpft ist (`external_refs`-Zeile mit
-    /// passendem `plugin_id`/`external_id`), sonst `None`.
+    /// `Some(id)` if any local system is already linked to this external ID
+    /// for this connection (an `external_refs` row with matching
+    /// `plugin_id`/`external_id`), otherwise `None`.
     pub linked_system_id: Option<i64>,
-    /// Levels rohe, nullable Gruppen-ID (`None` bedeutet "ungrouped", kein
-    /// Fehlerfall -- siehe `plugin::level`-Moduldokumentation, Abschnitt
-    /// "Gruppen"). Anders als bei Ninjas Organisationen gibt es dafür keine
-    /// separate Kunden-Zuordnungsebene -- reine Anzeige-Gruppierung, die das
-    /// Frontend (`LevelPluginSection.tsx`) aus der weiterhin flachen
-    /// Geräteliste bildet.
+    /// Level's raw, nullable group ID (`None` means "ungrouped", not an
+    /// error case -- see the `plugin::level` module documentation, "Groups"
+    /// section). Unlike Ninja's organizations, there's no separate customer
+    /// mapping layer for this -- pure display grouping that the frontend
+    /// (`LevelPluginSection.tsx`) builds from the otherwise flat device
+    /// list.
     pub group_id: Option<String>,
-    /// Der über `plugin::level::build_group_lookup` serverseitig aufgelöste
-    /// Klartextname zu `group_id`. `None`, wenn `group_id` selbst `None` ist,
-    /// ODER wenn `group_id` gesetzt ist, aber keine passende Gruppe gefunden
-    /// wurde (z. B. eine inzwischen gelöschte Gruppe) -- das Frontend fällt
-    /// in letzterem Fall auf `Gruppe {group_id}` zurück.
+    /// The plain-text name for `group_id`, resolved server-side via
+    /// `plugin::level::build_group_lookup`. `None` if `group_id` itself is
+    /// `None`, OR if `group_id` is set but no matching group was found (e.g.
+    /// a group that has since been deleted) -- in the latter case the
+    /// frontend falls back to `Gruppe {group_id}`.
     pub group_name: Option<String>,
 }
 
-/// Momentaufnahme des letzten `sync_level_connection`-Laufs, unter
-/// `data_dir/plugin-cache/level-<connection_id>.json` zwischengespeichert
-/// (siehe `write_level_cache`/`read_level_cache`), damit
-/// `get_cached_level_sync` ohne Netzwerkzugriff funktioniert. Einfacher als
-/// `CachedNinjaSyncDto` -- keine Organisations-Gruppierung, da Level keine
-/// Organisationen kennt.
+/// Snapshot of the last `sync_level_connection` run, cached under
+/// `data_dir/plugin-cache/level-<connection_id>.json` (see
+/// `write_level_cache`/`read_level_cache`), so `get_cached_level_sync` works
+/// without network access. Simpler than `CachedNinjaSyncDto` -- no
+/// organization grouping, since Level has no concept of organizations.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CachedLevelSyncDto {
     pub synced_at_utc: String,
@@ -76,15 +74,15 @@ fn to_dto(meta: &LevelConnectionMeta) -> LevelConnectionDto {
     }
 }
 
-/// Der vollqualifizierte `plugin_id`-Wert für eine Level-Verbindung -- sowohl
-/// Schlüsselspeicher-Konto als auch `external_refs.plugin_id`, analog zu
+/// The fully-qualified `plugin_id` value for a Level connection -- both the
+/// key store account and `external_refs.plugin_id`, analogous to
 /// `commands::plugins::plugin_id_for`.
 fn plugin_id_for(connection_id: &str) -> String {
     format!("level:{connection_id}")
 }
 
-/// Erzeugt aus einem Nutzer-Label eine stabile, kollisionsarme
-/// Verbindungs-ID, exakt nach dem Muster von
+/// Generates a stable, low-collision connection ID from a user label,
+/// exactly following the pattern of
 /// `commands::plugins::generate_connection_id`.
 fn generate_connection_id(label: &str) -> String {
     let slug = slugify(label);
@@ -127,11 +125,10 @@ fn find_connection(config: &Config, connection_id: &str) -> Result<LevelConnecti
         })
 }
 
-/// Baut aus einer Verbindungs-Metadatenzeile das lauffähige Plugin-Objekt
-/// plus die dazugehörigen Zugangsdaten (den API-Key) aus dem
-/// Schlüsselspeicher. Anders als bei Ninja ist der Level-API-Key bereits der
-/// vollständige Secret-String -- keine JSON-Kodierung nötig, da Level nur
-/// einen einzigen Geheimwert braucht.
+/// Builds the runnable plugin object plus its associated credentials (the
+/// API key) from the key store, based on a connection metadata row. Unlike
+/// Ninja, the Level API key is already the full secret string -- no JSON
+/// encoding needed, since Level only needs a single secret value.
 fn build_plugin(meta: &LevelConnectionMeta) -> Result<(LevelPlugin, PluginCredentials), AppError> {
     let plugin_id = plugin_id_for(&meta.id);
     let secret = plugin::secrets::load_secret(&plugin_id)?.ok_or_else(|| {
@@ -143,7 +140,7 @@ fn build_plugin(meta: &LevelConnectionMeta) -> Result<(LevelPlugin, PluginCreden
     Ok((LevelPlugin::new(plugin_id), PluginCredentials { secret }))
 }
 
-/// Bestes Bemühen, analog zu
+/// Best-effort, analogous to
 /// `commands::plugins::delete_keyring_secret_best_effort`.
 fn delete_keyring_secret_best_effort(plugin_id: &str) -> Result<(), keyring::Error> {
     let entry = keyring::Entry::new("wartungsdoku", plugin_id)?;
@@ -154,9 +151,9 @@ fn delete_keyring_secret_best_effort(plugin_id: &str) -> Result<(), keyring::Err
     }
 }
 
-/// Dasselbe `data_dir/plugin-cache/`-Verzeichnis wie `commands::plugins`
-/// (Ninja) -- ein gemeinsamer Ordner für alle Plugin-Zwischenspeicher-
-/// Dateien, nur mit unterschiedlichem Dateiname-Präfix je Plugin.
+/// The same `data_dir/plugin-cache/` directory as `commands::plugins`
+/// (Ninja) -- a shared folder for all plugin cache files, just with a
+/// different file name prefix per plugin.
 fn plugin_cache_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("plugin-cache")
 }
@@ -165,8 +162,8 @@ fn level_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
     plugin_cache_dir(data_dir).join(format!("level-{connection_id}.json"))
 }
 
-/// Schreibt eine Momentaufnahme des Sync-Ergebnisses als JSON-Datei, analog
-/// zu `commands::plugins::write_ninja_cache`.
+/// Writes a snapshot of the sync result as a JSON file, analogous to
+/// `commands::plugins::write_ninja_cache`.
 fn write_level_cache(
     data_dir: &Path,
     connection_id: &str,
@@ -185,10 +182,9 @@ fn write_level_cache(
     Ok(())
 }
 
-/// Liest eine zuvor über `write_level_cache` geschriebene Momentaufnahme
-/// zurück. `Ok(None)`, wenn für diese Verbindung noch nie synchronisiert
-/// wurde -- kein Fehlerfall, analog zu
-/// `commands::plugins::read_ninja_cache`.
+/// Reads back a snapshot previously written via `write_level_cache`.
+/// `Ok(None)` if this connection was never synced -- not an error case,
+/// analogous to `commands::plugins::read_ninja_cache`.
 fn read_level_cache(
     data_dir: &Path,
     connection_id: &str,
@@ -311,10 +307,10 @@ pub fn sync_level_connection(
     let tz = time::system_timezone()?;
     let plugin_id = plugin.id().to_string();
 
-    // Umkehr-Index externe-ID -> lokale system_id, über ALLE Systeme des
-    // Kunden dieser Verbindung -- anders als bei Ninja braucht es keine
-    // Fallunterscheidung "zugeordnet/unzugeordnet", jede Level-Verbindung hat
-    // immer genau eine `customer_id`.
+    // Reverse index external-id -> local system_id, across ALL systems of
+    // this connection's customer -- unlike Ninja, no "mapped/unmapped" case
+    // distinction is needed, every Level connection always has exactly one
+    // `customer_id`.
     let mut linked_by_external_id: HashMap<String, i64> = HashMap::new();
     for system in db::systems::list_by_customer(&conn, customer_id, true)? {
         for reference in db::external_refs::list_for_system(&conn, system.id)? {

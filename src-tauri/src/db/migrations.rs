@@ -128,7 +128,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
         {
-            // Version-0-Datei anlegen, damit ein Backup entstehen kann.
+            // Create a version-0 file so a backup can be produced.
             Connection::open(&db_path).unwrap();
         }
         let mut conn = Connection::open(&db_path).unwrap();

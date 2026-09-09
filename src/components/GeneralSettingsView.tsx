@@ -32,22 +32,22 @@ export default function GeneralSettingsView() {
     if (preference === theme || busy) return;
     setError(null);
     setBusy(true);
-    // Angezeigte Auswahl aktualisiert sofort lokal, statt auf den Umlauf des
-    // "theme-changed"-Ereignisses zu warten -- das Ereignis feuert trotzdem
-    // (für andere Fenster, z. B. eine bereits offene Schnellerfassung), siehe
+    // Update the displayed selection immediately/locally instead of waiting
+    // for the "theme-changed" event to round-trip -- the event still fires
+    // (for other windows, e.g. an already-open quick capture), see
     // src/lib/theme.ts::listenForThemeChanges.
     setTheme(preference);
     try {
       await invoke("set_theme_preference", { preference });
     } catch (e) {
       setError(formatInvokeError(e));
-      // Fehlgeschlagen -- aktuellen Serverstand zurückholen statt einer
-      // Anzeige, die von der tatsächlich gespeicherten Einstellung abweicht.
+      // Failed -- fetch the current server state back instead of leaving a
+      // display that diverges from what's actually saved.
       try {
         const current = await invoke<ThemePreference>("get_theme_preference");
         setTheme(current);
       } catch {
-        // Kein zweiter Fehlerzustand -- die erste Fehlermeldung bleibt sichtbar.
+        // No second error state -- the first error message stays visible.
       }
     } finally {
       setBusy(false);

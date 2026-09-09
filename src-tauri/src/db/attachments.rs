@@ -74,11 +74,11 @@ pub fn get(conn: &Connection, id: i64) -> Result<Attachment, AppError> {
     .ok_or_else(|| AppError::NotFound(format!("Anhang {id} nicht gefunden")))
 }
 
-/// Löscht nur die Datenbank-Zeile. Die zugehörige Datei im Content-Addressed-Store
-/// bleibt unangetastet — sie kann per Dedup von anderen Anhang-Zeilen referenziert
-/// sein. Bereinigung nicht mehr referenzierter Dateien läuft ausschließlich über
-/// die separate, explizit aufzurufende `cleanup_orphans`-Funktionalität, nie
-/// automatisch.
+/// Deletes only the database row. The associated file in the content-addressed
+/// store is left untouched -- it may be referenced by other attachment rows via
+/// dedup. Cleanup of no-longer-referenced files runs exclusively through the
+/// separate, explicitly invoked `cleanup_orphans` functionality, never
+/// automatically.
 pub fn delete(conn: &Connection, id: i64) -> Result<(), AppError> {
     let changed = conn.execute("DELETE FROM attachments WHERE id = ?1", params![id])?;
     if changed == 0 {
@@ -87,8 +87,8 @@ pub fn delete(conn: &Connection, id: i64) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Alle im Moment referenzierten Content-Hashes, als Grundlage für die
-/// Orphan-Erkennung im Attachment-Store.
+/// All content hashes currently referenced, as the basis for orphan
+/// detection in the attachment store.
 pub fn all_referenced_hashes(
     conn: &Connection,
 ) -> Result<std::collections::HashSet<String>, AppError> {

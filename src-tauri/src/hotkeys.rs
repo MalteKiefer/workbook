@@ -41,10 +41,10 @@ pub fn register(app: &AppHandle, hotkeys: &HotkeyConfig) -> Result<(), AppError>
         ))
     })?;
 
-    // Jeder Hotkey wird einzeln registriert (nicht über with_shortcuts() als eine
-    // Sammel-Registrierung), weil das OS Hotkeys exklusiv vergibt: ist einer davon
-    // schon durch eine andere Anwendung belegt, soll das nur ihn deaktivieren, nicht
-    // die anderen beiden mitreißen.
+    // Each hotkey is registered individually (not via with_shortcuts() as one
+    // batch registration), because the OS grants hotkeys exclusively: if one of
+    // them is already taken by another application, that should only disable
+    // that one, not take the other two down with it.
     let shortcut_manager = app.global_shortcut();
     for (shortcut, label) in [
         (quick_capture, "Schnellerfassung"),

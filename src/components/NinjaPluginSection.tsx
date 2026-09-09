@@ -13,11 +13,11 @@ import Modal from "./Modal";
 // always a deliberate, manual, per-field action — never an automatic sync
 // step. That rule shapes the whole "Details/Aktualisieren" panel below.
 //
-// A connection is NOT tied to a single Kunde. NinjaOne models
+// A connection is NOT tied to a single customer. NinjaOne models
 // "Organizations" inside one tenant, and a single connection (one set of
-// API credentials) can see multiple Organizations — including an MSP Kunde
+// API credentials) can see multiple Organizations — including an MSP customer
 // whose own sub-customers are modeled as separate Ninja Organizations. So
-// each connection's Organizations are individually mapped to a local Kunde,
+// each connection's Organizations are individually mapped to a local customer,
 // and devices are grouped/shown per-Organization, gated on that
 // Organization being mapped.
 //
@@ -33,7 +33,7 @@ import Modal from "./Modal";
 //
 // UI structure: the connections list stays inline on the page (identity +
 // a couple of buttons per connection, kept short on purpose). Everything
-// else — organizations, Kunde-mapping, and the linked/unlinked device lists
+// else — organizations, customer mapping, and the linked/unlinked device lists
 // — lives behind a per-connection "Organisationen & Geräte" button that
 // opens a Modal overlay, tracked via local `openConnectionId` state (this is
 // page-local UI state, not global store state — it only ever opens from a
@@ -95,7 +95,7 @@ const HOSTNAME_KEYS = ["hostname", "host_name", "dnsName", "dns_name"];
 const IP_KEYS = ["ipAddress", "ip_address", "ip", "ipv4Address", "ipv4", "primaryIp", "publicIp", "publicIP"];
 
 // Synthetic <option> value for "+ Neuen Kunden anlegen…" inside an
-// organization's Kunde-mapping <select>.
+// organization's customer-mapping <select>.
 const CREATE_NEW_CUSTOMER_VALUE = "__create_new__";
 
 // Heuristic scan of a get_ninja_system_details() payload: the exact shape of
@@ -331,7 +331,7 @@ export default function NinjaPluginSection() {
   // so it doesn't need to live in the global store.
   const [openConnectionId, setOpenConnectionId] = useState<string | null>(null);
 
-  // Which organization's Kunde-mapping select is waiting on a customer being
+  // Which organization's customer-mapping select is waiting on a customer being
   // created via the "+ Neuen Kunden anlegen…" option — keyed the same way as
   // everything else here (`${connectionId}:${organizationId}`). Set right
   // before opening the globally-mounted CustomerForm modal; consumed by the
@@ -362,7 +362,7 @@ export default function NinjaPluginSection() {
   const [deviceFilter, setDeviceFilter] = useState<Record<string, string>>({});
 
   // Which organizations are expanded — collapsed by default (an
-  // organization renders as just a header row: name, Kunde-mapping select,
+  // organization renders as just a header row: name, customer-mapping select,
   // and a device-count summary, per <PLUGIN_ARCHITECTURE-adjacent UX ask>
   // "only show the organization, then I can expand it"). Keyed by
   // `${connectionId}:${organizationId}`, same as everything else below.

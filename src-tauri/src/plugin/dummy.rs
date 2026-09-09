@@ -1,11 +1,10 @@
 use super::{ExternalSystem, Plugin, PluginCredentials, PluginError};
 
-/// Referenzimplementierung des `Plugin`-Traits, liefert feste Beispieldaten.
-/// Zweck: beweisen, dass die Trait-Form tatsächlich Ende-zu-Ende benutzbar
-/// ist, und einer künftigen echten Integration (z. B. einem RMM-Connector)
-/// eine konkrete, funktionierende Vorlage zum Abschreiben geben -- nicht
-/// dazu gedacht, als echtes Feature ausgeliefert zu werden. Kein Netzwerk-
-/// zugriff, vollständig in-memory.
+/// Reference implementation of the `Plugin` trait, returns fixed sample data.
+/// Purpose: prove that the trait shape is actually usable end-to-end, and
+/// give a future real integration (e.g. an RMM connector) a concrete,
+/// working template to copy from -- not meant to ship as a real feature.
+/// No network access, entirely in-memory.
 pub struct DummyPlugin;
 
 impl Plugin for DummyPlugin {

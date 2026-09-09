@@ -140,7 +140,7 @@ mod tests {
     fn search_directory_finds_customer_by_short_code() {
         let conn = migrated_connection();
         seed(&conn);
-        // "GmbH" steht nur im Kundennamen, nicht im Hostname des Systems — eindeutiger Treffer.
+        // "GmbH" only appears in the customer name, not in the system's hostname — unambiguous hit.
         let hits = search_directory(&conn, "GmbH", 10).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].kind, DirectoryKind::Customer);
@@ -151,7 +151,7 @@ mod tests {
     fn search_directory_query_matching_both_returns_customer_and_system() {
         let conn = migrated_connection();
         seed(&conn);
-        // "ACME" steckt sowohl im Kundennamen/-kürzel als auch im Hostname (fs01.acme.local) — beide sind korrekte Treffer.
+        // "ACME" appears both in the customer name/short code and in the hostname (fs01.acme.local) — both are correct hits.
         let hits = search_directory(&conn, "ACME", 10).unwrap();
         assert_eq!(hits.len(), 2);
         assert!(hits

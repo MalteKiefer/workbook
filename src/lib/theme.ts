@@ -30,8 +30,8 @@ export async function applyPersistedTheme(): Promise<void> {
     const preference = await invoke<ThemePreference>("get_theme_preference");
     applyThemeAttribute(preference);
   } catch {
-    // Kein Absturz des Starts wegen einer fehlgeschlagenen Theme-Abfrage --
-    // Standard bleibt Dunkel (siehe Kommentar oben).
+    // No crash on startup because of a failed theme lookup -- default stays
+    // dark (see comment above).
   }
 }
 

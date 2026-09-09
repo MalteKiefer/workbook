@@ -41,11 +41,11 @@ pub fn export_markdown(
     )
 }
 
-/// Exports the "durchgehendes Handbuch" PDF (Deckblatt, Inhaltsverzeichnis,
-/// Gliederung nach System, eingebettete Bilder, Kopf-/Fußzeile mit Kundenname
-/// und Erstellungsdatum) for one customer, optionally filtered by system
+/// Exports the "continuous manual" PDF (cover page, table of contents,
+/// organized by system, embedded images, header/footer with customer name
+/// and creation date) for one customer, optionally filtered by system
 /// and/or time range. See the design spec's "Export" section under
-/// Kernworkflows.
+/// Core Workflows.
 #[tauri::command]
 pub fn export_pdf(
     state: State<AppState>,

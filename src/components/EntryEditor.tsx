@@ -104,7 +104,7 @@ const PLUGIN_LABEL: Record<UnlinkedExternalSystemDto["plugin"], string> = {
 // A third row kind surfaces devices known from a connected plugin but not
 // yet linked to any local System (see UnlinkedExternalSystemDto above) —
 // selecting one transparently creates the local System and links it, same
-// as picking "Als neues System anlegen und verknüpfen" in the plugin
+// as picking "Neu anlegen" (create-and-link) in the plugin
 // sections (NinjaPluginSection.tsx etc.), just inline in this typeahead.
 type SystemRow = { kind: "clear" } | { kind: "system"; system: System } | { kind: "external"; device: UnlinkedExternalSystemDto };
 
@@ -285,7 +285,7 @@ export default function EntryEditor() {
   // transparently create one (prefilled from the plugin device) and link it,
   // then commit exactly as if an ordinary existing System had been picked.
   // Mirrors NinjaPluginSection.tsx's (and the Level/Snipe-IT equivalents')
-  // "Als neues System anlegen und verknüpfen" create+link sequence.
+  // "Neu anlegen" (create-and-link) sequence.
   async function selectExternalSystemRow(device: UnlinkedExternalSystemDto) {
     if (customerId === "") return;
     const custId = customerId;

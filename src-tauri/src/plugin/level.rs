@@ -1,60 +1,60 @@
-//! Echte Plugin-Implementierung für Level.io (RMM), siehe
-//! `docs/PLUGIN_ARCHITECTURE.md` Abschnitt "Level.io-Plugin". Zweite echte
-//! Integration nach NinjaOne (`plugin::ninja`), aber deutlich einfacher:
+//! Real plugin implementation for Level.io (RMM), see
+//! `docs/PLUGIN_ARCHITECTURE.md` section "Level.io plugin". Second real
+//! integration after NinjaOne (`plugin::ninja`), but noticeably simpler:
 //!
-//! - **Authentifizierung**: statischer API-Key im `Authorization`-Header,
-//!   OHNE "Bearer "-Präfix und ohne Token-Austausch -- verifiziert gegen
-//!   Level.ios eigene Authentifizierungs-Referenzseite
+//! - **Authentication**: static API key in the `Authorization` header,
+//!   WITHOUT a "Bearer " prefix and without token exchange -- verified
+//!   against Level.io's own authentication reference page
 //!   (<https://developers.level.io/reference/authentication>: "Provide your
-//!   API key as the authorization value", Beispiel `-H "Authorization:
-//!   APIKEY"`). Kein OAuth2-Grant wie bei NinjaOne nötig.
-//! - **Kein Organisations-/Mandanten-Konzept**: Level.ios API-Referenz kennt
-//!   keine Organisations-, Konto- oder Site-Endpunkte (verifiziert über
-//!   <https://developers.level.io/llms.txt> -- ausschließlich Geräte-,
-//!   Gruppen-, Alert-, Update-/Automation- und Tag-/Custom-Field-Endpunkte,
-//!   nichts zu Organisationen/Konten). Level selbst beschreibt seine API als
-//!   auf Kontoebene arbeitend. Deshalb entspricht eine Level-"Verbindung"
-//!   (ein API-Key) hier direkt genau einem lokalen Kunden
-//!   (`LevelConnectionMeta.customer_id`) -- KEINE granulare
-//!   Organisations-Zuordnungsebene wie bei Ninja (`NinjaOrgMapping`) nötig.
-//! - **Geräteliste**: `GET {BASE_URL}/devices`, cursor-paginiert (`has_more` +
-//!   `starting_after`, verifiziert über
-//!   <https://developers.level.io/reference/listdevices>). Diese Ebene
-//!   durchläuft alle Seiten intern (bis zu `MAX_PAGES` Seiten à
-//!   `PAGE_LIMIT` Geräten, als Schutz gegen eine sich falsch verhaltende
-//!   Gegenstelle) und liefert eine einzige, bereits zusammengefügte Liste --
-//!   der Aufrufer sieht nichts von Levels Pagination.
-//! - **Gerätedetails**: `GET {BASE_URL}/devices/{id}` (verifiziert über
+//!   API key as the authorization value", example `-H "Authorization:
+//!   APIKEY"`). No OAuth2 grant needed like with NinjaOne.
+//! - **No organization/tenant concept**: Level.io's API reference has no
+//!   organization, account, or site endpoints (verified via
+//!   <https://developers.level.io/llms.txt> -- exclusively device, group,
+//!   alert, update/automation, and tag/custom-field endpoints, nothing
+//!   about organizations/accounts). Level itself describes its API as
+//!   operating at the account level. That's why a Level "connection" (one
+//!   API key) here maps directly to exactly one local customer
+//!   (`LevelConnectionMeta.customer_id`) -- NO granular organization-mapping
+//!   layer like with Ninja (`NinjaOrgMapping`) is needed.
+//! - **Device list**: `GET {BASE_URL}/devices`, cursor-paginated (`has_more`
+//!   and `starting_after`, verified via
+//!   <https://developers.level.io/reference/listdevices>). This layer walks
+//!   all pages internally (up to `MAX_PAGES` pages of `PAGE_LIMIT` devices
+//!   each, as protection against a misbehaving remote end) and returns a
+//!   single, already-merged list -- the caller sees nothing of Level's
+//!   pagination.
+//! - **Device details**: `GET {BASE_URL}/devices/{id}` (verified via
 //!   <https://developers.level.io/reference/showdevice>, "Show Device"),
-//!   reicht die Antwort unverändert als `serde_json::Value` durch, analog zu
-//!   `plugin::ninja::NinjaPlugin::get_system_details`.
-//! - **IP-Adresse**: `include_network_interfaces=true` liefert pro Gerät ein
-//!   `network_interfaces`-Array (`[{..., "ip_addresses": ["..."]}]`) --
-//!   verifiziert über Levels Antwortschema für `GET /v2/devices`. Level hat
-//!   (anders als Ninja) kein flaches `ipAddresses`-Feld auf oberster Ebene;
-//!   die erste nicht-leere Adresse der ersten Netzwerkschnittstelle wird
-//!   verwendet.
-//! - **HTTP-Client**: `ureq` 3.4.1, synchron, exakt dieselbe Abhängigkeit wie
-//!   `plugin::ninja` (kein zweiter HTTP-Client in dieser Codebasis).
-//! - **Gruppen**: Level hat zwar keine Organisationen, aber ein hierarchisches
-//!   Gruppenkonzept innerhalb eines Kontos -- jedes Gerät trägt ein
-//!   nullable `group_id`-Feld (verifiziert über
+//!   passes the response through unmodified as `serde_json::Value`,
+//!   analogous to `plugin::ninja::NinjaPlugin::get_system_details`.
+//! - **IP address**: `include_network_interfaces=true` returns a
+//!   `network_interfaces` array per device (`[{..., "ip_addresses":
+//!   ["..."]}]`) -- verified via Level's response schema for
+//!   `GET /v2/devices`. Unlike Ninja, Level has no flat `ipAddresses` field
+//!   at the top level; the first non-empty address of the first network
+//!   interface is used.
+//! - **HTTP client**: `ureq` 3.4.1, synchronous, the exact same dependency as
+//!   `plugin::ninja` (no second HTTP client in this codebase).
+//! - **Groups**: Level has no organizations, but does have a hierarchical
+//!   group concept within an account -- every device carries a nullable
+//!   `group_id` field (verified via
 //!   <https://developers.level.io/reference/listdevices>: `"group_id": "..."`,
-//!   `null` bedeutet "ungrouped"). Namen dafür liefert `GET {BASE_URL}/groups`
-//!   (verifiziert über <https://developers.level.io/reference/listgroups>),
-//!   Seiten-Umschlag exakt wie bei `/devices` (`{"data": [...], "has_more":
-//!   bool}`, `starting_after`-Cursor). `list_devices` ruft beide Endpunkte ab
-//!   (`fetch_all_groups`/`fetch_all_devices`) und löst `group_id` bereits hier
-//!   serverseitig in einen Klartextnamen auf (`LevelDevice.group_name`, über
-//!   `build_group_lookup`), analog dazu, wie Ninja-Organisationen serverseitig
-//!   benannt (aber nicht gruppiert) zurückgegeben werden. Eine Gruppen-ID ohne
-//!   passenden Eintrag in der Nachschlagetabelle (z. B. eine inzwischen
-//!   gelöschte Gruppe) liefert `group_name: None` -- kein Fehlerfall, das
-//!   Frontend fällt dafür auf `Gruppe {group_id}` zurück. Die eigentliche
-//!   Gruppierung/Sortierung/Paginierung der Anzeige bleibt bewusst
-//!   Frontend-Angelegenheit (siehe `LevelPluginSection.tsx`): dieses Modul
-//!   liefert weiterhin eine flache `Vec<LevelDevice>`, keine verschachtelte
-//!   Gruppenstruktur.
+//!   `null` means "ungrouped"). Names for these come from
+//!   `GET {BASE_URL}/groups` (verified via
+//!   <https://developers.level.io/reference/listgroups>), page envelope
+//!   exactly like `/devices` (`{"data": [...], "has_more": bool}`,
+//!   `starting_after` cursor). `list_devices` calls both endpoints
+//!   (`fetch_all_groups`/`fetch_all_devices`) and resolves `group_id` into a
+//!   plaintext name server-side right here (`LevelDevice.group_name`, via
+//!   `build_group_lookup`), analogous to how Ninja organizations are
+//!   returned named (but not grouped) server-side. A group ID without a
+//!   matching entry in the lookup table (e.g. a group deleted in the
+//!   meantime) yields `group_name: None` -- not an error case, the frontend
+//!   falls back to `Gruppe {group_id}` for that. The actual
+//!   grouping/sorting/pagination of the display deliberately stays a
+//!   frontend concern (see `LevelPluginSection.tsx`): this module still
+//!   returns a flat `Vec<LevelDevice>`, no nested group structure.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -64,23 +64,22 @@ use ureq::Agent;
 
 use super::{ExternalSystem, Plugin, PluginCredentials, PluginError};
 
-/// Level.ios API hat -- anders als NinjaOne -- keine Regionen-/Instanz-
-/// Varianten, daher eine feste Konstante statt eines konfigurierbaren
-/// `base_url`-Felds an `LevelConnectionMeta`.
+/// Unlike NinjaOne, Level.io's API has no region/instance variants, hence a
+/// fixed constant instead of a configurable `base_url` field on
+/// `LevelConnectionMeta`.
 pub const BASE_URL: &str = "https://api.level.io/v2";
 
-/// Schutz gegen eine sich falsch verhaltende Gegenstelle (endloses
-/// `has_more: true`): mehr als `MAX_PAGES * PAGE_LIMIT` Geräte je Sync-Lauf
-/// werden nicht abgerufen.
+/// Protection against a misbehaving remote end (endless `has_more: true`):
+/// more than `MAX_PAGES * PAGE_LIMIT` devices per sync run are not fetched.
 const MAX_PAGES: usize = 20;
 const PAGE_LIMIT: u32 = 100;
 
-/// Nicht-geheime Metadaten einer Level-Verbindung, wie sie in `config.toml`
-/// stehen (`Config::level_connections`). Der API-Key gehört laut
-/// Credential-Prinzip ausschließlich in den OS-Schlüsselspeicher, niemals
-/// hierher. Anders als `NinjaConnectionMeta`: Level hat kein
-/// Organisationskonzept, deshalb trägt eine Verbindung hier direkt ihre
-/// `customer_id` -- eine Verbindung entspricht genau einem lokalen Kunden.
+/// Non-secret metadata of a Level connection, as stored in `config.toml`
+/// (`Config::level_connections`). The API key belongs, per the credential
+/// principle, exclusively in the OS keyring, never here. Unlike
+/// `NinjaConnectionMeta`: Level has no organization concept, so a connection
+/// here directly carries its `customer_id` -- a connection corresponds to
+/// exactly one local customer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LevelConnectionMeta {
     pub id: String,
@@ -88,16 +87,15 @@ pub struct LevelConnectionMeta {
     pub label: String,
 }
 
-/// Ein einzelnes Gerät aus `GET /v2/devices` bzw. `GET /v2/devices/{id}`,
-/// angereichert um die (verschachtelt gelieferte) IP-Adresse. Analog zu
-/// `plugin::ninja::NinjaDevice`, aber ohne `organization_id` -- Level kennt
-/// keine Organisationen, dafür (anders als Ninja) ein hierarchisches
-/// Gruppenkonzept innerhalb eines Kontos: `group_id` ist Levels rohes,
-/// nullables Feld (`None` bedeutet "ungrouped", ein legitimer Fall, kein
-/// Fehler), `group_name` der über `build_group_lookup`/`GET /v2/groups`
-/// serverseitig aufgelöste Klartextname dazu (`None`, wenn `group_id`
-/// gesetzt ist, aber keine passende Gruppe gefunden wurde -- z. B. eine
-/// inzwischen gelöschte Gruppe).
+/// A single device from `GET /v2/devices` or `GET /v2/devices/{id}`,
+/// enriched with the (nested) IP address. Analogous to
+/// `plugin::ninja::NinjaDevice`, but without `organization_id` -- Level has
+/// no organizations, but (unlike Ninja) does have a hierarchical group
+/// concept within an account: `group_id` is Level's raw, nullable field
+/// (`None` means "ungrouped", a legitimate case, not an error),
+/// `group_name` is the plaintext name resolved for it server-side via
+/// `build_group_lookup`/`GET /v2/groups` (`None` if `group_id` is set but no
+/// matching group was found -- e.g. a group deleted in the meantime).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LevelDevice {
     pub external_id: String,
@@ -108,13 +106,12 @@ pub struct LevelDevice {
     pub group_name: Option<String>,
 }
 
-/// Ein Plugin-Objekt für genau eine konfigurierte Level-Verbindung. `id` ist
-/// hier bereits der vollqualifizierte Bezeichner (`"level:<connection_id>"`),
-/// damit `Plugin::id()` unverändert als `plugin_id`/Schlüsselspeicher-Konto
-/// taugt (siehe Trait-Dokumentation in `plugin::mod`). Anders als
-/// `NinjaPlugin` braucht dieser Typ kein `base_url`-Feld (siehe `BASE_URL`
-/// oben) und keinen zwischengespeicherten Token -- der API-Key kommt bei
-/// jedem Aufruf frisch aus `PluginCredentials`.
+/// A plugin object for exactly one configured Level connection. `id` here is
+/// already the fully qualified identifier (`"level:<connection_id>"`), so
+/// that `Plugin::id()` works unmodified as the `plugin_id`/keyring account
+/// (see trait documentation in `plugin::mod`). Unlike `NinjaPlugin`, this
+/// type needs no `base_url` field (see `BASE_URL` above) and no cached
+/// token -- the API key comes fresh from `PluginCredentials` on every call.
 pub struct LevelPlugin {
     id: String,
 }
@@ -124,13 +121,13 @@ impl LevelPlugin {
         Self { id }
     }
 
-    /// Live-Abruf ALLER Geräte dieser Verbindung, mit intern durchlaufener
-    /// Pagination (siehe Moduldokumentation). Reichhaltiger als die
-    /// Trait-Methode `list_systems`, die absichtlich beim schmalen,
-    /// plugin-übergreifenden `ExternalSystem`-Typ bleibt (kein
-    /// `ip_address`-Feld dort). Holt zusätzlich die Gruppenliste
-    /// (`GET /v2/groups`) und löst `group_id` je Gerät serverseitig in einen
-    /// Klartextnamen auf (siehe Moduldokumentation, Abschnitt "Gruppen").
+    /// Live fetch of ALL devices of this connection, with pagination walked
+    /// internally (see module documentation). Richer than the trait method
+    /// `list_systems`, which deliberately stays with the narrow,
+    /// plugin-agnostic `ExternalSystem` type (no `ip_address` field there).
+    /// Also fetches the group list (`GET /v2/groups`) and resolves
+    /// `group_id` per device into a plaintext name server-side (see module
+    /// documentation, "Groups" section).
     pub fn list_devices(
         &self,
         credentials: &PluginCredentials,
@@ -143,11 +140,11 @@ impl LevelPlugin {
     }
 }
 
-/// Prüft einen API-Key gegen Level (ein leichtgewichtiger Aufruf: eine Seite
-/// mit `limit=1`), ohne irgendetwas zu persistieren. Für
-/// `commands::level::test_level_connection`, damit Nutzer einen Tippfehler
-/// im API-Key bemerken, bevor sie eine Verbindung tatsächlich anlegen
-/// (Zugangsdaten in den Schlüsselspeicher schreiben).
+/// Checks an API key against Level (a lightweight call: one page with
+/// `limit=1`), without persisting anything. For
+/// `commands::level::test_level_connection`, so users notice a typo in the
+/// API key before actually creating a connection (writing credentials to
+/// the keyring).
 pub fn test_credentials(api_key: &str) -> Result<(), PluginError> {
     let agent = build_agent();
     fetch_devices_page(&agent, api_key, None, 1)?;
@@ -184,9 +181,9 @@ impl Plugin for LevelPlugin {
     }
 
     fn link_system(&self, local_system_id: i64, external_id: &str) -> Result<(), PluginError> {
-        // Levels API muss von einer lokalen Verknüpfung nichts wissen -- rein
-        // lokales Bucheführungskonzept, siehe Trait-Dokumentation. Persistiert
-        // wird das vom Aufrufer über `db::external_refs::upsert`.
+        // Level's API doesn't need to know anything about a local link --
+        // purely a local bookkeeping concept, see trait documentation.
+        // Persisted by the caller via `db::external_refs::upsert`.
         println!("LevelPlugin({}): verknüpfe lokales System {local_system_id} mit externer ID {external_id}", self.id);
         Ok(())
     }
@@ -199,12 +196,11 @@ fn build_agent() -> Agent {
     Agent::new_with_config(config)
 }
 
-/// Ruft alle Seiten von `GET /v2/devices` ab und reicht die rohen
-/// Geräteobjekte (noch nicht auf `LevelDevice` gemappt) als eine einzige,
-/// zusammengefügte Liste zurück. Bricht früher ab, wenn `has_more` fehlt/
-/// `false` ist, oder wenn `MAX_PAGES` erreicht ist, oder wenn eine Seite kein
-/// verwertbares `id`-Feld für den nächsten Cursor liefert (dann lässt sich
-/// nicht sinnvoll weiter paginieren).
+/// Fetches all pages of `GET /v2/devices` and returns the raw device objects
+/// (not yet mapped to `LevelDevice`) as a single, merged list. Breaks off
+/// early if `has_more` is missing/`false`, or if `MAX_PAGES` is reached, or
+/// if a page provides no usable `id` field for the next cursor (in which
+/// case further pagination isn't meaningfully possible).
 fn fetch_all_devices(agent: &Agent, api_key: &str) -> Result<Vec<serde_json::Value>, PluginError> {
     let mut all = Vec::new();
     let mut cursor: Option<String> = None;
@@ -249,10 +245,10 @@ fn fetch_devices_page(
         .map_err(map_ureq_error)
 }
 
-/// Ruft alle Seiten von `GET /v2/groups` ab, exakt nach demselben Muster wie
-/// `fetch_all_devices` (gleicher Seiten-Umschlag, gleicher
-/// `starting_after`-Cursor über die zuletzt gesehene `id`, gleiche
-/// `MAX_PAGES`-Bremse gegen eine sich falsch verhaltende Gegenstelle).
+/// Fetches all pages of `GET /v2/groups`, following exactly the same
+/// pattern as `fetch_all_devices` (same page envelope, same
+/// `starting_after` cursor over the last-seen `id`, same `MAX_PAGES` brake
+/// against a misbehaving remote end).
 fn fetch_all_groups(agent: &Agent, api_key: &str) -> Result<Vec<serde_json::Value>, PluginError> {
     let mut all = Vec::new();
     let mut cursor: Option<String> = None;
@@ -329,10 +325,10 @@ fn map_ureq_error(e: ureq::Error) -> PluginError {
     }
 }
 
-/// Extrahiert Geräteliste und Fortsetzungs-Flag aus einer einzelnen
-/// Level-Seiten-Antwort (`GET /v2/devices`: `{"data": [...], "has_more":
-/// bool}`, verifiziert über Levels eigene Referenzseite). Reine Funktion,
-/// mit hartkodiertem JSON testbar, kein echter Netzwerkzugriff nötig.
+/// Extracts the device list and continuation flag from a single Level page
+/// response (`GET /v2/devices`: `{"data": [...], "has_more": bool}`,
+/// verified via Level's own reference page). Pure function, testable with
+/// hardcoded JSON, no real network access needed.
 fn parse_devices_page(
     json: &serde_json::Value,
 ) -> Result<(Vec<serde_json::Value>, bool), PluginError> {
@@ -343,11 +339,11 @@ fn parse_devices_page(
     Ok((data.clone(), has_more))
 }
 
-/// Extrahiert Gruppenliste und Fortsetzungs-Flag aus einer einzelnen
-/// Level-Seiten-Antwort (`GET /v2/groups`: `{"data": [...], "has_more":
-/// bool}`, verifiziert über Levels eigene Referenzseite -- identischer
-/// Seiten-Umschlag wie `/v2/devices`). Reine Funktion, mit hartkodiertem
-/// JSON testbar, analog zu `parse_devices_page`.
+/// Extracts the group list and continuation flag from a single Level page
+/// response (`GET /v2/groups`: `{"data": [...], "has_more": bool}`,
+/// verified via Level's own reference page -- identical page envelope as
+/// `/v2/devices`). Pure function, testable with hardcoded JSON, analogous
+/// to `parse_devices_page`.
 fn parse_groups_page(
     json: &serde_json::Value,
 ) -> Result<(Vec<serde_json::Value>, bool), PluginError> {
@@ -360,12 +356,11 @@ fn parse_groups_page(
     Ok((data.clone(), has_more))
 }
 
-/// Baut eine `group_id -> Klartextname`-Nachschlagetabelle aus den rohen
-/// Gruppenobjekten von `GET /v2/groups` (verifiziert:
-/// `{"id": "...", "name": "...", "parent_id": ...}`). Eine Gruppe ohne
-/// verwertbare `id` ODER `name` wird übersprungen -- ohne beide Felder taugt
-/// sie nicht als Nachschlage-Eintrag, analog zum "kaputtes Objekt
-/// überspringen"-Muster dieses Moduls (siehe `map_level_device`).
+/// Builds a `group_id -> plaintext name` lookup table from the raw group
+/// objects of `GET /v2/groups` (verified: `{"id": "...", "name": "...",
+/// "parent_id": ...}`). A group without a usable `id` OR `name` is skipped
+/// -- without both fields it doesn't work as a lookup entry, analogous to
+/// this module's "skip broken object" pattern (see `map_level_device`).
 fn build_group_lookup(groups: &[serde_json::Value]) -> HashMap<String, String> {
     groups
         .iter()
@@ -377,12 +372,11 @@ fn build_group_lookup(groups: &[serde_json::Value]) -> HashMap<String, String> {
         .collect()
 }
 
-/// Bildet eine (bereits über alle Seiten hinweg zusammengefügte) Liste roher
-/// Level-Geräteobjekte auf `LevelDevice`-Werte ab. Reine Funktion, mit
-/// hartkodiertem JSON testbar -- Levels "List Devices"- und "Show Device"-
-/// Endpunkte liefern Geräteobjekte in exakt derselben Form. `group_lookup`
-/// (siehe `build_group_lookup`) löst das rohe `group_id`-Feld je Gerät in
-/// einen Klartextnamen auf.
+/// Maps a (already merged across all pages) list of raw Level device objects
+/// to `LevelDevice` values. Pure function, testable with hardcoded JSON --
+/// Level's "List Devices" and "Show Device" endpoints return device objects
+/// in exactly the same shape. `group_lookup` (see `build_group_lookup`)
+/// resolves the raw `group_id` field per device into a plaintext name.
 fn map_level_devices(
     devices: &[serde_json::Value],
     group_lookup: &HashMap<String, String>,
@@ -393,16 +387,15 @@ fn map_level_devices(
         .collect()
 }
 
-/// Ein einzelnes Geräteobjekt aus Levels Antwort. Level hat -- anders als
-/// NinjaOne -- keine separate `displayName` vs. `systemName`-Unterscheidung,
-/// sondern `nickname` (nutzerdefiniert, kann `null` sein) und `hostname`.
-/// `nickname` gewinnt für den Anzeigenamen, mit `hostname` und zuletzt der
-/// externen ID als Rückfallebene. Ein Gerät ohne verwertbare `id` wird
-/// übersprungen statt den gesamten Aufruf scheitern zu lassen -- ein
-/// einzelnes kaputtes Geräteobjekt soll nicht die ganze Liste unbrauchbar
-/// machen (analog zu `plugin::ninja::map_device`). `group_id` ist nullable
-/// (`null`/fehlend bedeutet "ungrouped", kein Fehlerfall); `group_lookup`
-/// löst es -- falls gesetzt und bekannt -- in `group_name` auf.
+/// A single device object from Level's response. Unlike NinjaOne, Level has
+/// no separate `displayName` vs. `systemName` distinction, but instead
+/// `nickname` (user-defined, can be `null`) and `hostname`. `nickname` wins
+/// for the display name, with `hostname` and finally the external ID as
+/// fallbacks. A device without a usable `id` is skipped instead of failing
+/// the whole call -- a single broken device object shouldn't make the whole
+/// list unusable (analogous to `plugin::ninja::map_device`). `group_id` is
+/// nullable (`null`/missing means "ungrouped", not an error case);
+/// `group_lookup` resolves it into `group_name` if set and known.
 fn map_level_device(
     value: &serde_json::Value,
     group_lookup: &HashMap<String, String>,
@@ -428,11 +421,11 @@ fn map_level_device(
     })
 }
 
-/// Sucht die erste nicht-leere IP-Adresse im (nur bei
-/// `include_network_interfaces=true` vorhandenen) `network_interfaces`-Array
-/// eines Geräts -- `[{..., "ip_addresses": ["..."]}, ...]`, verifiziert über
-/// Levels Antwortschema. Level liefert -- anders als NinjaOne -- kein
-/// flaches IP-Feld auf oberster Ebene.
+/// Looks up the first non-empty IP address in a device's
+/// `network_interfaces` array (only present when
+/// `include_network_interfaces=true`) -- `[{..., "ip_addresses": ["..."]},
+/// ...]`, verified via Level's response schema. Unlike NinjaOne, Level
+/// returns no flat IP field at the top level.
 fn extract_ip_address(value: &serde_json::Value) -> Option<String> {
     let interfaces = value["network_interfaces"].as_array()?;
     for interface in interfaces {

@@ -1,31 +1,29 @@
-//! Echte Plugin-Implementierung für NinjaOne (vormals NinjaRMM), siehe
-//! `docs/PLUGIN_ARCHITECTURE.md` Abschnitt "NinjaOne-Plugin". Struktur und
-//! Signaturen orientieren sich an `plugin::dummy::DummyPlugin`, sprechen aber
-//! über echtes HTTPS (Crate `ureq`, synchron, kein async-Runtime) mit
-//! NinjaOnes öffentlicher REST-API.
+//! Real plugin implementation for NinjaOne (formerly NinjaRMM), see
+//! `docs/PLUGIN_ARCHITECTURE.md` section "NinjaOne plugin". Structure and
+//! signatures follow `plugin::dummy::DummyPlugin`, but talk over real HTTPS
+//! (crate `ureq`, synchronous, no async runtime) to NinjaOne's public REST
+//! API.
 //!
-//! Ein `NinjaPlugin` gehört zu genau einer vom Nutzer angelegten "Ninja-
-//! Verbindung" (`NinjaConnectionMeta`, ein Satz OAuth2-Zugangsdaten für genau
-//! einen Ninja-Mandanten). WICHTIG: Eine Verbindung ist NICHT an genau einen
-//! lokalen Kunden gebunden -- ein einzelner Ninja-Mandant modelliert selbst
-//! mehrere "Organizations", z. B. weil der Nutzer, der die Verbindung anlegt,
-//! seinerseits ein MSP ist und darin mehrere eigene Kunden als getrennte
-//! Organisationen führt. Deshalb liefert dieses Modul zusätzlich zu den
-//! Geräten (`list_systems`/`list_devices`) auch die Organisationsliste
-//! (`list_organizations`) einer Verbindung; welche Organisation welchem
-//! lokalen Kunden entspricht (falls überhaupt), ist eine separate, granulare
-//! Zuordnung (`NinjaOrgMapping`, `Config::ninja_org_mappings`), gepflegt über
-//! `commands::plugins`. `id` ist hier keine feste Konstante wie bei
-//! `DummyPlugin`, sondern pro Verbindung vergeben (siehe
-//! `commands::plugins`, das den vollqualifizierten `"ninja:<connection_id>"`-
-//! Bezeichner sowohl als Schlüsselspeicher-Konto als auch als
-//! `external_refs.plugin_id` verwendet).
+//! A `NinjaPlugin` belongs to exactly one "Ninja connection" created by the
+//! user (`NinjaConnectionMeta`, a set of OAuth2 credentials for exactly one
+//! Ninja tenant). IMPORTANT: a connection is NOT bound to exactly one local
+//! customer -- a single Ninja tenant itself models multiple "Organizations",
+//! e.g. because the user creating the connection is themselves an MSP and
+//! keeps several of their own customers as separate organizations within it.
+//! That's why this module, in addition to the devices (`list_systems`/
+//! `list_devices`), also provides the organization list (`list_organizations`)
+//! of a connection; which organization corresponds to which local customer
+//! (if any) is a separate, granular mapping (`NinjaOrgMapping`,
+//! `Config::ninja_org_mappings`), maintained via `commands::plugins`. `id`
+//! here is not a fixed constant like in `DummyPlugin`, but assigned per
+//! connection (see `commands::plugins`, which uses the fully qualified
+//! `"ninja:<connection_id>"` identifier both as the keyring account and as
+//! `external_refs.plugin_id`).
 //!
-//! Authentifizierung läuft über den OAuth2-Client-Credentials-Grant. Der
-//! Zugriffstoken wird bewusst nicht über mehrere Aufrufe hinweg
-//! zwischengespeichert -- diese App ruft Plugin-Methoden selten/manuell auf,
-//! nicht in einer heißen Schleife, daher ist "pro Methodenaufruf neu holen"
-//! einfach und korrekt genug für v1.
+//! Authentication runs over the OAuth2 client-credentials grant. The access
+//! token is deliberately not cached across multiple calls -- this app calls
+//! plugin methods rarely/manually, not in a hot loop, so "fetch fresh per
+//! method call" is simple and correct enough for v1.
 
 use std::time::Duration;
 
@@ -34,12 +32,12 @@ use ureq::Agent;
 
 use super::{ExternalSystem, Plugin, PluginCredentials, PluginError};
 
-/// Nicht-geheime Metadaten einer Ninja-Verbindung, wie sie in `config.toml`
-/// stehen (`Config::ninja_connections`). Client-ID/-Secret gehören laut
-/// Credential-Prinzip ausschließlich in den OS-Schlüsselspeicher, niemals
-/// hierher. Bewusst OHNE `customer_id` -- eine Verbindung ist ein Ninja-
-/// Mandant, kein lokaler Kunde; welche Ninja-"Organization" innerhalb dieses
-/// Mandanten welchem lokalen Kunden entspricht, steht granular in
+/// Non-secret metadata of a Ninja connection, as stored in `config.toml`
+/// (`Config::ninja_connections`). Client ID/secret belong, per the
+/// credential principle, exclusively in the OS keyring, never here.
+/// Deliberately WITHOUT `customer_id` -- a connection is a Ninja tenant, not
+/// a local customer; which Ninja "Organization" within this tenant
+/// corresponds to which local customer is tracked granularly in
 /// `NinjaOrgMapping`/`Config::ninja_org_mappings`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NinjaConnectionMeta {
@@ -48,13 +46,13 @@ pub struct NinjaConnectionMeta {
     pub base_url: String,
 }
 
-/// Zuordnung einer einzelnen Ninja-"Organization" (innerhalb einer
-/// Verbindung) zu einem lokalen Kunden. Lebt in `Config::ninja_org_mappings`,
-/// nicht in `NinjaConnectionMeta` -- eine Verbindung kann mehrere
-/// Organisationen sehen, von denen jede unabhängig zugeordnet (oder
-/// unzugeordnet gelassen) werden kann. `organization_name` wird zusätzlich
-/// zur `organization_id` gespeichert, damit z. B. eine künftige UI-Liste
-/// ohne erneuten Live-Aufruf gegen Ninja einen lesbaren Namen anzeigen kann.
+/// Mapping of a single Ninja "Organization" (within a connection) to a local
+/// customer. Lives in `Config::ninja_org_mappings`, not in
+/// `NinjaConnectionMeta` -- a connection can see multiple organizations,
+/// each of which can be mapped independently (or left unmapped).
+/// `organization_name` is stored in addition to `organization_id` so that,
+/// e.g., a future UI list can display a readable name without another live
+/// call against Ninja.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NinjaOrgMapping {
     pub connection_id: String,
@@ -63,22 +61,22 @@ pub struct NinjaOrgMapping {
     pub customer_id: i64,
 }
 
-/// Eine von `GET /v2/organizations` gemeldete Organisation. Getrennt von
-/// `ExternalSystem` (das sind Geräte) -- eigener, kleiner Formtyp.
+/// An organization reported by `GET /v2/organizations`. Separate from
+/// `ExternalSystem` (those are devices) -- its own, small shape type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NinjaOrganization {
     pub id: String,
     pub name: String,
 }
 
-/// Ein einzelnes Gerät aus `GET /v2/devices`, angereichert um
-/// Organisationszugehörigkeit (`organizationId`) und IP-Adresse
-/// (`ipAddresses`) -- beides braucht `commands::plugins::sync_ninja_connection`
-/// zum Gruppieren nach Organisation und zur Anzeige, was der generische,
-/// plugin-übergreifende `ExternalSystem`-Typ aus `plugin::mod` bewusst nicht
-/// vorsieht (der bleibt das schmale, trait-generische Minimum, das auch
-/// `DummyPlugin` erfüllen können muss). Deshalb ein eigener, Ninja-
-/// spezifischer Typ statt einer Erweiterung von `ExternalSystem`.
+/// A single device from `GET /v2/devices`, enriched with organization
+/// membership (`organizationId`) and IP address (`ipAddresses`) -- both are
+/// needed by `commands::plugins::sync_ninja_connection` for grouping by
+/// organization and for display, which the generic, plugin-agnostic
+/// `ExternalSystem` type from `plugin::mod` deliberately does not provide
+/// (it stays the narrow, trait-generic minimum that `DummyPlugin` must also
+/// be able to satisfy). Hence its own, Ninja-specific type instead of
+/// extending `ExternalSystem`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NinjaDevice {
     pub external_id: String,
@@ -88,10 +86,10 @@ pub struct NinjaDevice {
     pub organization_id: String,
 }
 
-/// Die beiden Geheimwerte, die eine Ninja-Verbindung zum Authentifizieren
-/// braucht. `PluginCredentials.secret` ist laut Trait-Vertrag ein einziger
-/// opaker String, den das Plugin selbst interpretiert -- hier also als JSON
-/// kodiert (`serde_json::to_string`/`from_str`).
+/// The two secret values a Ninja connection needs to authenticate.
+/// `PluginCredentials.secret` is, per the trait contract, a single opaque
+/// string that the plugin interprets itself -- here encoded as JSON
+/// (`serde_json::to_string`/`from_str`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NinjaCredentials {
     pub client_id: String,
@@ -103,10 +101,10 @@ struct TokenResponse {
     access_token: String,
 }
 
-/// Ein Plugin-Objekt für genau eine konfigurierte Ninja-Verbindung. `id` ist
-/// hier bereits der vollqualifizierte Bezeichner (`"ninja:<connection_id>"`),
-/// damit `Plugin::id()` unverändert als `plugin_id`/Schlüsselspeicher-Konto
-/// taugt (siehe Trait-Dokumentation in `plugin::mod`).
+/// A plugin object for exactly one configured Ninja connection. `id` here is
+/// already the fully qualified identifier (`"ninja:<connection_id>"`), so
+/// that `Plugin::id()` works unmodified as the `plugin_id`/keyring account
+/// (see trait documentation in `plugin::mod`).
 pub struct NinjaPlugin {
     id: String,
     base_url: String,
@@ -117,10 +115,10 @@ impl NinjaPlugin {
         Self { id, base_url }
     }
 
-    /// Live-Abruf der Organisationsliste dieser Verbindung
-    /// (`GET /v2/organizations`). Getrennt von der `Plugin`-Trait-Methode
-    /// `list_systems`, weil Organisationen keine Geräte sind und der
-    /// generische Trait dafür keinen Platz vorsieht.
+    /// Live fetch of this connection's organization list
+    /// (`GET /v2/organizations`). Separate from the `Plugin` trait method
+    /// `list_systems`, because organizations are not devices and the generic
+    /// trait has no room for that.
     pub fn list_organizations(
         &self,
         credentials: &PluginCredentials,
@@ -132,10 +130,10 @@ impl NinjaPlugin {
         map_organizations_response(&json)
     }
 
-    /// Live-Abruf aller Geräte dieser Verbindung, angereichert um
-    /// Organisationszugehörigkeit und IP-Adresse (siehe `NinjaDevice`).
-    /// Reichhaltiger als die Trait-Methode `list_systems`, die absichtlich
-    /// beim schmalen, plugin-übergreifenden `ExternalSystem`-Typ bleibt.
+    /// Live fetch of all this connection's devices, enriched with
+    /// organization membership and IP address (see `NinjaDevice`). Richer
+    /// than the trait method `list_systems`, which deliberately stays with
+    /// the narrow, plugin-agnostic `ExternalSystem` type.
     pub fn list_devices(
         &self,
         credentials: &PluginCredentials,
@@ -148,12 +146,11 @@ impl NinjaPlugin {
     }
 }
 
-/// Prüft ein Client-ID/-Secret-Paar gegen NinjaOne (OAuth2-Client-
-/// Credentials-Grant), ohne irgendetwas zu persistieren -- der Zugriffstoken
-/// wird nach erfolgreichem Abruf verworfen. Für
-/// `commands::plugins::test_ninja_connection`, damit Nutzer Tippfehler in
-/// Basis-URL/Zugangsdaten bemerken, bevor sie eine Verbindung tatsächlich
-/// anlegen (Zugangsdaten in den Schlüsselspeicher schreiben).
+/// Checks a client ID/secret pair against NinjaOne (OAuth2 client-credentials
+/// grant), without persisting anything -- the access token is discarded
+/// after a successful fetch. For `commands::plugins::test_ninja_connection`,
+/// so users notice typos in the base URL/credentials before actually
+/// creating a connection (writing credentials to the keyring).
 pub fn test_credentials(
     base_url: &str,
     client_id: &str,
@@ -201,9 +198,9 @@ impl Plugin for NinjaPlugin {
     }
 
     fn link_system(&self, local_system_id: i64, external_id: &str) -> Result<(), PluginError> {
-        // NinjaOnes API muss von einer lokalen Verknüpfung nichts wissen --
-        // rein lokales Bucheführungskonzept, siehe Trait-Dokumentation.
-        // Persistiert wird das vom Aufrufer über `db::external_refs::upsert`.
+        // NinjaOne's API doesn't need to know anything about a local link --
+        // purely a local bookkeeping concept, see trait documentation.
+        // Persisted by the caller via `db::external_refs::upsert`.
         println!("NinjaPlugin({}): verknüpfe lokales System {local_system_id} mit externer ID {external_id}", self.id);
         Ok(())
     }
@@ -273,10 +270,9 @@ fn map_ureq_error(e: ureq::Error) -> PluginError {
     }
 }
 
-/// Bildet die von `GET /v2/devices` gelieferte JSON-Liste auf
-/// `ExternalSystem`-Werte ab. Bewusst als eigene, reine Funktion
-/// herausgezogen -- lässt sich mit einem festen JSON-String testen, ganz
-/// ohne echten Netzwerkzugriff.
+/// Maps the JSON list returned by `GET /v2/devices` to `ExternalSystem`
+/// values. Deliberately extracted as its own, pure function -- can be
+/// tested with a fixed JSON string, without any real network access.
 fn map_devices_response(json: &serde_json::Value) -> Result<Vec<ExternalSystem>, PluginError> {
     let array = json.as_array().ok_or_else(|| {
         PluginError::UnexpectedResponse("Erwartete JSON-Liste von Geräten".to_string())
@@ -284,10 +280,10 @@ fn map_devices_response(json: &serde_json::Value) -> Result<Vec<ExternalSystem>,
     Ok(array.iter().filter_map(map_device).collect())
 }
 
-/// Ein einzelnes Geräteobjekt aus NinjaOnes `/v2/devices`-Antwort. `id`
-/// fehlt oder hat eine unerwartete Form -> Gerät wird übersprungen statt den
-/// gesamten Aufruf scheitern zu lassen (ein einzelnes kaputtes Geräteobjekt
-/// soll nicht die ganze Liste unbrauchbar machen).
+/// A single device object from NinjaOne's `/v2/devices` response. `id` is
+/// missing or has an unexpected shape -> the device is skipped instead of
+/// failing the whole call (a single broken device object shouldn't make the
+/// whole list unusable).
 fn map_device(value: &serde_json::Value) -> Option<ExternalSystem> {
     let external_id = match &value["id"] {
         serde_json::Value::Number(n) => n.to_string(),
@@ -311,9 +307,9 @@ fn map_device(value: &serde_json::Value) -> Option<ExternalSystem> {
     })
 }
 
-/// Bildet die von `GET /v2/organizations` gelieferte JSON-Liste auf
-/// `NinjaOrganization`-Werte ab. Reine, für sich mit hartkodiertem JSON
-/// testbare Funktion, analog zu `map_devices_response`.
+/// Maps the JSON list returned by `GET /v2/organizations` to
+/// `NinjaOrganization` values. Pure function, testable on its own with
+/// hardcoded JSON, analogous to `map_devices_response`.
 fn map_organizations_response(
     json: &serde_json::Value,
 ) -> Result<Vec<NinjaOrganization>, PluginError> {
@@ -323,11 +319,11 @@ fn map_organizations_response(
     Ok(array.iter().filter_map(map_organization).collect())
 }
 
-/// Ein einzelnes Organisationsobjekt aus NinjaOnes `/v2/organizations`-
-/// Antwort (`{"id": <Zahl>, "name": "..."}`, laut NinjaOnes öffentlicher
-/// API-Spezifikation). Fehlt oder hat `id` eine unerwartete Form -> die
-/// Organisation wird übersprungen statt den gesamten Aufruf scheitern zu
-/// lassen, analog zu `map_device`.
+/// A single organization object from NinjaOne's `/v2/organizations` response
+/// (`{"id": <number>, "name": "..."}`, per NinjaOne's public API
+/// specification). If `id` is missing or has an unexpected shape -> the
+/// organization is skipped instead of failing the whole call, analogous to
+/// `map_device`.
 fn map_organization(value: &serde_json::Value) -> Option<NinjaOrganization> {
     let id = match &value["id"] {
         serde_json::Value::Number(n) => n.to_string(),
@@ -338,11 +334,11 @@ fn map_organization(value: &serde_json::Value) -> Option<NinjaOrganization> {
     Some(NinjaOrganization { id, name })
 }
 
-/// Bildet die von `GET /v2/devices` gelieferte JSON-Liste auf `NinjaDevice`-
-/// Werte ab (samt Organisationszugehörigkeit und IP-Adresse) -- das
-/// Gegenstück zu `map_devices_response`, das nur den schmalen, trait-
-/// generischen `ExternalSystem`-Typ befüllt. Reine, für sich testbare
-/// Funktion, kein echter Netzwerkzugriff nötig.
+/// Maps the JSON list returned by `GET /v2/devices` to `NinjaDevice` values
+/// (including organization membership and IP address) -- the counterpart to
+/// `map_devices_response`, which only populates the narrow, trait-generic
+/// `ExternalSystem` type. Pure function, testable on its own, no real
+/// network access needed.
 fn map_ninja_devices_response(json: &serde_json::Value) -> Result<Vec<NinjaDevice>, PluginError> {
     let array = json.as_array().ok_or_else(|| {
         PluginError::UnexpectedResponse("Erwartete JSON-Liste von Geräten".to_string())
@@ -350,15 +346,15 @@ fn map_ninja_devices_response(json: &serde_json::Value) -> Result<Vec<NinjaDevic
     Ok(array.iter().filter_map(map_ninja_device).collect())
 }
 
-/// Ein einzelnes Geräteobjekt aus NinjaOnes `/v2/devices`-Antwort, angereichert
-/// um `organizationId` (laut NinjaOnes öffentlicher API-Spezifikation ein
-/// Integer-Feld, das jedes Gerät genau einer Organisation zuordnet) und
-/// `ipAddresses` (ein Array von IP-Adress-Strings; primäre/erste Adresse wird
-/// verwendet, mit `publicIP` als Rückfallebene, falls `ipAddresses` leer oder
-/// nicht vorhanden ist). Ein Gerät ohne verwertbare `id` ODER ohne
-/// `organizationId` wird übersprungen -- ohne Organisationszugehörigkeit
-/// lässt es sich nicht sinnvoll gruppieren, und ein einzelnes kaputtes
-/// Geräteobjekt soll nicht die ganze Liste unbrauchbar machen.
+/// A single device object from NinjaOne's `/v2/devices` response, enriched
+/// with `organizationId` (per NinjaOne's public API specification, an
+/// integer field that assigns each device to exactly one organization) and
+/// `ipAddresses` (an array of IP address strings; the primary/first address
+/// is used, with `publicIP` as a fallback if `ipAddresses` is empty or
+/// absent). A device without a usable `id` OR without `organizationId` is
+/// skipped -- without organization membership it can't be meaningfully
+/// grouped, and a single broken device object shouldn't make the whole list
+/// unusable.
 fn map_ninja_device(value: &serde_json::Value) -> Option<NinjaDevice> {
     let external_id = match &value["id"] {
         serde_json::Value::Number(n) => n.to_string(),
