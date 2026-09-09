@@ -19,6 +19,17 @@ src-tauri/gen/
 # Tauri bundler output (installers, if ever built outside src-tauri/target/)
 src-tauri/bundle/
 
+# Flatpak build output and generated vendored-sources files -- regenerated
+# fresh on every CI run from Cargo.lock/package-lock.json, see
+# .github/workflows/flatpak.yml.
+flatpak/flatpak-cargo-generator.py
+flatpak/generated-sources.json
+flatpak/node-sources.json
+.flatpak-builder/
+build-dir/
+repo/
+*.flatpak
+
 # Runtime data — never committed, this app's SQLite DB/WAL/config/plugin
 # cache live in the OS data dir (see src-tauri/src/config.rs), not here, but
 # ignore defensively in case a local dev run ever writes one into the repo.

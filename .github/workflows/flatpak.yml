@@ -1,0 +1,72 @@
+name: Flatpak
+
+# Builds a Flatpak bundle on every push to master. Both the cargo and npm
+# vendored-sources files are generated fresh from Cargo.lock/package-lock.json
+# right before the build (not committed) so a Dependabot dependency bump can
+# never leave them stale -- see flatpak/de.maltekiefer.wartungsdoku.yml.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Pinned commit of https://github.com/flatpak/flatpak-builder-tools, the
+# upstream source of both generator scripts used below.
+env:
+  BUILDER_TOOLS_COMMIT: 1fc32195e3e60fe5c97f0af646dec7a99df5962b
+
+jobs:
+  flatpak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flatpak and flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Install Flatpak runtime, SDK and extensions
+        run: |
+          flatpak install --user -y flathub \
+            org.gnome.Platform//47 \
+            org.gnome.Sdk//47 \
+            org.freedesktop.Sdk.Extension.node20//47 \
+            org.freedesktop.Sdk.Extension.rust-stable//47
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install source generators
+        run: |
+          pip install aiohttp pyyaml tomlkit
+          pip install "git+https://github.com/flatpak/flatpak-builder-tools.git@${BUILDER_TOOLS_COMMIT}#subdirectory=node"
+          curl -fsSL -o flatpak/flatpak-cargo-generator.py \
+            "https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/${BUILDER_TOOLS_COMMIT}/cargo/flatpak-cargo-generator.py"
+
+      - name: Generate vendored sources
+        run: |
+          python flatpak/flatpak-cargo-generator.py src-tauri/Cargo.lock -o flatpak/generated-sources.json
+          python -m flatpak_node_generator npm package-lock.json -o flatpak/node-sources.json
+          rm flatpak/flatpak-cargo-generator.py
+
+      - name: Build Flatpak
+        run: |
+          # .git isn't needed inside the sandbox and the module's "dir"
+          # source would otherwise copy the whole history in for nothing.
+          rm -rf .git
+          flatpak-builder --user --force-clean --repo=repo build-dir \
+            flatpak/de.maltekiefer.wartungsdoku.yml
+
+      - name: Bundle into a single file
+        run: |
+          flatpak build-bundle repo Wartungsdoku.flatpak de.maltekiefer.wartungsdoku
+
+      - name: Upload Flatpak bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-bundle
+          path: Wartungsdoku.flatpak

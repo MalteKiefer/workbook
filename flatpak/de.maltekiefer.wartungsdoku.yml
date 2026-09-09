@@ -1,0 +1,51 @@
+app-id: de.maltekiefer.wartungsdoku
+runtime: org.gnome.Platform
+runtime-version: "47"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node20
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: wartungsdoku
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Talks to the Ninja/Level.io/Snipe-IT RMM plugin APIs over HTTPS.
+  - --share=network
+  # Lets the tray icon register on desktops that use the StatusNotifierItem
+  # protocol (KDE and others) rather than GNOME Shell's own tray extension.
+  - --talk-name=org.kde.StatusNotifierWatcher
+build-options:
+  append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/wartungsdoku/cargo
+    npm_config_cache: /run/build/wartungsdoku/flatpak-node/npm-cache
+modules:
+  - name: wartungsdoku
+    buildsystem: simple
+    build-commands:
+      - npm ci --offline
+      - npm run build
+      - cargo --offline build --release --manifest-path=src-tauri/Cargo.toml
+      - install -Dm755 src-tauri/target/release/wartungsdoku /app/bin/wartungsdoku
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/de.maltekiefer.wartungsdoku.png
+      - install -Dm644 flatpak/de.maltekiefer.wartungsdoku.desktop /app/share/applications/de.maltekiefer.wartungsdoku.desktop
+      - install -Dm644 flatpak/de.maltekiefer.wartungsdoku.metainfo.xml /app/share/metainfo/de.maltekiefer.wartungsdoku.metainfo.xml
+    sources:
+      # Whole repo tree, as checked out by CI right before flatpak-builder
+      # runs -- both npm and cargo build fully inside the sandbox here
+      # (offline, via the two generated sources files below), so nothing
+      # needs to be pre-built on the host first.
+      - type: dir
+        path: ..
+      # cargo/config + cargo/vendor/*, generated fresh from
+      # src-tauri/Cargo.lock right before the build by
+      # flatpak-cargo-generator.py (see .github/workflows/flatpak.yml).
+      - generated-sources.json
+      # flatpak-node/npm-cache/*, generated fresh from package-lock.json the
+      # same way, via flatpak-node-generator.
+      - node-sources.json
+    # Not committed: both regenerated on every CI run so they never drift out
+    # of sync with Cargo.lock/package-lock.json, including after a Dependabot
+    # bump -- see .github/workflows/flatpak.yml.

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Wartungsdoku
+Comment=Maintenance documentation for IT administrators
+Exec=wartungsdoku
+Icon=de.maltekiefer.wartungsdoku
+Terminal=false
+Categories=Office;Utility;
+StartupWMClass=Wartungsdoku
