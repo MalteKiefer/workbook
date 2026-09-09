@@ -80,3 +80,4 @@ pub mod level;
 pub mod ninja;
 pub mod secrets;
 pub mod snipeit;
+pub mod tacticalrmm;
