@@ -134,6 +134,9 @@ export default function EntryEditor() {
   const [bodyMd, setBodyMd] = useState("");
   const [category, setCategory] = useState("wartung");
   const [tagsInput, setTagsInput] = useState("");
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [tagSuggestionsOpen, setTagSuggestionsOpen] = useState(false);
+  const [tagHighlightIndex, setTagHighlightIndex] = useState(0);
   const [performedAtInput, setPerformedAtInput] = useState("");
   const [performedAtUtc, setPerformedAtUtc] = useState("");
   const [performedAtTz, setPerformedAtTz] = useState("");
@@ -151,6 +154,62 @@ export default function EntryEditor() {
   useEffect(() => {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
   }, []);
+
+  // All tag names ever used, once — powers the Tags field's autocomplete.
+  useEffect(() => {
+    invoke<string[]>("list_tags").then(setAllTags).catch(() => setAllTags([]));
+  }, []);
+
+  // The comma-separated Tags input's suggestions are scoped to whatever the
+  // user is currently typing after the last comma, excluding tags already
+  // present earlier in the same input (no point suggesting a duplicate).
+  const tagFragments = tagsInput.split(",");
+  const currentTagFragment = tagFragments[tagFragments.length - 1].trim();
+  const alreadyEnteredTags = tagFragments
+    .slice(0, -1)
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
+  const tagSuggestions = useMemo(() => {
+    if (currentTagFragment === "") return [];
+    const q = currentTagFragment.toLowerCase();
+    return allTags.filter((t) => t.toLowerCase().includes(q) && !alreadyEnteredTags.includes(t.toLowerCase())).slice(0, 8);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTags, currentTagFragment]);
+
+  function applyTagSuggestion(suggestion: string) {
+    const parts = tagsInput.split(",");
+    parts[parts.length - 1] = ` ${suggestion}`;
+    setTagsInput(
+      parts
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .join(", ") + ", ",
+    );
+    setTagSuggestionsOpen(false);
+  }
+
+  useEffect(() => {
+    setTagHighlightIndex(0);
+    setTagSuggestionsOpen(tagSuggestions.length > 0);
+  }, [tagSuggestions]);
+
+  function handleTagsKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!tagSuggestionsOpen || tagSuggestions.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setTagHighlightIndex((i) => Math.min(i + 1, tagSuggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setTagHighlightIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      applyTagSuggestion(tagSuggestions[tagHighlightIndex]);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setTagSuggestionsOpen(false);
+    }
+  }
 
   // Shared by the customer-change effect below and by the plugin-suggestion
   // create+link handler's post-success refresh — refetches both the local
@@ -764,9 +823,59 @@ export default function EntryEditor() {
           </p>
         )}
 
-        <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", position: "relative" }}>
           Tags
-          <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags, durch Komma getrennt" />
+          <input
+            value={tagsInput}
+            onChange={(e) => setTagsInput(e.target.value)}
+            onKeyDown={handleTagsKeyDown}
+            onBlur={() => setTimeout(() => setTagSuggestionsOpen(false), 150)}
+            placeholder="Tags, durch Komma getrennt"
+            autoComplete="off"
+          />
+          {tagSuggestionsOpen && tagSuggestions.length > 0 && (
+            <ul
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                marginTop: "0.2rem",
+                zIndex: 10,
+                listStyle: "none",
+                padding: "0.25rem 0",
+                margin: 0,
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                boxShadow: "var(--shadow-sm)",
+                maxHeight: "10rem",
+                overflowY: "auto",
+              }}
+            >
+              {tagSuggestions.map((tag, i) => (
+                <li
+                  key={tag}
+                  className="list-row"
+                  onMouseEnter={() => setTagHighlightIndex(i)}
+                  onMouseDown={(e) => {
+                    // mousedown (not click) fires before the input's onBlur, so the
+                    // suggestion can still be applied before onBlur closes the list.
+                    e.preventDefault();
+                    applyTagSuggestion(tag);
+                  }}
+                  style={{
+                    padding: "0.3rem 0.6rem",
+                    cursor: "pointer",
+                    background: i === tagHighlightIndex ? "var(--bg-selected)" : "transparent",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  {tag}
+                </li>
+              ))}
+            </ul>
+          )}
         </label>
 
         {error && <p style={{ color: "var(--danger)", fontSize: "0.82rem", margin: 0 }}>Fehler: {error}</p>}
