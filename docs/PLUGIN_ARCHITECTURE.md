@@ -1,15 +1,15 @@
 # Plugin-Architektur
 
-Status: Vier echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Fünf echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
-Snipe-IT (`plugin::snipeit`, `commands::snipeit`) und Microsoft Intune
-(`plugin::intune`, `commands::intune`) --, alle mit
-Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
-Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
-einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
-von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/
-`IntunePluginSection.tsx`).
+Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
+(`plugin::intune`, `commands::intune`) und Iru (`plugin::iru`,
+`commands::iru`) --, alle mit Mehrfach-Verbindungs-Unterstützung.
+`DummyPlugin` bleibt als Attrappen-Referenzimplementierung bestehen. Noch
+kein UI-Aufruf im Sinne einer Command Palette -- die Kommandos sind aber
+vollständig Ende-zu-Ende von einem Frontend aus nutzbar (`PluginsView.tsx`
+als dünne Hülle um
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -648,4 +648,181 @@ Integrationen, liefert für Intune aber nie einen externen Wert (siehe oben,
 "Keine IP-Adresse") -- "Übernehmen" bleibt für diese Zeile deshalb immer
 deaktiviert. `PluginsView.tsx` bindet die Sektion als vierte Karte neben
 `NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`
+ein.
+
+## Iru-Plugin (`plugin::iru`) -- fünfte echte Integration
+
+`plugin/iru.rs` implementiert `Plugin` für Irus öffentliche REST-API über
+HTTPS. Iru ist ein Apple-MDM-Produkt (Mobile Device Management).
+
+**Umbenennungs-Hinweis für künftige Leser**: Iru hieß früher "Kandji". Das
+Produkt wurde zu "Iru" umbenannt, aber Irus eigene öffentliche API-Referenz
+(<https://api-docs.iru.com>) verwendet zum Zeitpunkt dieser Umsetzung
+weiterhin die alten `kandji.io`/`api.kandji.io`-Domainnamen und an mehreren
+Stellen weiterhin den Namen "Kandji". Das ist kein Fehler in `plugin::iru`
+oder `commands::iru` -- Host-Muster wie `{sub_domain}.api.kandji.io` sind
+wörtlich aus Irus eigener aktueller Dokumentation übernommen, kein Rest aus
+der Zeit vor der Umbenennung.
+
+Strukturell am nächsten an Level.io -- einfacheres 1:1-Modell wie Level,
+aber mit einer selbst-gehosteten-artigen Basis-URL wie Snipe-IT:
+
+- **Authentifizierung**: statischer Bearer-Token im `Authorization`-Header
+  (`Authorization: Bearer <token>`) -- ein einziger Geheimwert, kein
+  OAuth2-Grant, kein Token-Austausch. Wird 1:1 als `PluginCredentials.secret`
+  durchgereicht, genau wie bei Level.io/Snipe-IT (keine JSON-Kodierung
+  mehrerer Werte nötig, anders als bei NinjaOne).
+- **Selbst-gehostete-artige, Mandant-pro-Subdomain-Basis-URL**: anders als
+  Level.ios feste `BASE_URL`-Konstante ist Iru Mandant-pro-Subdomain:
+  `https://{sub_domain}.api.kandji.io` (US-Region) oder
+  `https://{sub_domain}.api.eu.kandji.io` (EU-Region). Wird wie bei
+  NinjaOne/Snipe-IT als nutzerseitig eingegebenes `base_url`-Feld an der
+  Verbindung behandelt (`IruConnectionMeta.base_url`) -- der Nutzer gibt
+  seine vollständige API-URL inklusive Subdomain und Region ein (z. B.
+  `https://acme.api.kandji.io`), keine Aufteilung in getrennte
+  Subdomain-/Region-Felder, genau wie Snipe-IT seine ganze Basis-URL als
+  einen einzigen String entgegennimmt.
+- **Kein Organisations-/Mandanten-Konzept**: Irus API kennt keine
+  Organisations-/Site-/Konto-Scoping-Endpunkte -- eine Verbindung (eine
+  Subdomain + ein Bearer-Token) entspricht direkt genau einem lokalen
+  Kunden (`IruConnectionMeta.customer_id`), dasselbe einfache 1:1-Modell wie
+  bei Level.io (`plugin::level`), NICHT die granulare
+  Pro-Mandant-Zuordnung, die NinjaOne/Snipe-IT brauchen
+  (`NinjaOrgMapping`/`SnipeitCompanyMapping`).
+- **Geräte**: `GET {base_url}/api/v1/devices?limit=300`, live gegen Irus
+  aktuelle API-Dokumentation verifiziert. Unterstützt optional einen
+  `offset`-Query-Parameter für Paginierung über eine Seite hinaus. Anders
+  als Snipe-ITs `{"total": ..., "rows": [...]}`-Umschlag ist die Antwort ein
+  **reines JSON-Array** -- live verifiziert, über Irus eigenes aktuelles
+  Beispiel bestätigt. `list_devices` durchläuft alle Seiten intern (bis zu
+  `MAX_PAGES` Seiten à `PAGE_LIMIT` Geräten, dieselbe defensive
+  Schleifen-Konvention wie bei `plugin::snipeit`/`plugin::level`, Schutz
+  gegen eine sich falsch verhaltende Gegenstelle) und liefert eine einzige,
+  bereits zusammengefügte Liste -- der Aufrufer sieht nichts von Irus
+  Paginierung. Da es (anders als bei Snipe-IT) kein `total`-Feld zum
+  Gegenprüfen gibt, gilt eine Seite mit weniger als `PAGE_LIMIT` Zeilen als
+  letzte Seite -- genau dieselbe Rückfalllogik, auf die
+  `plugin::snipeit::fetch_all_hardware` bereits zurückfällt, wenn Snipe-ITs
+  eigenes `total`-Feld fehlt/unbrauchbar ist.
+- **Polymorphes Geräteobjekt -- Felder defensiv behandelt**: Irus eigene
+  Dokumentation beschreibt `/api/v1/devices` als polymorph: "If Windows or
+  Android management is turned on, additional fields will be returned in
+  the response. All visible fields based on platform enablement status will
+  be present for all device types, but values will be blank for
+  non-applicable devices." Jedes Feld hier außer `device_id` ist deshalb
+  `Option<String>`, defensiv gelesen (`.as_str()`, nie ein als-vorhanden
+  angenommenes Feld), nie ein harter Parse-Fehler wegen eines einzelnen
+  fehlenden/leeren Feldes.
+- **Kein Hostname-/IP-Adress-Feld**: verifiziert über Irus eigenes
+  Live-Beispiel für `/api/v1/devices` -- das Geräteobjekt hat weder ein
+  Hostname- noch ein IP-Adress-Feld, dieselbe Situation wie bei Snipe-IT
+  (siehe `plugin::snipeit`-Moduldoku). `IruDevice.hostname`/`ip_address`
+  sind deshalb IMMER `None` -- keine Vermutung, sondern eine ehrliche,
+  verifizierte Auslassung. `device_name` ist Irus identifizierendes
+  Anzeigefeld (wie Ninjas/Levels `hostname`); für den
+  "mit bestehendem System verknüpfen"-Abgleichsschlüssel folgt dieses Modul
+  Snipe-ITs eigenem Vorbild (`SnipeitPluginSection.tsx::matchKeyForDevice`),
+  da hier ebenfalls kein Hostname-Feld existiert: das erste vorhandene
+  identifizierende Feld, in der Reihenfolge `serial_number` dann
+  `asset_tag`, verglichen gegen das freie Textfeld `hostname` des lokalen
+  Systems (Frontend-Aufgabe, siehe `IruPluginSection.tsx`).
+- **Gerätedetails**: ein Einzelgerät-GET-Endpunkt existiert,
+  `GET {base_url}/api/v1/devices/{device_id}` -- folgt derselben
+  URL-Familie wie Irus dokumentierte Geräte-Aktions-Endpunkte (z. B.
+  `.../devices/{device_id}/action/shutdown`). Reicht die Antwort
+  unverändert als `serde_json::Value` durch, genau wie bei jedem anderen
+  Plugin.
+- **HTTP-Client**: `ureq` 3.4.1, synchron, dieselbe Abhängigkeit wie
+  `plugin::ninja`/`plugin::level`/`plugin::snipeit` (kein zweiter
+  HTTP-Client in dieser Codebasis).
+- **Zugangsdaten-Kodierung**: Iru braucht nur einen einzigen Geheimwert (den
+  Bearer-Token), 1:1 als `PluginCredentials.secret` durchgereicht -- wie
+  Level.io/Snipe-IT, keine JSON-Kodierung mehrerer Werte nötig (anders als
+  NinjaOne).
+
+### Iru-Verbindungen sind 1:1 an einen Kunden gebunden
+
+- Nicht-geheime Metadaten (`id`, `customer_id`, `label`, `base_url`) liegen
+  als `IruConnectionMeta` in `Config::iru_connections` (`config.toml`,
+  `#[serde(default)]`-kompatibel mit älteren Konfigurationen ohne dieses
+  Feld). Anders als `LevelConnectionMeta` (feste `BASE_URL`-Konstante),
+  aber wie `SnipeitConnectionMeta`: eine Iru-Verbindung trägt zusätzlich
+  eine nutzerseitig eingegebene `base_url` -- Iru ist
+  Mandant-pro-Subdomain, kein fester Host.
+- Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"iru:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei Level.io/Snipe-IT
+  (`commands::iru::generate_connection_id`/`plugin_id_for`).
+- Weil jede Verbindung genau eine `customer_id` trägt, braucht
+  `sync_iru_connection` keine Fallunterscheidung "zugeordnet/unzugeordnet"
+  wie `sync_ninja_connection`/`sync_snipeit_connection` -- jedes
+  synchronisierte Gerät gehört automatisch zum Kunden der Verbindung,
+  `linked_system_id` wird für jedes Gerät direkt gegen die
+  `external_refs`-Zeilen dieses Kunden geprüft.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie Level.io/Snipe-IT, nur ohne
+Organisations-/Firmen-Gruppierung: `sync_iru_connection` schreibt das
+Ergebnis jedes Laufs zusätzlich als JSON nach
+`data_dir/plugin-cache/iru-<connection_id>.json`
+(`{"synced_at_utc": "...", "devices": [...]}`). `get_cached_iru_sync` liest
+ausschließlich diese Datei (kein Netzwerkzugriff) und liefert `None`, wenn
+für eine Verbindung noch nie synchronisiert wurde. `remove_iru_connection`
+löscht diese Cache-Datei (bestes Bemühen).
+
+### Tauri-Kommandos (`commands::iru`)
+
+`test_iru_connection`, `list_iru_connections`, `add_iru_connection`,
+`remove_iru_connection`, `sync_iru_connection`, `get_cached_iru_sync`,
+`link_system_to_iru`, `unlink_system_from_iru`, `get_iru_system_details` --
+dünne Wrapper nach demselben Muster wie `commands::level`, aber mit
+`base_url` sowohl im Anlage-Kommando als auch im Verbindungs-DTO (wie
+`commands::snipeit`), und ohne Organisations-Zuordnungskommandos (kein
+Iru-Äquivalent zu `map_ninja_organization`/`unmap_ninja_organization` bzw.
+`map_snipeit_company`/`unmap_snipeit_company` nötig, siehe oben).
+
+`test_iru_connection` prüft eine Basis-URL/Token-Kombination per
+leichtgewichtigem Aufruf (eine Seite mit `limit=1`), ohne irgendetwas zu
+persistieren. Das Übernehmen eines extern gelieferten Werts in ein selbst
+gepflegtes Feld (`name`, `hostname`, `ip_address`, `notes` in `systems`)
+bleibt dabei -- wie bei allen anderen Plugins -- ausschließlich eine
+bewusste, manuelle Aktion über `get_iru_system_details` plus eine spätere
+UI-Aktion; kein Kommando hier schreibt automatisch in diese vier Felder.
+
+### Verknüpfungs-Vorschlag: welches Feld als Abgleichsschlüssel
+
+Wie Snipe-IT (und anders als NinjaOne/Level.io, die `hostname` als
+Abgleichsschlüssel verwenden) hat ein Iru-Gerät kein Hostname-Feld.
+`IruPluginSection.tsx`s `matchKeyForDevice` nimmt deshalb das erste
+vorhandene, wirklich identifizierende Iru-Feld in dieser Reihenfolge:
+`serial_number` zuerst (Irus primärer Pro-Gerät-Identifikator), dann
+`asset_tag` (ein freies, von einem Admin ggf. nicht gepflegtes Textfeld).
+Verglichen wird dieser Wert weiterhin gegen das einzige freie Textfeld, das
+ein lokales System dafür hat -- `System.hostname` --, exakt wie bei
+Snipe-IT/NinjaOne/Level.io. Weil ein lokales System kein eigenes
+`serial_number`/`asset_tag`-Feld hat, werden diese beiden Iru-Felder beim
+"Neu anlegen" zusätzlich einmalig in das neu angelegte Systems
+`notes`-Feld geschrieben (siehe `IruPluginSection.tsx::createAndLink`) --
+eine einmalige Vorbelegung bei der Erstanlage, keine spätere automatische
+Überschreibung.
+
+### Frontend (`IruPluginSection.tsx`)
+
+Strukturell am nächsten an `LevelPluginSection.tsx`: Kunde-Zuordnungs-
+`<select>` inklusive "+ Neuen Kunden anlegen…" im Anlage-Formular statt
+einer separaten Organisations-/Firmen-Zuordnungs-UI. Anders als
+`LevelPluginSection.tsx` gibt es aber KEINE Gruppierung der Geräteliste --
+Iru hat kein Level-artiges "Groups"-Konzept, daher ist die Geräteliste je
+Verbindung eine einzige flache, filterbare, 10-pro-Seite-paginierte Liste
+mit `j`/`k`/`Enter`/`l`/`u`-Tastaturnavigation (strukturell einfacher als
+`LevelPluginSection.tsx`s Gruppen-Verschachtelung, näher an
+`SnipeitPluginSection.tsx`s Geräteliste innerhalb einer einzelnen Firma,
+nur ohne die Firmen-Ebene selbst). Der Verbindungs-Anlage-Dialog hat vier
+Felder (Kunde, Label, Base-URL, API-Token als `type="password"`).
+`DeviceSummaryLine` zeigt `model`/`serial_number`/`asset_tag` statt
+`hostname`/`ip_address` (Letztere sind für Iru immer leer, siehe oben).
+`PluginsView.tsx` bindet die Sektion als fünfte Karte neben
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`
 ein.

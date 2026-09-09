@@ -2,15 +2,17 @@ import NinjaPluginSection from "./NinjaPluginSection";
 import LevelPluginSection from "./LevelPluginSection";
 import SnipeitPluginSection from "./SnipeitPluginSection";
 import IntunePluginSection from "./IntunePluginSection";
+import IruPluginSection from "./IruPluginSection";
 
 // Thin shell: each plugin integration gets its own settings section
 // component so this file doesn't become an unmaintainable single file as
 // more plugins are added. See NinjaPluginSection.tsx (extracted, unchanged
 // behavior), LevelPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
 // "Level.io-Plugin"), SnipeitPluginSection.tsx (third integration, see
-// docs/PLUGIN_ARCHITECTURE.md "Snipe-IT-Plugin"), and
-// IntunePluginSection.tsx (fourth integration, see
-// docs/PLUGIN_ARCHITECTURE.md "Microsoft-Intune-Plugin").
+// docs/PLUGIN_ARCHITECTURE.md "Snipe-IT-Plugin"), IntunePluginSection.tsx
+// (fourth integration, see docs/PLUGIN_ARCHITECTURE.md
+// "Microsoft-Intune-Plugin"), and IruPluginSection.tsx (fifth integration,
+// see docs/PLUGIN_ARCHITECTURE.md "Iru-Plugin").
 export default function PluginsView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
@@ -19,6 +21,7 @@ export default function PluginsView() {
       <LevelPluginSection />
       <SnipeitPluginSection />
       <IntunePluginSection />
+      <IruPluginSection />
     </div>
   );
 }

@@ -204,6 +204,15 @@ pub fn run() {
             commands::intune::link_system_to_intune,
             commands::intune::unlink_system_from_intune,
             commands::intune::get_intune_system_details,
+            commands::iru::test_iru_connection,
+            commands::iru::list_iru_connections,
+            commands::iru::add_iru_connection,
+            commands::iru::remove_iru_connection,
+            commands::iru::sync_iru_connection,
+            commands::iru::get_cached_iru_sync,
+            commands::iru::link_system_to_iru,
+            commands::iru::unlink_system_from_iru,
+            commands::iru::get_iru_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())
