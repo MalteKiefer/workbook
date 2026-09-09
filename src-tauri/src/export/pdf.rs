@@ -263,6 +263,30 @@ mod tests {
     }
 
     #[test]
+    fn renders_a_fenced_code_block_from_markdown_to_typst_without_error() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut entry = sample_entry("Mit Codeblock");
+        entry.body_typst = crate::export::markdown_to_typst::convert(
+            "Aktualisierung des Systems.\n\n```bash\napt update\napt upgrade -y\n```\n",
+        );
+
+        let sections = vec![PdfSystemSection {
+            system_name: "Ohne System".to_string(),
+            entries: vec![entry],
+        }];
+
+        let pdf_bytes = render_manual_pdf(
+            data_dir.path(),
+            "ACME GmbH",
+            "07.09.2026 15:00 CEST".to_string(),
+            sections,
+        )
+        .expect("PDF-Rendering mit Codeblock sollte erfolgreich sein");
+
+        assert!(pdf_bytes.starts_with(b"%PDF-"));
+    }
+
+    #[test]
     fn empty_sections_still_produce_a_valid_cover_page_pdf() {
         let data_dir = tempfile::tempdir().unwrap();
         let pdf_bytes = render_manual_pdf(

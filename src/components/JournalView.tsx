@@ -121,7 +121,12 @@ export default function JournalView() {
 
   useEffect(() => {
     reload();
-  }, [reload]);
+    // formOpen also triggers this: it's a single global flag shared by every
+    // modal (entry editor, entry detail, customer/system forms, ...), so it
+    // flips back to false whenever any of them closes. Without it, saving an
+    // edit in EntryEditor left this list showing stale data until the next
+    // filter change or a full remount (e.g. switching views and back).
+  }, [reload, formOpen]);
 
   useEffect(() => {
     let cancelled = false;

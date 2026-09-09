@@ -2,8 +2,23 @@
 //!
 //! Handles: headings (`#`/`##`/`###` -> `=`/`==`/`===`), bold (`**x**`/`__x__` -> `*x*`),
 //! italic (`*x*`/`_x_` -> `_x_`), unordered lists (`-`/`*` -> `-`), ordered lists
-//! (`1.` -> `+`), inline code (`` `x` `` -> `` `x` ``, same syntax), links
-//! (`[text](url)` -> `#link("url")[text]`), and paragraph breaks.
+//! (`1.` -> `+`), inline code (`` `x` `` -> `` `x` ``, same syntax), fenced code
+//! blocks (` ```lang ... ``` ` -> same fence, passed through verbatim -- see below),
+//! links (`[text](url)` -> `#link("url")[text]`), and paragraph breaks.
+//!
+//! Fenced code blocks get special handling *before* the line-by-line pass below:
+//! Typst's own raw-block syntax is the identical triple-backtick fence Markdown
+//! uses, so a matched fence is copied through byte-for-byte rather than run
+//! through `convert_inline` line by line. That distinction matters -- unlike
+//! everywhere else in this module, a raw block's content is never escaped or
+//! interpreted as Typst markup, which is exactly what "this is literal code"
+//! needs. Splitting fences out first also sidesteps a real bug the naive
+//! per-line approach had: a bare ` ``` ` fence line has no closing backtick of
+//! its own, so `convert_inline`'s inline-code regex (which only requires a
+//! *pair* of backticks, zero-width content allowed) matched the first two of
+//! the three fence backticks as an empty code span and mangled the third into
+//! an escaped literal -- turning every fenced block into visibly broken
+//! backtick fragments instead of a code block.
 //!
 //! Does NOT handle image references -- those are extracted and rendered separately
 //! by `export::pdf`, not inline-converted here (the app's own editor always emits
@@ -22,6 +37,19 @@ use regex::Regex;
 
 /// Converts a subset of Markdown (this app's own entry body format) to Typst markup.
 pub fn convert(body_md: &str) -> String {
+    let mut out = String::new();
+    let mut last_end = 0;
+    for m in code_fence_pattern().find_iter(body_md) {
+        out.push_str(&convert_prose(&body_md[last_end..m.start()]));
+        out.push_str(m.as_str());
+        out.push('\n');
+        last_end = m.end();
+    }
+    out.push_str(&convert_prose(&body_md[last_end..]));
+    out.trim().to_string()
+}
+
+fn convert_prose(body_md: &str) -> String {
     let mut out = String::new();
     for line in body_md.lines() {
         if line.trim().is_empty() {
@@ -48,7 +76,7 @@ pub fn convert(body_md: &str) -> String {
         }
         out.push('\n');
     }
-    out.trim().to_string()
+    out
 }
 
 fn convert_inline(text: &str) -> String {
@@ -126,6 +154,11 @@ fn escape_typst_string(text: &str) -> String {
         }
     }
     out
+}
+
+fn code_fence_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"(?s)```[^\n`]*\n.*?```").unwrap())
 }
 
 fn heading_pattern() -> &'static Regex {
@@ -248,5 +281,33 @@ mod tests {
     #[test]
     fn plain_text_without_markdown_syntax_passes_through() {
         assert_eq!(convert("Ganz normaler Text."), "Ganz normaler Text.");
+    }
+
+    #[test]
+    fn fenced_code_block_passes_through_verbatim_with_language_tag() {
+        let input = "Vorher\n\n```bash\napt update\napt upgrade -y\n```\n\nNachher";
+        let result = convert(input);
+        assert!(result.contains("```bash\napt update\napt upgrade -y\n```"));
+        assert!(result.starts_with("Vorher"));
+        assert!(result.ends_with("Nachher"));
+    }
+
+    #[test]
+    fn fenced_code_block_content_is_not_escaped_or_treated_as_markdown() {
+        // Special Typst characters and stray backtick-adjacent text inside a
+        // fenced block must survive untouched -- this is exactly the content a
+        // naive per-line pass would have mangled (see the module doc comment).
+        let input = "```\n#not_a_heading *not_bold* $5\n```";
+        let result = convert(input);
+        assert_eq!(result, "```\n#not_a_heading *not_bold* $5\n```");
+    }
+
+    #[test]
+    fn multiple_fenced_code_blocks_each_convert_correctly() {
+        let input = "```bash\necho a\n```\n\nText dazwischen\n\n```python\nprint(1)\n```";
+        let result = convert(input);
+        assert!(result.contains("```bash\necho a\n```"));
+        assert!(result.contains("```python\nprint(1)\n```"));
+        assert!(result.contains("Text dazwischen"));
     }
 }
