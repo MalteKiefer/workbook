@@ -213,6 +213,18 @@ pub fn run() {
             commands::iru::link_system_to_iru,
             commands::iru::unlink_system_from_iru,
             commands::iru::get_iru_system_details,
+            commands::jamf::test_jamf_connection,
+            commands::jamf::list_jamf_connections,
+            commands::jamf::add_jamf_connection,
+            commands::jamf::remove_jamf_connection,
+            commands::jamf::list_jamf_sites,
+            commands::jamf::map_jamf_site,
+            commands::jamf::unmap_jamf_site,
+            commands::jamf::sync_jamf_connection,
+            commands::jamf::get_cached_jamf_sync,
+            commands::jamf::link_system_to_jamf,
+            commands::jamf::unlink_system_from_jamf,
+            commands::jamf::get_jamf_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())

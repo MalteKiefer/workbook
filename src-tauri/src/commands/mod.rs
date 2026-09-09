@@ -6,6 +6,7 @@ pub mod export;
 pub mod external_directory;
 pub mod intune;
 pub mod iru;
+pub mod jamf;
 pub mod level;
 pub mod plugins;
 pub mod quickcapture;
