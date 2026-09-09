@@ -26,6 +26,17 @@ pub enum ThemePreference {
     System,
 }
 
+/// Häufigkeit automatischer Backups (Einstellungen → Backup). Reines
+/// TOML/Serde-Enum, dieselbe Konvention wie `ThemePreference`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoBackupFrequency {
+    #[default]
+    Daily,
+    Weekly,
+    Monthly,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HotkeyConfig {
@@ -105,6 +116,24 @@ pub struct Config {
     /// `ThemePreference::default()` (= `Dark`), NICHT `System`, damit
     /// bestehende Installationen optisch unverändert bleiben.
     pub theme_preference: ThemePreference,
+    /// Ob der Hintergrund-Scheduler (siehe `backup::schedule_auto_backups`)
+    /// automatisch Backups erstellen soll. `auto_backup_dir` muss zusätzlich
+    /// gesetzt sein, sonst bleibt die Funktion trotz `true` inaktiv (siehe
+    /// `backup::is_auto_backup_due`-Aufrufstelle im Scheduler).
+    pub auto_backup_enabled: bool,
+    /// Zielordner für automatische Backups. Getrennt vom manuellen
+    /// "Backup erstellen"-Dialog, der den Zielpfad jedes Mal explizit abfragt.
+    pub auto_backup_dir: Option<PathBuf>,
+    pub auto_backup_frequency: AutoBackupFrequency,
+    /// RFC3339-Zeitstempel (UTC) des letzten erfolgreichen automatischen
+    /// Backups. `None` heißt "noch nie" -- der Scheduler behandelt das wie
+    /// eine sofort fällige erste Ausführung.
+    pub auto_backup_last_run_utc: Option<String>,
+    /// Ob sowohl manuell erstellte als auch automatische Backups mit dem im
+    /// OS-Schlüsselspeicher hinterlegten Passwort verschlüsselt werden (siehe
+    /// `backup::crypto`). Das Passwort selbst steht nie hier in
+    /// `config.toml`, nur dieses Flag.
+    pub backup_encryption_enabled: bool,
 }
 
 impl Default for Config {
@@ -123,6 +152,11 @@ impl Default for Config {
             snipeit_connections: Vec::new(),
             snipeit_company_mappings: Vec::new(),
             theme_preference: ThemePreference::default(),
+            auto_backup_enabled: false,
+            auto_backup_dir: None,
+            auto_backup_frequency: AutoBackupFrequency::default(),
+            auto_backup_last_run_utc: None,
+            backup_encryption_enabled: false,
         }
     }
 }
@@ -454,6 +488,40 @@ mod tests {
             serde_json::to_string(&ThemePreference::System).unwrap(),
             "\"system\""
         );
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_auto_backup_settings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.auto_backup_enabled = true;
+        config.auto_backup_dir = Some(PathBuf::from("D:/Backups"));
+        config.auto_backup_frequency = AutoBackupFrequency::Weekly;
+        config.auto_backup_last_run_utc = Some("2026-09-01T10:00:00Z".to_string());
+        config.backup_encryption_enabled = true;
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_auto_backup_fields_defaults_to_disabled() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simuliert eine config.toml von vor Einführung des Auto-Backups --
+        // muss dank `#[serde(default)]` klaglos auf "deaktiviert" zurückfallen.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(!loaded.auto_backup_enabled);
+        assert_eq!(loaded.auto_backup_dir, None);
+        assert_eq!(loaded.auto_backup_frequency, AutoBackupFrequency::Daily);
+        assert_eq!(loaded.auto_backup_last_run_utc, None);
+        assert!(!loaded.backup_encryption_enabled);
     }
 
     #[test]

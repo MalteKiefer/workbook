@@ -1,11 +1,15 @@
+pub mod crypto;
+
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
+use crate::config::AutoBackupFrequency;
 use crate::error::AppError;
 
 /// Name of the SQLite snapshot entry inside a backup zip, and of the live
@@ -38,6 +42,35 @@ const PENDING_RESTORE_DIR_NAME: &str = ".pending_restore";
 /// snapshot produced while building a backup.
 const SCRATCH_DIR_NAME: &str = ".tmp";
 
+/// Whether an automatic backup is due, given the configured `frequency`, the
+/// UTC timestamp of the last successful automatic backup (`None` if there
+/// never was one), and the current time. Pure function so the scheduler's
+/// actual "when do we wake up and check" logic can stay a thin, untested
+/// wrapper around this -- all the interesting behavior lives here where it's
+/// cheap to test.
+///
+/// A `last_run_utc` that fails to parse (e.g. hand-edited or from a future
+/// format change) is treated the same as `None` -- due now -- rather than
+/// silently never running again.
+pub fn is_auto_backup_due(
+    frequency: AutoBackupFrequency,
+    last_run_utc: Option<&str>,
+    now: DateTime<Utc>,
+) -> bool {
+    let Some(last_run_utc) = last_run_utc else {
+        return true;
+    };
+    let Ok(last_run) = DateTime::parse_from_rfc3339(last_run_utc) else {
+        return true;
+    };
+    let interval = match frequency {
+        AutoBackupFrequency::Daily => chrono::Duration::days(1),
+        AutoBackupFrequency::Weekly => chrono::Duration::days(7),
+        AutoBackupFrequency::Monthly => chrono::Duration::days(30),
+    };
+    now.signed_duration_since(last_run) >= interval
+}
+
 /// Produces one consistent backup zip at `dest_path` containing a snapshot of
 /// the live database, `data_dir/config.toml` (app settings and non-secret
 /// plugin connection metadata -- never plugin credentials, those live only in
@@ -68,6 +101,48 @@ pub fn create_backup(conn: &Connection, data_dir: &Path, dest_path: &Path) -> Re
         .and_then(|_| write_backup_zip(&snapshot_path, data_dir, dest_path));
 
     let _ = std::fs::remove_file(&snapshot_path);
+    result
+}
+
+/// Like `create_backup`, but the finished zip is encrypted with `passphrase`
+/// (see `crypto::encrypt_file`) before landing at `dest_path`. The
+/// unencrypted zip only ever exists transiently under `data_dir/.tmp/`.
+pub fn create_backup_encrypted(
+    conn: &Connection,
+    data_dir: &Path,
+    dest_path: &Path,
+    passphrase: &str,
+) -> Result<(), AppError> {
+    let scratch_dir = data_dir.join(SCRATCH_DIR_NAME);
+    std::fs::create_dir_all(&scratch_dir)?;
+    let tmp_zip_path = scratch_dir.join(format!("backup-plain-{}.zip", std::process::id()));
+    let _ = std::fs::remove_file(&tmp_zip_path);
+
+    let result = create_backup(conn, data_dir, &tmp_zip_path)
+        .and_then(|_| crypto::encrypt_file(&tmp_zip_path, dest_path, passphrase));
+
+    let _ = std::fs::remove_file(&tmp_zip_path);
+    result
+}
+
+/// Like `stage_restore`, but `source_path` is an encrypted backup (see
+/// `crypto::encrypt_file`) rather than a plain zip -- decrypted to a
+/// transient temp file under `data_dir/.tmp/` first, then handled exactly
+/// like a plain-zip restore.
+pub fn stage_restore_encrypted(
+    data_dir: &Path,
+    source_path: &Path,
+    passphrase: &str,
+) -> Result<(), AppError> {
+    let scratch_dir = data_dir.join(SCRATCH_DIR_NAME);
+    std::fs::create_dir_all(&scratch_dir)?;
+    let tmp_zip_path = scratch_dir.join(format!("restore-plain-{}.zip", std::process::id()));
+    let _ = std::fs::remove_file(&tmp_zip_path);
+
+    let result = crypto::decrypt_file(source_path, &tmp_zip_path, passphrase)
+        .and_then(|_| stage_restore(data_dir, &tmp_zip_path));
+
+    let _ = std::fs::remove_file(&tmp_zip_path);
     result
 }
 
@@ -740,6 +815,97 @@ mod tests {
             bak_plugin_cache.is_some(),
             "vorheriges Live-plugin-cache hätte als .bak-<timestamp> gesichert werden müssen"
         );
+    }
+
+    #[test]
+    fn create_backup_encrypted_then_stage_restore_encrypted_roundtrips() {
+        let dir = tempdir().unwrap();
+        let conn = seed_data_dir(dir.path());
+        let dest = dir.path().join("backup.wdbk");
+
+        create_backup_encrypted(&conn, dir.path(), &dest, "hunter2").unwrap();
+        assert!(crypto::is_encrypted_file(&dest).unwrap());
+
+        stage_restore_encrypted(dir.path(), &dest, "hunter2").unwrap();
+
+        let staging_dir = dir.path().join(PENDING_RESTORE_DIR_NAME);
+        assert!(staging_dir.join(DB_FILE_NAME).exists());
+    }
+
+    #[test]
+    fn stage_restore_encrypted_with_wrong_passphrase_fails_and_leaves_no_staging_dir() {
+        let dir = tempdir().unwrap();
+        let conn = seed_data_dir(dir.path());
+        let dest = dir.path().join("backup.wdbk");
+        create_backup_encrypted(&conn, dir.path(), &dest, "correct").unwrap();
+
+        let result = stage_restore_encrypted(dir.path(), &dest, "wrong");
+
+        assert!(matches!(result, Err(AppError::Backup(_))));
+        assert!(!dir.path().join(PENDING_RESTORE_DIR_NAME).exists());
+    }
+
+    #[test]
+    fn is_auto_backup_due_when_never_run_before() {
+        assert!(is_auto_backup_due(
+            AutoBackupFrequency::Daily,
+            None,
+            Utc::now()
+        ));
+    }
+
+    #[test]
+    fn is_auto_backup_due_when_last_run_timestamp_is_unparseable() {
+        assert!(is_auto_backup_due(
+            AutoBackupFrequency::Daily,
+            Some("not a timestamp"),
+            Utc::now()
+        ));
+    }
+
+    #[test]
+    fn is_auto_backup_not_due_before_daily_interval_elapsed() {
+        let now = Utc::now();
+        let last_run = (now - chrono::Duration::hours(2)).to_rfc3339();
+        assert!(!is_auto_backup_due(
+            AutoBackupFrequency::Daily,
+            Some(&last_run),
+            now
+        ));
+    }
+
+    #[test]
+    fn is_auto_backup_due_after_daily_interval_elapsed() {
+        let now = Utc::now();
+        let last_run = (now - chrono::Duration::hours(25)).to_rfc3339();
+        assert!(is_auto_backup_due(
+            AutoBackupFrequency::Daily,
+            Some(&last_run),
+            now
+        ));
+    }
+
+    #[test]
+    fn is_auto_backup_due_respects_weekly_and_monthly_frequency() {
+        let now = Utc::now();
+        let three_days_ago = (now - chrono::Duration::days(3)).to_rfc3339();
+        assert!(!is_auto_backup_due(
+            AutoBackupFrequency::Weekly,
+            Some(&three_days_ago),
+            now
+        ));
+        assert!(is_auto_backup_due(
+            AutoBackupFrequency::Daily,
+            Some(&three_days_ago),
+            now
+        ));
+
+        let forty_days_ago = (now - chrono::Duration::days(40)).to_rfc3339();
+        assert!(is_auto_backup_due(
+            AutoBackupFrequency::Monthly,
+            Some(&forty_days_ago),
+            now
+        ));
     }
 
     #[test]

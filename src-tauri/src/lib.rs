@@ -118,6 +118,8 @@ pub fn run() {
             let first_launch_args: Vec<String> = std::env::args().collect();
             cli::dispatch(app.handle(), cli::parse_args(&first_launch_args));
 
+            spawn_auto_backup_scheduler(app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -154,6 +156,11 @@ pub fn run() {
             commands::export::export_pdf,
             commands::backup::create_backup,
             commands::backup::restore_backup,
+            commands::backup::is_backup_file_encrypted,
+            commands::backup::get_backup_settings,
+            commands::backup::set_auto_backup_settings,
+            commands::backup::set_backup_encryption_enabled,
+            commands::backup::set_backup_encryption_passphrase,
             commands::plugins::test_ninja_connection,
             commands::plugins::list_ninja_connections,
             commands::plugins::add_ninja_connection,
@@ -191,4 +198,100 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Interval between checks for a due automatic backup. Doesn't need to be
+/// anywhere near as fine-grained as the shortest configurable frequency
+/// (daily) -- this just needs to notice "due" reasonably soon after it
+/// becomes true, not immediately.
+const AUTO_BACKUP_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+/// Starts a background thread that periodically checks whether an automatic
+/// backup is due (per `backup::is_auto_backup_due`) and, if so, creates one.
+/// A plain `std::thread` loop rather than an async task -- this app has no
+/// other need for an async runtime, and a sleep-then-check loop needs none
+/// either.
+fn spawn_auto_backup_scheduler(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        run_auto_backup_if_due(&app);
+        std::thread::sleep(AUTO_BACKUP_CHECK_INTERVAL);
+    });
+}
+
+fn run_auto_backup_if_due(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+
+    let (dest_dir, frequency, last_run_utc, encryption_enabled, data_dir) = {
+        let config = state.config.lock().expect("Config-Mutex vergiftet");
+        if !config.auto_backup_enabled {
+            return;
+        }
+        let Some(dest_dir) = config.auto_backup_dir.clone() else {
+            return;
+        };
+        (
+            dest_dir,
+            config.auto_backup_frequency,
+            config.auto_backup_last_run_utc.clone(),
+            config.backup_encryption_enabled,
+            config.data_dir.clone(),
+        )
+    };
+
+    let now = chrono::Utc::now();
+    if !backup::is_auto_backup_due(frequency, last_run_utc.as_deref(), now) {
+        return;
+    }
+
+    if let Err(e) = std::fs::create_dir_all(&dest_dir) {
+        eprintln!("Automatisches Backup: Zielordner konnte nicht angelegt werden: {e}");
+        return;
+    }
+
+    let extension = if encryption_enabled { "wdbk" } else { "zip" };
+    let dest_path = dest_dir.join(format!(
+        "wartungsdoku-auto-{}.{extension}",
+        now.format("%Y%m%d-%H%M%S")
+    ));
+
+    let conn = match state.pool.get() {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("Automatisches Backup: keine Datenbankverbindung verfügbar: {e}");
+            return;
+        }
+    };
+
+    let result = if encryption_enabled {
+        match plugin::secrets::load_secret(backup::crypto::SECRET_ID) {
+            Ok(Some(passphrase)) => {
+                backup::create_backup_encrypted(&conn, &data_dir, &dest_path, &passphrase)
+            }
+            Ok(None) => {
+                eprintln!(
+                    "Automatisches Backup übersprungen: Verschlüsselung aktiviert, aber kein Passwort gesetzt."
+                );
+                return;
+            }
+            Err(e) => {
+                eprintln!("Automatisches Backup: Passwort konnte nicht gelesen werden: {e}");
+                return;
+            }
+        }
+    } else {
+        backup::create_backup(&conn, &data_dir, &dest_path)
+    };
+    drop(conn);
+
+    match result {
+        Ok(()) => {
+            let mut config = state.config.lock().expect("Config-Mutex vergiftet");
+            config.auto_backup_last_run_utc = Some(now.to_rfc3339());
+            let config_path = config.data_dir.join("config.toml");
+            if let Err(e) = config.save(&config_path) {
+                eprintln!("Automatisches Backup: Zeitstempel konnte nicht gespeichert werden: {e}");
+            }
+        }
+        Err(e) => eprintln!("Automatisches Backup fehlgeschlagen: {e}"),
+    }
 }
