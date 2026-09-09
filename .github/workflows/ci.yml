@@ -93,9 +93,15 @@ jobs:
       # bibliography/citation data at all, into Typst; it only renders a
       # fixed maintenance-report template. The vulnerable code path is
       # unreachable here. Revisit once citationberg allows quick-xml >=0.41.
+      # RUSTSEC-2023-0071: timing sidechannel in the `rsa` crate's private-key
+      # operations ("Marvin Attack"), no patch available upstream. Pulled in
+      # transitively by jsonwebtoken's `rust_crypto` feature, which bundles
+      # RSA support with the ES256/EdDSA support this app actually uses
+      # (plugin::abm signs Apple Business Manager's JWT with an EC key, never
+      # RSA). No code path in this app ever calls into the `rsa` crate.
       - name: Rust security audit
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: src-tauri
-          ignore: RUSTSEC-2026-0194,RUSTSEC-2026-0195
+          ignore: RUSTSEC-2026-0194,RUSTSEC-2026-0195,RUSTSEC-2023-0071
