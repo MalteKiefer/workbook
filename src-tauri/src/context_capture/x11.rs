@@ -16,7 +16,7 @@
 // calls that would just fail slowly under a pure Wayland session.
 
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{AtomEnum, ClientMessageEvent, ConnectionExt, EventMask, Window};
+use x11rb::protocol::xproto::{AtomEnum, ClientMessageEvent, ConnectionExt, EventMask};
 
 /// X11 window IDs are plain `u32` — already `Send + Sync`, so (unlike the Windows
 /// module's `HWND`-as-`isize` workaround) no reinterpretation trick is needed here.
@@ -75,12 +75,7 @@ pub fn restore_foreground(handle: &ForegroundHandle) {
     // data[0] = 1 => source indication: normal application (EWMH spec).
     // data[1] = 0 => timestamp: CurrentTime — acceptable here, we don't have the
     // original triggering event's timestamp available.
-    let event = ClientMessageEvent::new(
-        32,
-        handle.0 as Window,
-        net_active_window,
-        [1u32, 0, 0, 0, 0],
-    );
+    let event = ClientMessageEvent::new(32, handle.0, net_active_window, [1u32, 0, 0, 0, 0]);
 
     let mask = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT;
     let _ = conn.send_event(false, root, mask, event);
