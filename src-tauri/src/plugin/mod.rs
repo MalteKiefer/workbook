@@ -75,6 +75,7 @@ pub trait Plugin {
     fn link_system(&self, local_system_id: i64, external_id: &str) -> Result<(), PluginError>;
 }
 
+pub mod abm;
 pub mod dummy;
 pub mod intune;
 pub mod iru;

@@ -1,15 +1,16 @@
 # Plugin-Architektur
 
-Status: Sechs echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Sieben echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
-`commands::iru`) und Jamf Pro (`plugin::jamf`, `commands::jamf`) --, alle
-mit Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
+`commands::iru`), Jamf Pro (`plugin::jamf`, `commands::jamf`) und Apple
+Business Manager (`plugin::abm`, `commands::abm`) --, alle mit
+Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
 Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
 einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
 von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`).
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -996,4 +997,200 @@ beiden bekannten Container -- keine Vermutung, sondern aus Jamfs eigenem
 Antwortschema abgeleitet. `PluginsView.tsx` bindet die Sektion als sechste
 Karte neben `NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/
 `SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`
+ein.
+
+## Apple-Business-Manager-Plugin (`plugin::abm`) -- siebte echte Integration
+
+`plugin/abm.rs` implementiert `Plugin` für Apple Business Managers (ABM)
+öffentliche REST-API über HTTPS. Siebte echte Integration nach NinjaOne,
+Level.io, Snipe-IT, Microsoft Intune, Iru und Jamf Pro -- und mit deutlichem
+Abstand die aufwendigste Authentifizierung aller sieben Plugins: ein
+ES256-signiertes JWT als Client-Assertion, gegen einen OAuth2-Access-Token
+eingetauscht. Beide Schritte sind gegen Apples eigene
+Referenzimplementierung verifiziert, keine Vermutung.
+
+### Authentifizierung: JWT-Client-Assertion + OAuth2-Token-Austausch
+
+**Schritt 1 -- Client-Assertion bauen.** Ein vom Nutzer in ABMs eigener
+Oberfläche (Einstellungen -> API) erzeugter "API-Client" liefert drei Werte:
+eine Client-ID (Format `BUSINESSAPI.<uuid>`), eine Key-ID sowie einen
+privaten EC-P256-Schlüssel im unverschlüsselten PKCS#8-PEM-Format
+(`-----BEGIN PRIVATE KEY-----`). Aus diesen drei Werten wird ein
+ES256-signiertes JWT gebaut:
+
+- Header: `{"alg": "ES256", "kid": "<key_id>", "typ": "JWT"}`.
+- Nutzlast: `{"iss": "<client_id>", "sub": "<client_id>", "aud":
+  "https://account.apple.com/auth/oauth2/v2/token", "iat": <jetzt>, "exp":
+  <jetzt + 900>, "jti": "<zufällig>"}` -- 15 Minuten Gültigkeit.
+
+WICHTIG, verifiziert und bewusst so: die `aud`-Klaim trägt `/v2/token`, der
+tatsächlich in Schritt 2 angesprochene Token-Endpunkt (`TOKEN_URL` in
+`plugin::abm`) hat dieses `/v2` in seinem Pfad aber NICHT. Dieser scheinbare
+Widerspruch stammt unmittelbar aus Apples eigener Referenzimplementierung
+und ist kein zu behebender Fehler -- `plugin::abm` bildet ihn deshalb exakt
+so nach, mit einem Kommentar an genau dieser Stelle, damit niemand ihn
+versehentlich "korrigiert".
+
+Signiert wird über die `jsonwebtoken`-Crate (Version 9):
+`EncodingKey::from_ec_pem(private_key_pem.as_bytes())` liest den PEM-Schlüssel,
+`encode(&header, &claims, &key)` mit `Header { alg: Algorithm::ES256, kid:
+Some(key_id), .. }` erzeugt das fertige JWT. Für die `jti`-Klaim ist keine
+eigene `uuid`-Abhängigkeit nötig -- `rand` ist ohnehin schon Abhängigkeit
+dieser Codebasis, `plugin::abm::generate_jti` erzeugt daraus 16 Zufallsbytes
+und formatiert sie mit gesetzten RFC-4122-Versions-/Varianten-Bits als
+kanonisch aussehenden UUID-v4-String (rein kosmetisch -- Apple validiert die
+interne Struktur von `jti` nicht, wichtig ist nur ein frischer, effektiv
+eindeutiger Wert je Assertion).
+
+**Schritt 2 -- Token-Austausch.**
+`POST https://account.apple.com/auth/oauth2/token`,
+`Content-Type: application/x-www-form-urlencoded`, mit Formularfeldern
+`grant_type=client_credentials`, `client_id=<client_id>`,
+`client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`,
+`client_assertion=<in Schritt 1 gebautes JWT>`, `scope=business.api`. Die
+Antwort ist ein Standard-OAuth2-JSON-Token-Response
+(`access_token`/`token_type`/`expires_in`) -- nur `access_token` wird
+verwendet. Genau wie bei NinjaOnes OAuth2-Grant wird der Access-Token
+bewusst nicht zwischen Aufrufen zwischengespeichert, sondern
+(`fetch_access_token`) pro Trait-Methodenaufruf frisch geholt -- dieselbe
+Begründung wie bei `plugin::ninja`: diese App ruft Plugin-Methoden selten
+und manuell auf, nie in einer heißen Schleife.
+
+**Schritt 3 -- Geräte abrufen.** `GET
+https://api-business.apple.com/v1/orgDevices` (feste Basis-URL, `API_BASE`
+-- anders als NinjaOne/Snipe-IT ist ABM Apples eigener gehosteter Dienst,
+keine Instanz-/Regionen-Variante, also kein nutzerseitig konfigurierbares
+`base_url`-Feld), `Authorization: Bearer <access_token>`. Die Antwort folgt
+dem JSON:API-Format: `{"data": [{"id": ..., "type": "orgDevices",
+"attributes": {"serialNumber": ..., "deviceModel": ..., ...}}], "links":
+{"next": "..."}}`.
+
+### Zugangsdaten-Kodierung: drei Geheimwerte statt einem
+
+ABM braucht drei Geheimwerte (`client_id`, `key_id`, `private_key_pem`).
+`PluginCredentials.secret` ist laut Trait-Vertrag aber ein einziger opaker
+String. `plugin::abm` kodiert alle drei als JSON-Objekt in diesem einen
+String (`AbmCredentials { client_id, key_id, private_key_pem }`,
+`serde_json::to_string`/`from_str`) -- exakt dasselbe Prinzip wie
+`plugin::ninja::NinjaCredentials` für seine zwei Geheimwerte, nur um einen
+dritten erweitert. Der private Schlüssel landet dabei wie jedes andere
+Plugin-Geheimnis ausschließlich im OS-Schlüsselspeicher (siehe
+"Credential-Prinzip" oben) -- als reiner PEM-Text, den der Nutzer in ein
+`<textarea>` einfügt (`AbmPluginSection.tsx`), nicht als Dateiverweis. Das
+folgt demselben Credential-Prinzip wie jedes andere Plugin dieser Codebasis:
+Zugangsdaten sind immer ein opaker String, nie ein Dateipfad.
+
+### JSON:API-Pagination über `links.next`
+
+Anders als NinjaOne/Level.io (Cursor-Query-Parameter) und Snipe-IT
+(`limit`/`offset`) liefert ABM Pagination im JSON:API-üblichen Format: jede
+Seite trägt optional `links.next` als vollständige, direkt abrufbare
+Folge-URL. `plugin::abm::fetch_all_devices` folgt dieser Kette intern (bis
+zu `MAX_PAGES` = 50 Seiten à `PAGE_LIMIT` = 100 Geräten als Schutz gegen
+eine sich falsch verhaltende Gegenstelle) und liefert eine einzige, bereits
+zusammengefügte Liste -- der Aufrufer sieht nichts von ABMs Pagination,
+exakt dasselbe Prinzip wie bei NinjaOne/Level.io/Snipe-IT. Fehlt
+`links.next` auf einer Seite, wird das defensiv als letzte (oder einzige)
+Seite behandelt, nicht als Fehler -- `parse_devices_page` ist eine reine,
+für sich mit hartkodierten JSON-Fixtures testbare Funktion.
+
+### Kein Hostname/keine IP-Adresse
+
+Wie Snipe-IT (Asset-/Inventarverwaltung, keine RMM-Überwachungssoftware) ist
+auch ABM strukturell kein Live-Telemetrie-Dienst, sondern ein
+Einkaufs-/Registrierungsverzeichnis: ein `orgDevices`-Objekt hat laut Apples
+eigener Attributliste (`serialNumber`, `deviceModel`, `productFamily`,
+`productType`, `deviceCapacity`, `color`, `status`) weder ein
+Hostname- noch ein IP-Adress-Feld. `AbmDevice.hostname`/`ip_address` sind
+deshalb IMMER `None` -- keine Auslassung aus Bequemlichkeit, sondern eine
+verifizierte, ehrliche Tatsache, genau wie bei `plugin::snipeit`. Stattdessen
+ist `serial_number` (die auf dem physischen Gerät aufgedruckte Seriennummer)
+ABMs primäres, natürliches Identifikationsfeld -- das Gegenstück zu
+Snipe-ITs `asset_tag` --, `device_model` der natürliche Anzeigename-Fallback
+(`map_abm_device`: Anzeigename fällt von `deviceModel` über `serialNumber`
+auf die externe ID zurück, ABM-Geräte haben kein frei vergebbares
+Spitzname-Feld wie Levels `nickname`).
+
+### ABM-Verbindungen sind 1:1 an einen Kunden gebunden
+
+Genau wie Level.io (und anders als NinjaOne/Snipe-IT) ist ABM inhärent
+einzel-organisationsgebunden: ein Satz Zugangsdaten spricht für genau eine
+Apple-Business-Manager-Organisation, es gibt kein Unter-Mandanten-/
+Site-Konzept. Eine ABM-"Verbindung" entspricht deshalb hier direkt genau
+einem lokalen Kunden -- `AbmConnectionMeta.customer_id`, OHNE die granulare
+Organisations-Zuordnungsebene, die NinjaOne/Snipe-IT brauchen.
+
+- Nicht-geheime Metadaten (`id`, `customer_id`, `label`, bewusst OHNE
+  `base_url` -- siehe `API_BASE`) liegen als `AbmConnectionMeta` in
+  `Config::abm_connections` (`config.toml`, `#[serde(default)]`-kompatibel
+  mit älteren Konfigurationen ohne dieses Feld).
+- Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"abm:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei Level.io/Snipe-IT.
+- Weil jede Verbindung genau eine `customer_id` trägt, braucht
+  `sync_abm_connection` keine Fallunterscheidung "zugeordnet/unzugeordnet"
+  wie `sync_ninja_connection` -- jedes synchronisierte Gerät gehört
+  automatisch zum Kunden der Verbindung, `linked_system_id` wird für jedes
+  Gerät direkt gegen die `external_refs`-Zeilen dieses Kunden geprüft.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie Level.io: `sync_abm_connection` schreibt das
+Ergebnis jedes Laufs zusätzlich als JSON nach
+`data_dir/plugin-cache/abm-<connection_id>.json` (`{"synced_at_utc": "...",
+"devices": [...]}`). `get_cached_abm_sync` liest ausschließlich diese Datei
+(kein Netzwerkzugriff) und liefert `None`, wenn für eine Verbindung noch nie
+synchronisiert wurde. `remove_abm_connection` löscht diese Cache-Datei
+(bestes Bemühen).
+
+### Tauri-Kommandos (`commands::abm`)
+
+`test_abm_connection`, `list_abm_connections`, `add_abm_connection`,
+`remove_abm_connection`, `sync_abm_connection`, `get_cached_abm_sync`,
+`link_system_to_abm`, `unlink_system_from_abm`, `get_abm_system_details` --
+dünne Wrapper nach demselben Muster wie `commands::level`, ohne
+Organisations-Zuordnungskommandos (kein ABM-Äquivalent zu
+`map_ninja_organization`/`unmap_ninja_organization` nötig, siehe oben).
+
+`test_abm_connection` prüft ein Client-ID/Key-ID/Private-Key-Tripel über
+Apples OAuth2-Token-Endpunkt (Client-Credentials-Grant via signierter
+JWT-Assertion), ohne irgendetwas zu persistieren -- so bemerkt der Nutzer
+einen fehlerhaft eingefügten Schlüssel oder eine vertippte ID, bevor
+Zugangsdaten tatsächlich in den Schlüsselspeicher geschrieben werden. Das
+Übernehmen eines extern gelieferten Werts in ein selbst gepflegtes Feld
+(`name`, `hostname`, `ip_address`, `notes` in `systems`) bleibt dabei -- wie
+bei allen anderen drei Plugins -- ausschließlich eine bewusste, manuelle
+Aktion über `get_abm_system_details` plus eine spätere UI-Aktion; kein
+Kommando hier schreibt automatisch in diese vier Felder.
+
+### Frontend (`AbmPluginSection.tsx`)
+
+Strukturell am engsten an `LevelPluginSection.tsx` angelehnt: Kunde-Auswahl
+im Anlage-Formular (inklusive "+ Neuen Kunden anlegen…"), Cache-first
+(`get_cached_abm_sync` beim Öffnen, `sync_abm_connection` nur auf
+"Aktualisieren"), 10-pro-Seite-paginierte, filterbare, `j`/`k`/`Enter`/`l`/
+`u`-tastaturnavigierbare Geräteliste, Vergleichs-/Übernahme-Panel für
+verknüpfte Geräte. Anders als bei Level gibt es aber KEINE Gruppierungsebene
+-- ABM kennt kein Level-artiges "Groups"-Konzept, daher ist die Geräteliste
+je Verbindung eine einzige flache, navigierbare Liste ohne
+Gruppen-Kopfzeilen (eine strukturell vereinfachte Fassung von Levels Muster,
+mit der Gruppen-Zwischenschicht ersatzlos entfernt).
+
+Der Verbindungs-Anlage-Dialog hat fünf Felder statt Levels drei (Kunde,
+Label, Client-ID, Key-ID, sowie ein mehrzeiliges `<textarea>` für den
+privaten Schlüssel -- bewusst kein einzeiliges `<input>`, PEM-Schlüssel sind
+mehrzeilig). Wie bei Snipe-IT (kein Hostname-Feld) nimmt der
+Verknüpfungs-Vorschlag "Mit bestehendem System verknüpfen"
+(`matchKeyForDevice`) ABMs eigenes natürliches Identifikationsfeld,
+`serial_number`, als Abgleichsschlüssel gegen `System.hostname` -- das
+einzige freie Textfeld, das ein lokales System dafür hat. Weil ein lokales
+System kein eigenes `serial_number`/`device_model`-Feld hat, werden diese
+beiden ABM-Felder beim "Neu anlegen" zusätzlich einmalig in das neu
+angelegte Systems `notes`-Feld geschrieben (`AbmPluginSection.tsx::
+createAndLink`, mechanisch identisch zu `SnipeitPluginSection.tsx`s
+gleichnamiger Funktion) -- eine einmalige Vorbelegung bei der Erstanlage,
+keine spätere automatische Überschreibung. `PluginsView.tsx` bindet die
+Sektion als siebte Karte neben `NinjaPluginSection.tsx`/
+`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`
 ein.

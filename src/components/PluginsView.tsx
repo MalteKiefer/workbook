@@ -4,6 +4,7 @@ import SnipeitPluginSection from "./SnipeitPluginSection";
 import IntunePluginSection from "./IntunePluginSection";
 import IruPluginSection from "./IruPluginSection";
 import JamfPluginSection from "./JamfPluginSection";
+import AbmPluginSection from "./AbmPluginSection";
 
 // Thin shell: each plugin integration gets its own settings section
 // component so this file doesn't become an unmaintainable single file as
@@ -13,8 +14,10 @@ import JamfPluginSection from "./JamfPluginSection";
 // docs/PLUGIN_ARCHITECTURE.md "Snipe-IT-Plugin"), IntunePluginSection.tsx
 // (fourth integration, see docs/PLUGIN_ARCHITECTURE.md
 // "Microsoft-Intune-Plugin"), IruPluginSection.tsx (fifth integration, see
-// docs/PLUGIN_ARCHITECTURE.md "Iru-Plugin"), and JamfPluginSection.tsx
-// (sixth integration, see docs/PLUGIN_ARCHITECTURE.md "Jamf-Pro-Plugin").
+// docs/PLUGIN_ARCHITECTURE.md "Iru-Plugin"), JamfPluginSection.tsx (sixth
+// integration, see docs/PLUGIN_ARCHITECTURE.md "Jamf-Pro-Plugin"), and
+// AbmPluginSection.tsx (seventh integration, Apple Business Manager, see
+// docs/PLUGIN_ARCHITECTURE.md "Apple-Business-Manager-Plugin").
 export default function PluginsView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
@@ -25,6 +28,7 @@ export default function PluginsView() {
       <IntunePluginSection />
       <IruPluginSection />
       <JamfPluginSection />
+      <AbmPluginSection />
     </div>
   );
 }

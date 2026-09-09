@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
+use crate::plugin::abm::AbmConnectionMeta;
 use crate::plugin::intune::IntuneConnectionMeta;
 use crate::plugin::iru::IruConnectionMeta;
 use crate::plugin::jamf::{JamfConnectionMeta, JamfSiteMapping};
@@ -147,6 +148,16 @@ pub struct Config {
     /// same principle as `ninja_org_mappings`/`snipeit_company_mappings`.
     /// `#[serde(default)]`-compatible with configs from before this change.
     pub jamf_site_mappings: Vec<JamfSiteMapping>,
+    /// Non-secret metadata per configured Apple Business Manager (ABM)
+    /// connection. Like a Level connection, an ABM connection is bound
+    /// directly to exactly one local customer
+    /// (`AbmConnectionMeta.customer_id`) -- ABM is inherently
+    /// single-organization-scoped, no sub-tenant/site concept, see
+    /// `plugin::abm`. The associated client ID/key ID/private key live
+    /// exclusively in the OS keyring, see `plugin::secrets`.
+    /// `#[serde(default)]`-compatible with configs from before this change,
+    /// analogous to `level_connections` above.
+    pub abm_connections: Vec<AbmConnectionMeta>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -194,6 +205,7 @@ impl Default for Config {
             iru_connections: Vec::new(),
             jamf_connections: Vec::new(),
             jamf_site_mappings: Vec::new(),
+            abm_connections: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -641,6 +653,41 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.jamf_site_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_abm_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.abm_connections.push(AbmConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            customer_id: 7,
+            label: "ACME ABM".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.abm_connections.len(), 1);
+        assert_eq!(loaded.abm_connections[0].customer_id, 7);
+        assert_eq!(loaded.abm_connections[0].label, "ACME ABM");
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_abm_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the ABM integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.abm_connections.is_empty());
     }
 
     #[test]
