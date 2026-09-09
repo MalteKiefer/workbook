@@ -15,7 +15,7 @@ use std::path::Path;
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use argon2::Argon2;
-use rand::RngCore;
+use rand::Rng;
 
 use crate::error::AppError;
 
@@ -46,15 +46,15 @@ pub fn encrypt_file(src: &Path, dest: &Path, passphrase: &str) -> Result<(), App
     let plaintext = std::fs::read(src)?;
 
     let mut salt = [0u8; SALT_LEN];
-    rand::thread_rng().fill_bytes(&mut salt);
+    rand::rng().fill_bytes(&mut salt);
     let mut nonce_bytes = [0u8; NONCE_LEN];
-    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    rand::rng().fill_bytes(&mut nonce_bytes);
 
     let key_bytes = derive_key(passphrase, &salt)?;
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(key_bytes));
+    let nonce = Nonce::from(nonce_bytes);
     let ciphertext = cipher
-        .encrypt(nonce, plaintext.as_ref())
+        .encrypt(&nonce, plaintext.as_ref())
         .map_err(|_| AppError::Backup("Verschlüsselung des Backups fehlgeschlagen".to_string()))?;
 
     let mut out = Vec::with_capacity(MAGIC.len() + SALT_LEN + NONCE_LEN + ciphertext.len());
@@ -83,9 +83,10 @@ pub fn decrypt_file(src: &Path, dest: &Path, passphrase: &str) -> Result<(), App
     let ciphertext = &data[header_len..];
 
     let key_bytes = derive_key(passphrase, salt)?;
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
-    let nonce = Nonce::from_slice(nonce_bytes);
-    let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|_| {
+    let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(key_bytes));
+    let nonce = Nonce::try_from(nonce_bytes)
+        .map_err(|_| AppError::Backup("Ungültige Nonce-Länge im Backup".to_string()))?;
+    let plaintext = cipher.decrypt(&nonce, ciphertext).map_err(|_| {
         AppError::Backup(
             "Entschlüsselung fehlgeschlagen -- falsches Passwort oder beschädigte Datei"
                 .to_string(),
