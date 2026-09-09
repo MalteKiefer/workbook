@@ -12,15 +12,21 @@ import ExportDialog from "./components/ExportDialog";
 import CustomerForm from "./components/CustomerForm";
 import SystemForm from "./components/SystemForm";
 
-function NavButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function NavLink({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
       style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
         background: active ? "var(--bg-hover)" : "transparent",
-        border: "1px solid transparent",
-        color: active ? "var(--text-primary)" : "var(--text-secondary)",
+        border: "none",
+        borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
+        borderRadius: 0,
+        color: active ? "var(--accent)" : "var(--text-secondary)",
         fontWeight: active ? 600 : 500,
+        padding: "0.45rem 0.7rem",
       }}
     >
       {children}
@@ -36,36 +42,58 @@ export default function App() {
   const goToSettings = useAppStore((s) => s.goToSettings);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
-      <header
+    <div style={{ display: "flex", height: "100vh" }}>
+      <nav
         style={{
           display: "flex",
-          alignItems: "center",
-          gap: "0.5rem",
-          padding: "0 0.75rem",
-          height: "44px",
+          flexDirection: "column",
+          width: "180px",
           flexShrink: 0,
-          borderBottom: "1px solid var(--border)",
           background: "var(--bg-surface)",
+          borderRight: "1px solid var(--border)",
+          padding: "0.75rem 0.6rem",
+          gap: "0.15rem",
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: "0.85rem", letterSpacing: "-0.01em", marginRight: "0.5rem" }}>
+        <div
+          style={{
+            fontWeight: 600,
+            fontSize: "0.85rem",
+            fontFamily: "var(--font-mono)",
+            letterSpacing: "-0.01em",
+            padding: "0 0.7rem 0.9rem",
+          }}
+        >
           Wartungsdoku
-        </span>
-        <NavButton active={view === "customers" || view === "systems"} onClick={goToCustomers}>
+        </div>
+        <NavLink active={view === "customers" || view === "systems"} onClick={goToCustomers}>
           Kunden
-        </NavButton>
-        <NavButton active={view === "journal"} onClick={goToJournal}>
+        </NavLink>
+        <NavLink active={view === "journal"} onClick={goToJournal}>
           Journal
-        </NavButton>
-        <NavButton active={view === "settings"} onClick={() => goToSettings()}>
+        </NavLink>
+        <NavLink active={view === "settings"} onClick={() => goToSettings()}>
           Einstellungen
-        </NavButton>
-        <span style={{ marginLeft: "auto", fontSize: "0.75rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-          Strg+K
-        </span>
-      </header>
-      <main style={{ flex: 1, overflow: "auto", padding: "1.25rem" }}>
+        </NavLink>
+        <div
+          style={{
+            marginTop: "auto",
+            paddingTop: "0.6rem",
+            borderTop: "1px solid var(--border-subtle)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.3rem",
+            fontSize: "0.7rem",
+            color: "var(--text-muted)",
+            fontFamily: "var(--font-mono)",
+            padding: "0.6rem 0.7rem 0",
+          }}
+        >
+          <span>Strg+K · Befehle</span>
+          <span>? · Hilfe</span>
+        </div>
+      </nav>
+      <main style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "1.25rem" }}>
         {view === "customers" && <CustomerListView />}
         {view === "systems" && <SystemListView />}
         {view === "journal" && <JournalView />}

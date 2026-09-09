@@ -51,6 +51,9 @@ smoke-test.log
 Thumbs.db
 desktop.ini
 
+# Scratch files (mockups, throwaway exploration) -- never part of the app
+scratch/
+
 # Secrets — never committed, this app's plugin credentials live in the OS
 # keyring exclusively (see docs/PLUGIN_ARCHITECTURE.md), never in a file, but
 # ignore defensively.

@@ -1,17 +1,17 @@
 :root {
-  --bg-base: #0d0e12;
-  --bg-surface: #15171c;
-  --bg-elevated: #1b1e25;
-  --bg-hover: #21242c;
-  --bg-selected: #26304a;
-  --border: #262a33;
-  --border-subtle: #1d2028;
-  --text-primary: #e7e9ec;
-  --text-secondary: #9aa1ac;
-  --text-muted: #6b7280;
-  --accent: #6d8bfa;
-  --accent-hover: #839cfb;
-  --accent-text: #ffffff;
+  --bg-base: #16171b;
+  --bg-surface: #1a1b1f;
+  --bg-elevated: #202227;
+  --bg-hover: #202227;
+  --bg-selected: rgba(232, 130, 58, 0.16);
+  --border: #2c2e34;
+  --border-subtle: #232429;
+  --text-primary: #e9eaec;
+  --text-secondary: #8a8f98;
+  --text-muted: #5f636c;
+  --accent: #e8823a;
+  --accent-hover: #f0934f;
+  --accent-text: #180d02;
   --danger: #f0665e;
   --success: #4ade80;
   --radius-sm: 5px;
@@ -45,14 +45,14 @@
     --bg-surface: #ffffff;
     --bg-elevated: #ffffff;
     --bg-hover: #eceef2;
-    --bg-selected: #dfe6fd;
+    --bg-selected: #fbe6d4;
     --border: #dde1e7;
     --border-subtle: #eceef1;
     --text-primary: #1a1d24;
     --text-secondary: #5b6270;
     --text-muted: #8b93a1;
-    --accent: #4a63d9;
-    --accent-hover: #3a4fb8;
+    --accent: #c2570f;
+    --accent-hover: #a3480a;
     --accent-text: #ffffff;
     --danger: #dc2626;
     --success: #15803d;
@@ -88,7 +88,7 @@
   :root:not([data-theme="dark"]) input:focus,
   :root:not([data-theme="dark"]) select:focus,
   :root:not([data-theme="dark"]) textarea:focus {
-    box-shadow: 0 0 0 3px rgba(74, 99, 217, 0.18);
+    box-shadow: 0 0 0 3px rgba(194, 87, 15, 0.18);
   }
 }
 :root[data-theme="light"] button:not(.btn-primary):not([type="submit"]):hover:not(:disabled) {
@@ -180,8 +180,8 @@ button {
     transform 100ms ease;
 }
 button:hover:not(:disabled) {
-  background: #2a2e38;
-  border-color: #343945;
+  background: #26282e;
+  border-color: #34363d;
 }
 button:active:not(:disabled) {
   transform: translateY(1px);
@@ -231,7 +231,7 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(109, 139, 250, 0.18);
+  box-shadow: 0 0 0 3px rgba(232, 130, 58, 0.18);
 }
 input:focus-visible,
 select:focus-visible,
