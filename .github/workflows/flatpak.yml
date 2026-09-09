@@ -27,14 +27,6 @@ jobs:
           sudo apt-get install -y flatpak flatpak-builder
           flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
 
-      - name: Install Flatpak runtime, SDK and extensions
-        run: |
-          flatpak install --user -y flathub \
-            org.gnome.Platform//47 \
-            org.gnome.Sdk//47 \
-            org.freedesktop.Sdk.Extension.node20//47 \
-            org.freedesktop.Sdk.Extension.rust-stable//47
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -58,7 +50,7 @@ jobs:
           # .git isn't needed inside the sandbox and the module's "dir"
           # source would otherwise copy the whole history in for nothing.
           rm -rf .git
-          flatpak-builder --user --force-clean --repo=repo build-dir \
+          flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo build-dir \
             flatpak/de.maltekiefer.wartungsdoku.yml
 
       - name: Bundle into a single file
