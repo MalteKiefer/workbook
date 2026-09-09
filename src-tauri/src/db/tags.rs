@@ -58,6 +58,38 @@ pub fn list_all(conn: &Connection) -> Result<Vec<String>, AppError> {
     Ok(result)
 }
 
+/// One tag together with how many entries currently use it -- the basis for
+/// the tag cloud in `JournalView` (see `commands::tags::list_tags_with_counts`
+/// on the frontend-facing side). A tag with zero entries left (all of them
+/// retagged away from it) simply never matches the `JOIN`, so it's implicitly
+/// excluded here rather than needing separate cleanup logic.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TagCount {
+    pub name: String,
+    pub count: i64,
+}
+
+pub fn list_all_with_counts(conn: &Connection) -> Result<Vec<TagCount>, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT t.name, COUNT(et.entry_id) AS count
+         FROM tags t
+         JOIN entry_tags et ON et.tag_id = t.id
+         GROUP BY t.id
+         ORDER BY count DESC, t.name COLLATE NOCASE",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(TagCount {
+            name: r.get(0)?,
+            count: r.get(1)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +135,55 @@ mod tests {
         assert_eq!(
             tags_for_entry(&conn, entry_id).unwrap(),
             vec!["firewall".to_string()]
+        );
+    }
+
+    #[test]
+    fn list_all_with_counts_orders_by_usage_then_name() {
+        let conn = migrated_connection();
+        let entry_1 = seed_entry(&conn);
+        conn.execute(
+            "INSERT INTO entries (id, customer_id, title, body_md, category, performed_at_utc, performed_at_tz, created_at_utc, created_at_tz, updated_at_utc, updated_at_tz)
+             VALUES (2, 1, 'Titel 2', '', 'wartung', '2026-09-07T12:00:00.000Z', 'Europe/Berlin', '2026-09-07T12:00:00.000Z', 'Europe/Berlin', '2026-09-07T12:00:00.000Z', 'Europe/Berlin')",
+            [],
+        )
+        .unwrap();
+        let entry_2 = 2;
+
+        set_tags_for_entry(&conn, entry_1, &["exchange".into(), "update".into()]).unwrap();
+        set_tags_for_entry(&conn, entry_2, &["exchange".into()]).unwrap();
+
+        assert_eq!(
+            list_all_with_counts(&conn).unwrap(),
+            vec![
+                TagCount {
+                    name: "exchange".to_string(),
+                    count: 2
+                },
+                TagCount {
+                    name: "update".to_string(),
+                    count: 1
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn list_all_with_counts_excludes_tags_no_longer_used_by_any_entry() {
+        let conn = migrated_connection();
+        let entry_id = seed_entry(&conn);
+        set_tags_for_entry(&conn, entry_id, &["firewall".into()]).unwrap();
+
+        // Retag away from "firewall" -- the tag row itself still exists
+        // (find_or_create never deletes), but no entry uses it anymore.
+        set_tags_for_entry(&conn, entry_id, &["exchange".into()]).unwrap();
+
+        assert_eq!(
+            list_all_with_counts(&conn).unwrap(),
+            vec![TagCount {
+                name: "exchange".to_string(),
+                count: 1
+            }]
         );
     }
 

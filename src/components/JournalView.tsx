@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
+import { TagChipList } from "./TagChip";
+import { TagCloud } from "./TagCloud";
 
 interface Customer {
   id: number;
@@ -237,6 +239,8 @@ export default function JournalView() {
         </label>
       </div>
 
+      <TagCloud selected={tag} onSelect={setTag} />
+
       <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {entries.map((entry, i) => (
           <li
@@ -258,7 +262,7 @@ export default function JournalView() {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--text-muted)" }}>
               <span>{CATEGORY_LABELS[entry.category] ?? entry.category}</span>
-              <span>{entry.tags.join(", ")}</span>
+              <TagChipList names={entry.tags} />
             </div>
             <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{bodyPreview(entry.body_md)}</div>
           </li>

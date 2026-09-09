@@ -5,6 +5,7 @@ import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
 import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
+import { TagChipList } from "./TagChip";
 
 interface Entry {
   id: number;
@@ -225,7 +226,7 @@ export default function EntryDetailModal() {
               <span>{customerName ?? `Kunde #${entry.customer_id}`}</span>
               {systemName && <span>· {systemName}</span>}
               <span>· {CATEGORY_LABELS[entry.category] ?? entry.category}</span>
-              {entry.tags.length > 0 && <span>· {entry.tags.join(", ")}</span>}
+              {entry.tags.length > 0 && <TagChipList names={entry.tags} />}
             </div>
             <div
               style={{

@@ -132,6 +132,7 @@ pub fn run() {
             commands::systems::update_system,
             commands::systems::archive_system,
             commands::tags::list_tags,
+            commands::tags::list_tags_with_counts,
             commands::entries::list_entries,
             commands::entries::get_entry,
             commands::entries::create_entry,
