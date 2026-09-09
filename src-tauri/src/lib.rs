@@ -195,6 +195,15 @@ pub fn run() {
             commands::snipeit::link_system_to_snipeit,
             commands::snipeit::unlink_system_from_snipeit,
             commands::snipeit::get_snipeit_system_details,
+            commands::intune::test_intune_connection,
+            commands::intune::list_intune_connections,
+            commands::intune::add_intune_connection,
+            commands::intune::remove_intune_connection,
+            commands::intune::sync_intune_connection,
+            commands::intune::get_cached_intune_sync,
+            commands::intune::link_system_to_intune,
+            commands::intune::unlink_system_from_intune,
+            commands::intune::get_intune_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())
