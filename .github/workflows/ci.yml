@@ -84,8 +84,18 @@ jobs:
       checks: write
     steps:
       - uses: actions/checkout@v4
+      # RUSTSEC-2026-0194 and RUSTSEC-2026-0195: denial-of-service issues in
+      # quick-xml 0.38.4, pinned below the 0.41.0 fix by citationberg's
+      # `quick-xml = "^0.38.1"` requirement (citationberg -> hayagriva ->
+      # typst-library -> typst, our PDF renderer). Both advisories are about
+      # parsing untrusted, attacker-crafted CSL/bibliography XML through
+      # hayagriva's citation formatting. This app never feeds any XML, or any
+      # bibliography/citation data at all, into Typst; it only renders a
+      # fixed maintenance-report template. The vulnerable code path is
+      # unreachable here. Revisit once citationberg allows quick-xml >=0.41.
       - name: Rust security audit
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: src-tauri
+          ignore: RUSTSEC-2026-0194,RUSTSEC-2026-0195
