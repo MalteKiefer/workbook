@@ -67,7 +67,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use ureq::Agent;
 
@@ -307,7 +307,7 @@ fn build_client_assertion(creds: &AbmCredentials) -> Result<String, PluginError>
 /// crate's own parser).
 fn generate_jti() -> String {
     let mut bytes = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     // Set the RFC 4122 version (4, "random") and variant bits so the
     // rendered string looks like a canonical UUID v4, matching the shape of
     // Apple's own `str(uuid.uuid4())` reference call -- purely cosmetic,

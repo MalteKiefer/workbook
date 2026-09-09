@@ -17,7 +17,7 @@ chrono-tz = "0.10.4"
 dirs = "7.0.0"
 iana-time-zone = "0.1.65"
 image = "0.25.10"
-jsonwebtoken = "11"
+jsonwebtoken = { version = "11", default-features = false, features = ["use_pem", "rust_crypto"] }
 keyring = "4.2.0"
 r2d2 = "0.8.10"
 r2d2_sqlite = "0.35.0"
