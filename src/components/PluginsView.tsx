@@ -5,6 +5,7 @@ import IntunePluginSection from "./IntunePluginSection";
 import IruPluginSection from "./IruPluginSection";
 import JamfPluginSection from "./JamfPluginSection";
 import AbmPluginSection from "./AbmPluginSection";
+import TacticalRmmPluginSection from "./TacticalRmmPluginSection";
 
 // Thin shell: each plugin integration gets its own settings section
 // component so this file doesn't become an unmaintainable single file as
@@ -15,9 +16,11 @@ import AbmPluginSection from "./AbmPluginSection";
 // (fourth integration, see docs/PLUGIN_ARCHITECTURE.md
 // "Microsoft-Intune-Plugin"), IruPluginSection.tsx (fifth integration, see
 // docs/PLUGIN_ARCHITECTURE.md "Iru-Plugin"), JamfPluginSection.tsx (sixth
-// integration, see docs/PLUGIN_ARCHITECTURE.md "Jamf-Pro-Plugin"), and
+// integration, see docs/PLUGIN_ARCHITECTURE.md "Jamf-Pro-Plugin"),
 // AbmPluginSection.tsx (seventh integration, Apple Business Manager, see
-// docs/PLUGIN_ARCHITECTURE.md "Apple-Business-Manager-Plugin").
+// docs/PLUGIN_ARCHITECTURE.md "Apple-Business-Manager-Plugin"), and
+// TacticalRmmPluginSection.tsx (eighth integration, see
+// docs/PLUGIN_ARCHITECTURE.md "Tactical-RMM-Plugin").
 export default function PluginsView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
@@ -29,6 +32,7 @@ export default function PluginsView() {
       <IruPluginSection />
       <JamfPluginSection />
       <AbmPluginSection />
+      <TacticalRmmPluginSection />
     </div>
   );
 }

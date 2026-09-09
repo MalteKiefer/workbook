@@ -1,8 +1,8 @@
 //! Pure read-access aggregation across all configured RMM/asset management
-//! plugin connections (Ninja, Level, Snipe-IT, Intune, Iru, Jamf, ABM) for a
-//! given local customer: returns all devices/assets that (a) belong to this
-//! customer according to the most recently synced plugin caches, and (b) are
-//! not yet linked to any local system.
+//! plugin connections (Ninja, Level, Snipe-IT, Intune, Iru, Jamf, ABM,
+//! Tactical RMM) for a given local customer: returns all devices/assets that
+//! (a) belong to this customer according to the most recently synced plugin
+//! caches, and (b) are not yet linked to any local system.
 //!
 //! Background: the system field when creating a maintenance entry
 //! (`EntryEditor.tsx`/`QuickCapture.tsx`) has so far only searched existing
@@ -17,9 +17,10 @@
 //! the plugin modules (`commands::plugins::CachedNinjaSyncDto`,
 //! `commands::level::CachedLevelSyncDto`, `commands::snipeit::CachedSnipeitSyncDto`,
 //! `commands::intune::CachedIntuneSyncDto`, `commands::iru::CachedIruSyncDto`,
-//! `commands::jamf::CachedJamfSyncDto`, `commands::abm::CachedAbmSyncDto`),
-//! instead of defining the JSON shape here a second time -- that way this
-//! module stays automatically in sync if one of those shapes ever changes.
+//! `commands::jamf::CachedJamfSyncDto`, `commands::abm::CachedAbmSyncDto`,
+//! `commands::tacticalrmm::CachedTacticalRmmSyncDto`), instead of defining
+//! the JSON shape here a second time -- that way this module stays
+//! automatically in sync if one of those shapes ever changes.
 //!
 //! The cache path convention (`data_dir/plugin-cache/<plugin>-<connection_id>.json`)
 //! and the reading itself (`std::fs::read_to_string` + `serde_json::from_str`)
@@ -35,12 +36,12 @@
 //! only the trivial one-liner path construction/the file read itself is
 //! duplicated, exactly as every plugin module already does for itself
 //! (`plugin_cache_dir` is already identically duplicated across all of
-//! them). Intune's, Iru's, Jamf's, and ABM's own
+//! them). Intune's, Iru's, Jamf's, ABM's, and Tactical RMM's own
 //! `collect_*`/`read_*_cache_file` below follow that same established
 //! convention rather than reaching into their own `commands` modules'
 //! private helpers, for consistency rather than because of that same
 //! historical constraint (this module is free to touch
-//! `commands/intune.rs`/`commands/iru.rs`/`commands/jamf.rs`/`commands/abm.rs`,
+//! `commands/intune.rs`/`commands/iru.rs`/`commands/jamf.rs`/`commands/abm.rs`/`commands/tacticalrmm.rs`,
 //! there's just nothing there worth touching).
 
 use std::path::{Path, PathBuf};
@@ -54,6 +55,7 @@ use crate::commands::jamf::CachedJamfSyncDto;
 use crate::commands::level::CachedLevelSyncDto;
 use crate::commands::plugins::CachedNinjaSyncDto;
 use crate::commands::snipeit::CachedSnipeitSyncDto;
+use crate::commands::tacticalrmm::CachedTacticalRmmSyncDto;
 use crate::config::Config;
 use crate::{AppError, AppState};
 
@@ -168,6 +170,20 @@ fn read_abm_cache_file(
     let text = std::fs::read_to_string(&path)?;
     let cached: CachedAbmSyncDto = serde_json::from_str(&text)
         .map_err(|e| AppError::Plugin(format!("ABM-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_tacticalrmm_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedTacticalRmmSyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("tacticalrmm-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedTacticalRmmSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Tactical-RMM-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
@@ -459,6 +475,49 @@ fn collect_abm(
     Ok(())
 }
 
+/// Tactical RMM: structurally the same pattern as Ninja/Snipe-IT
+/// (`collect_ninja`/`collect_snipeit`) -- re-checking against the current
+/// `config.tacticalrmm_client_mappings` instead of the frozen cache value,
+/// for the same freshness reason. `hostname`/`ip_address` are genuinely
+/// populated for Tactical RMM agents (unlike Snipe-IT), see the
+/// `plugin::tacticalrmm` module documentation.
+fn collect_tacticalrmm(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.tacticalrmm_connections {
+        let Some(cache) = read_tacticalrmm_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for group in &cache.groups {
+            let mapped_customer_id = config
+                .tacticalrmm_client_mappings
+                .iter()
+                .find(|m| m.connection_id == connection.id && m.client_id == group.client_id)
+                .map(|m| m.customer_id);
+            if mapped_customer_id != Some(customer_id) {
+                continue;
+            }
+            for device in &group.devices {
+                if device.linked_system_id.is_some() {
+                    continue;
+                }
+                out.push(UnlinkedExternalSystemDto {
+                    plugin: "tacticalrmm".to_string(),
+                    connection_id: connection.id.clone(),
+                    external_id: device.external_id.clone(),
+                    name: device.name.clone(),
+                    hostname: device.hostname.clone(),
+                    ip_address: device.ip_address.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Pure core logic, without `State<AppState>` -- testable with a hardcoded
 /// `Config` plus a `tempfile::tempdir()`, analogous to
 /// `commands::plugins::group_devices_by_organization`. The
@@ -481,6 +540,7 @@ pub fn list_unlinked_external_systems_for_customer_pure(
     collect_iru(config, data_dir, customer_id, &mut result)?;
     collect_jamf(config, data_dir, customer_id, &mut result)?;
     collect_abm(config, data_dir, customer_id, &mut result)?;
+    collect_tacticalrmm(config, data_dir, customer_id, &mut result)?;
     Ok(result)
 }
 
@@ -511,6 +571,9 @@ mod tests {
     use crate::commands::snipeit::{
         ExternalSystemDto as SnipeitExternalSystemDto, SnipeitCompanyDeviceGroupDto,
     };
+    use crate::commands::tacticalrmm::{
+        ExternalSystemDto as TacticalRmmExternalSystemDto, TacticalRmmClientDeviceGroupDto,
+    };
     use crate::plugin::abm::AbmConnectionMeta;
     use crate::plugin::intune::IntuneConnectionMeta;
     use crate::plugin::iru::IruConnectionMeta;
@@ -518,6 +581,7 @@ mod tests {
     use crate::plugin::level::LevelConnectionMeta;
     use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
     use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
+    use crate::plugin::tacticalrmm::{TacticalRmmClientMapping, TacticalRmmConnectionMeta};
 
     fn write_json<T: serde::Serialize>(path: &Path, value: &T) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -550,6 +614,10 @@ mod tests {
 
     fn abm_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
         plugin_cache_dir(data_dir).join(format!("abm-{connection_id}.json"))
+    }
+
+    fn tacticalrmm_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("tacticalrmm-{connection_id}.json"))
     }
 
     fn ninja_device(external_id: &str, linked_system_id: Option<i64>) -> NinjaExternalSystemDto {
@@ -1290,6 +1358,103 @@ mod tests {
     }
 
     #[test]
+    fn tacticalrmm_device_appears_when_its_client_is_mapped_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config
+            .tacticalrmm_connections
+            .push(TacticalRmmConnectionMeta {
+                id: "trmm-conn-1".to_string(),
+                label: "ACME Tactical RMM".to_string(),
+                base_url: "https://api.rmm.example.com".to_string(),
+            });
+        config
+            .tacticalrmm_client_mappings
+            .push(TacticalRmmClientMapping {
+                connection_id: "trmm-conn-1".to_string(),
+                client_id: "client-1".to_string(),
+                client_name: "ACME GmbH".to_string(),
+                customer_id: 5,
+            });
+        let cache = CachedTacticalRmmSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![TacticalRmmClientDeviceGroupDto {
+                client_id: "client-1".to_string(),
+                client_name: "ACME GmbH".to_string(),
+                // Deliberately left stale/`None` -- the mapping comes from
+                // `config.tacticalrmm_client_mappings`, not from this frozen
+                // field (see the comment on `collect_tacticalrmm`).
+                customer_id: None,
+                devices: vec![TacticalRmmExternalSystemDto {
+                    external_id: "agent-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    hostname: Some("SRV-01".to_string()),
+                    ip_address: Some("10.0.0.5".to_string()),
+                    status: Some("online".to_string()),
+                    platform: Some("windows".to_string()),
+                    site_name: Some("Hauptsitz".to_string()),
+                    linked_system_id: None,
+                }],
+            }],
+        };
+        write_json(&tacticalrmm_cache_path(dir.path(), "trmm-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "tacticalrmm");
+        assert_eq!(result[0].connection_id, "trmm-conn-1");
+        assert_eq!(result[0].external_id, "agent-1");
+        assert_eq!(result[0].hostname.as_deref(), Some("SRV-01"));
+    }
+
+    #[test]
+    fn already_linked_tacticalrmm_device_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config
+            .tacticalrmm_connections
+            .push(TacticalRmmConnectionMeta {
+                id: "trmm-conn-1".to_string(),
+                label: "ACME Tactical RMM".to_string(),
+                base_url: "https://api.rmm.example.com".to_string(),
+            });
+        config
+            .tacticalrmm_client_mappings
+            .push(TacticalRmmClientMapping {
+                connection_id: "trmm-conn-1".to_string(),
+                client_id: "client-1".to_string(),
+                client_name: "ACME GmbH".to_string(),
+                customer_id: 5,
+            });
+        let cache = CachedTacticalRmmSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![TacticalRmmClientDeviceGroupDto {
+                client_id: "client-1".to_string(),
+                client_name: "ACME GmbH".to_string(),
+                customer_id: Some(5),
+                devices: vec![TacticalRmmExternalSystemDto {
+                    external_id: "agent-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    hostname: None,
+                    ip_address: None,
+                    status: None,
+                    platform: None,
+                    site_name: None,
+                    linked_system_id: Some(11),
+                }],
+            }],
+        };
+        write_json(&tacticalrmm_cache_path(dir.path(), "trmm-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
     fn intune_connection_bound_to_a_different_customer_is_excluded() {
         let dir = tempdir().unwrap();
         let mut config = Config::default();
@@ -1395,6 +1560,51 @@ mod tests {
     }
 
     #[test]
+    fn tacticalrmm_client_mapped_to_a_different_customer_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config
+            .tacticalrmm_connections
+            .push(TacticalRmmConnectionMeta {
+                id: "trmm-conn-1".to_string(),
+                label: "ACME Tactical RMM".to_string(),
+                base_url: "https://api.rmm.example.com".to_string(),
+            });
+        config
+            .tacticalrmm_client_mappings
+            .push(TacticalRmmClientMapping {
+                connection_id: "trmm-conn-1".to_string(),
+                client_id: "client-1".to_string(),
+                client_name: "ACME GmbH".to_string(),
+                customer_id: 99,
+            });
+        let cache = CachedTacticalRmmSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![TacticalRmmClientDeviceGroupDto {
+                client_id: "client-1".to_string(),
+                client_name: "ACME GmbH".to_string(),
+                customer_id: Some(99),
+                devices: vec![TacticalRmmExternalSystemDto {
+                    external_id: "agent-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    hostname: None,
+                    ip_address: None,
+                    status: None,
+                    platform: None,
+                    site_name: None,
+                    linked_system_id: None,
+                }],
+            }],
+        };
+        write_json(&tacticalrmm_cache_path(dir.path(), "trmm-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
     fn intune_connection_never_synced_is_skipped_gracefully_not_as_an_error() {
         let dir = tempdir().unwrap();
         let mut config = Config::default();
@@ -1441,6 +1651,32 @@ mod tests {
             site_name: "ACME Hauptsitz".to_string(),
             customer_id: 5,
         });
+
+        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn tacticalrmm_connection_never_synced_is_skipped_gracefully_not_as_an_error() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config
+            .tacticalrmm_connections
+            .push(TacticalRmmConnectionMeta {
+                id: "trmm-conn-1".to_string(),
+                label: "ACME Tactical RMM".to_string(),
+                base_url: "https://api.rmm.example.com".to_string(),
+            });
+        config
+            .tacticalrmm_client_mappings
+            .push(TacticalRmmClientMapping {
+                connection_id: "trmm-conn-1".to_string(),
+                client_id: "client-1".to_string(),
+                client_name: "ACME GmbH".to_string(),
+                customer_id: 5,
+            });
 
         let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5);
 

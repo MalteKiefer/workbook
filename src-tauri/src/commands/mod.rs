@@ -15,4 +15,5 @@ pub mod search;
 pub mod settings;
 pub mod snipeit;
 pub mod systems;
+pub mod tacticalrmm;
 pub mod tags;

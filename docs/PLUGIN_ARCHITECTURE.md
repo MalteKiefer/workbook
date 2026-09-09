@@ -1,16 +1,17 @@
 # Plugin-Architektur
 
-Status: Sieben echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Acht echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
-`commands::iru`), Jamf Pro (`plugin::jamf`, `commands::jamf`) und Apple
-Business Manager (`plugin::abm`, `commands::abm`) --, alle mit
+`commands::iru`), Jamf Pro (`plugin::jamf`, `commands::jamf`), Apple
+Business Manager (`plugin::abm`, `commands::abm`) und Tactical RMM
+(`plugin::tacticalrmm`, `commands::tacticalrmm`) --, alle mit
 Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
 Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
 einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
 von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`).
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -1193,4 +1194,227 @@ gleichnamiger Funktion) -- eine einmalige Vorbelegung bei der Erstanlage,
 keine spätere automatische Überschreibung. `PluginsView.tsx` bindet die
 Sektion als siebte Karte neben `NinjaPluginSection.tsx`/
 `LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`
+ein.
+
+## Tactical-RMM-Plugin (`plugin::tacticalrmm`) -- achte echte Integration
+
+`plugin/tacticalrmm.rs` implementiert `Plugin` für Tactical RMMs REST-API
+über HTTPS. Tactical RMM (<https://github.com/amidaware/tacticalrmm>) ist
+ein selbst gehostetes, quelloffenes RMM-Tool (Remote Monitoring &
+Management) -- strukturell am nächsten an NinjaOne: Mehrfach-
+Mandantenfähigkeit über eine echte "Client" -> "Site" -> "Agent"-Hierarchie
+innerhalb einer Verbindung (konzeptionell dieselbe Form wie NinjaOnes
+"Organization" -> "Device"), dazu eine konfigurierbare `base_url` wie
+NinjaOne/Snipe-IT. Authentifizierung ist dagegen so einfach wie bei
+Level.io/Snipe-IT -- ein einzelnes statisches Geheimnis, kein OAuth2-Grant
+wie bei NinjaOne.
+
+Jede Angabe unten ist direkt gegen Tactical RMMs eigenen Backend-Quellcode
+auf GitHub verifiziert (`amidaware/tacticalrmm`, `master`-Branch,
+`api/tacticalrmm/`) -- nicht aus Dokumentations-Prosa geraten:
+
+- **Authentifizierung**: statischer API-Key im eigenen `X-API-KEY`-Header
+  (NICHT `Authorization: Bearer`), verifiziert über
+  `tacticalrmm/auth.py::APIAuthentication`/`get_authorization_header`
+  (`request.META.get("HTTP_X_API_KEY", ...)`). Der Nutzer erzeugt ihn selbst
+  in Tactical RMMs eigener Weboberfläche (Settings -> Global Settings -> API
+  Keys). Kein Token-Austausch, kein OAuth2-Grant -- wie Level.io/Snipe-IT,
+  nur mit anderem Header-Namen und ohne `Bearer `-Präfix.
+- **Selbst gehostet**: wie NinjaOne/Snipe-IT (und anders als Level.ios feste
+  `BASE_URL`-Konstante) braucht eine Tactical-RMM-Verbindung eine vom Nutzer
+  angegebene Basis-URL. Tactical RMMs REST-API hat keinen festen
+  Pfad-Präfix -- verifiziert über `tacticalrmm/urls.py`:
+  `path("clients/", include("clients.urls"))`/
+  `path("agents/", include("agents.urls"))` liegen direkt unter der
+  API-Wurzel, anders als Snipe-ITs festes `/api/v1`-Suffix.
+  `TacticalRmmConnectionMeta.base_url` wird deshalb ohne zusätzlichen
+  Pfad-Suffix direkt verwendet.
+- **Clients (Mehrmandantenfähigkeit)**: `GET {base_url}/clients/`,
+  verifiziert über `clients/views.py::GetAddClients.get`
+  (`return Response(ClientSerializer(clients, many=True).data)`) -- ein
+  nackter, UNPAGINIERTER JSON-Array (kein `{"total", "rows"}`-Umschlag wie
+  Snipe-IT, kein Cursor wie Level.io). Jedes Client-Objekt hat die Form
+  `{"id": <Zahl>, "name": "...", "sites": [...], ...}`
+  (`clients/serializers.py::ClientSerializer`). `sites` ist ein
+  verschachteltes Array -- bewusst nicht ausgewertet, siehe unten: die
+  Zuordnungs-Granularität bleibt auf Client-Ebene, analog dazu, wie NinjaOne
+  auf Organisations-Ebene zuordnet und nicht feiner.
+- **Agenten**: `GET {base_url}/agents/?detail=true` (der STANDARD, wenn der
+  `detail`-Query-Parameter ganz weggelassen wird -- hier trotzdem explizit
+  mitgeschickt, für Klarheit/Zukunftssicherheit). WICHTIG, eine echte
+  Korrektur gegenüber einer anfänglichen, ungeprüften Annahme:
+  `detail=false` ist NICHT die reichhaltigere Liste -- verifiziert über
+  `agents/views.py::GetAgents.get`: der Zweig für "`detail` fehlt ODER
+  `detail=true`" verwendet `AgentTableSerializer` (reichhaltig: Hostname,
+  Client-Name, Site-Name, Status, Plattform, IP, ...); der
+  `detail=false`-Zweig verwendet den deutlich schlankeren
+  `AgentHostnameSerializer` (`id`, `hostname`, `agent_id`, `client`, `site`
+  -- nur Namen, kein Status/Plattform/IP). `plugin::tacticalrmm` fragt daher
+  bewusst explizit `detail=true` an -- der genaue Gegenwert dessen, was eine
+  erste, ungeprüfte Lektüre der Ausgangs-Vorgabe nahegelegt hätte. Ebenfalls
+  ein nackter, unpaginierter JSON-Array wie `/clients/`.
+- **Kein numerisches Client-/Site-Feld an einem Agenten, in KEINER der
+  beiden Agenten-Serializer-Varianten**: verifiziert gegen
+  `agents/serializers.py` -- `AgentTableSerializer.Meta.fields` hat
+  `"client_name"` (`ReadOnlyField(source="site.client.name")`) und
+  `"site_name"` (`ReadOnlyField(source="site.name")`) als reine
+  Anzeige-Strings, sonst nichts, was auf den übergeordneten Client/die Site
+  verweist; `AgentHostnameSerializer` hat dieselbe Geschichte mit
+  `"client"`/`"site"` (ebenfalls Namens-Strings). Das ist eine echte,
+  verifizierte Abweichung von NinjaOne (`organizationId`, ein echter
+  numerischer Fremdschlüssel am Gerät): ein Agent kann seinem Client nur
+  über den NAMEN zugeordnet werden (`agent.client_name == client.name`),
+  nicht über eine ID. `commands::tacticalrmm::group_agents_by_client` ist
+  bewusst um diese verifizierte Realität herum geschrieben, nicht um eine
+  angenommene ID-basierte Form. `TacticalRmmClientMapping.client_id` selbst
+  IST weiterhin die echte, numerische Client-ID (aus `/clients/`, wo eine ID
+  tatsächlich existiert) -- nur die Pro-Agent-Zuordnung braucht den
+  Namens-basierten Behelf.
+- **Agenten-Kennung**: `agent_id`, ein eindeutiger String (verifiziert über
+  `agents/models.py`: `agent_id = models.CharField(max_length=200,
+  unique=True)`), verwendet als URL-Pfad-Segment für einen einzelnen Agenten
+  (`GET {base_url}/agents/{agent_id}/`, verifiziert über `agents/urls.py`).
+  Der Django-interne numerische `id`-Primärschlüssel ist aus
+  `AgentTableSerializer` bewusst ausgeschlossen -- `agent_id` ist die
+  einzige Kennung, die dieses Plugin je sieht oder verwendet;
+  `ExternalSystem::external_id` trägt hier immer `agent_id`, nie eine
+  numerische ID.
+- **IP-Adresse**: `public_ip` ist ein einzelnes String-Feld (verifiziert
+  über `agents/models.py`); `local_ips` ist eine berechnete, durch Kommas
+  getrennte STRING-Eigenschaft (verifiziert: `", ".join(...)`), KEIN Array
+  wie NinjaOnes `ipAddresses` -- und kann auf der Agenten-Seite selbst auch
+  den wörtlichen Fehlertext `"error getting local ips"` enthalten.
+  `extract_ip_address` nimmt das erste, durch Komma getrennte Token von
+  `local_ips`, wenn es nach einem echten Wert aussieht (nicht leer, enthält
+  nicht "error"), sonst `public_ip` als Rückfallebene -- dasselbe
+  "primär + Rückfallebene"-Prinzip wie bei `plugin::ninja`/`plugin::level`,
+  nur an Tactical RMMs tatsächlich verifizierte String- (statt Array-)Form
+  angepasst.
+- **Status/Plattform**: `status` ist einer der verifizierten String-
+  Konstanten `"online"`/`"offline"`/`"overdue"` (`tacticalrmm/constants.py`);
+  `plat` ist eines von `"windows"`/`"linux"`/`"darwin"` (`AgentPlat`-
+  Text-Choices in derselben Datei). Beide werden hier als freie Strings
+  durchgereicht -- kein Rust-Enum --, damit ein künftiger Tactical-RMM-Wert
+  das Parsen nicht bricht.
+- **Kein verifizierter Weboberflächen-Link**: anders als NinjaOne/Snipe-IT
+  wird Tactical RMMs Web-Dashboard (eine eigene Vue-SPA,
+  `amidaware/tacticalrmm-web`) üblicherweise auf einer EIGENEN Subdomain/
+  einem eigenen Host betrieben, unabhängig von der API-`base_url` -- eine
+  gut dokumentierte Tactical-RMM-Deployment-Konvention (typischerweise ein
+  `api.`-Host für das Backend und ein separater `rmm.`-/Wurzel-Host für das
+  Dashboard). Anders als NinjaOnes `ninja_url`/Snipe-ITs `snipeit_url`
+  (beide nachweisbar aus `base_url` ableitbar, weil diese Tools API und
+  Weboberfläche vom SELBEN Host bedienen) gibt es hier keinen ehrlichen Weg,
+  einen Dashboard-Link allein aus `base_url` zu bauen -- diese Integration
+  hat deshalb bewusst KEIN `tacticalrmm_url`-Feld/DTO-Attribut. Eine
+  ehrliche Auslassung, analog zu Snipe-ITs verifiziertem `hostname`/
+  `ip_address` immer `None` (siehe `plugin::snipeit`-Moduldokumentation),
+  keine als Feature verkleidete Vermutung.
+- **HTTP-Client**: `ureq` 3.4.1, synchron, dieselbe Abhängigkeit wie
+  `plugin::ninja`/`plugin::level`/`plugin::snipeit`.
+- **Zugangsdaten-Kodierung**: Tactical RMM braucht nur einen einzigen
+  Geheimwert (den API-Key), 1:1 als `PluginCredentials.secret`
+  durchgereicht -- wie Level.io/Snipe-IT, keine JSON-Kodierung mehrerer
+  Werte nötig (anders als NinjaOne).
+
+### Tactical-RMM-Verbindungen, jede mit mehreren Clients
+
+Strukturell identisch zu NinjaOnes/Snipe-ITs Verbindungs-/Organisations-
+bzw. -Firmen-Modell:
+
+- Nicht-geheime Metadaten (`id`, `label`, `base_url`, bewusst OHNE
+  `customer_id`) liegen als `TacticalRmmConnectionMeta` in
+  `Config::tacticalrmm_connections` (`#[serde(default)]`-kompatibel).
+  Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"tacticalrmm:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei NinjaOne/Level.io/Snipe-IT.
+- Welcher Client innerhalb einer Verbindung welchem lokalen Kunden
+  entspricht (falls überhaupt), steht granular in
+  `Config::tacticalrmm_client_mappings`
+  (`TacticalRmmClientMapping { connection_id, client_id, client_name,
+  customer_id }`). Ein nicht zugeordneter Client liefert bei jeder
+  Synchronisierung seine Agenten weiterhin (zur Ansicht), aber immer mit
+  `linked_system_id: None`.
+- `commands::tacticalrmm::group_agents_by_client` gruppiert Agenten nach
+  Client -- strukturell analog zu `commands::plugins::
+  group_devices_by_organization`/`commands::snipeit::
+  group_devices_by_company`, mit EINER bewussten, verifizierten Abweichung:
+  die Zuordnung Agent -> Client läuft über den NAMEN
+  (`agent.client_name == client.name`), nicht über eine ID, weil Tactical
+  RMMs Agenten-Listen-API keine numerische Client-ID trägt (siehe oben).
+  `TacticalRmmClientMapping`-Nachschlagen verwendet trotzdem weiterhin die
+  echte `client_id`, weil die auf der Client-Liste selbst verfügbar ist.
+  Agenten, deren `client_name` zu keinem bekannten Client passt (sollte
+  normalerweise nicht vorkommen, ist aber nicht ausgeschlossen -- z. B. ein
+  zwischen Client- und Agenten-Abruf im selben Sync-Lauf umbenannter
+  Client), werden nicht stillschweigend verworfen, sondern als eigene
+  Restgruppe angehängt, mit dem rohen Namen als synthetischer ID UND
+  Anzeigename -- exakt wie bei NinjaOnes/Snipe-ITs Restgruppen-Behandlung.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie NinjaOne/Level.io/Snipe-IT:
+`sync_tacticalrmm_connection` schreibt das Ergebnis jedes Laufs zusätzlich
+als JSON nach `data_dir/plugin-cache/tacticalrmm-<connection_id>.json`
+(`{"synced_at_utc": "...", "groups": [...]}`). `get_cached_tacticalrmm_sync`
+liest ausschließlich diese Datei (kein Netzwerkzugriff), rejoint dabei aber
+`customer_id` je Gruppe live gegen die AKTUELLEN
+`Config::tacticalrmm_client_mappings` (nicht den beim letzten Sync
+eingefrorenen Wert) -- exakt wie `commands::plugins::get_cached_ninja_sync`
+--, und liefert `None`, wenn für eine Verbindung noch nie synchronisiert
+wurde. `remove_tacticalrmm_connection` löscht diese Cache-Datei (bestes
+Bemühen) und alle `tacticalrmm_client_mappings`-Zeilen der entfernten
+Verbindung gleich mit.
+
+### Tauri-Kommandos (`commands::tacticalrmm`)
+
+`test_tacticalrmm_connection`, `list_tacticalrmm_connections`,
+`add_tacticalrmm_connection`, `remove_tacticalrmm_connection`,
+`list_tacticalrmm_clients`, `map_tacticalrmm_client`,
+`unmap_tacticalrmm_client`, `sync_tacticalrmm_connection`,
+`get_cached_tacticalrmm_sync`, `link_system_to_tacticalrmm`,
+`unlink_system_from_tacticalrmm`, `get_tacticalrmm_system_details` -- dünne
+Wrapper nach dem Muster von `commands::plugins`. `list_tacticalrmm_clients`
+liefert die Live-Client-Liste einer Verbindung (analog zu
+`list_ninja_organizations`/`list_snipeit_companies`), wird aber vom
+Frontend nicht aufgerufen -- `TacticalRmmPluginSection.tsx` ist wie
+`NinjaPluginSection.tsx`/`SnipeitPluginSection.tsx` konsequent Cache-first
+(`get_cached_tacticalrmm_sync` beim Öffnen, `sync_tacticalrmm_connection`
+nur auf "Aktualisieren"); der Befehl bleibt für Symmetrie und einen
+möglichen künftigen Ersteinrichtungs-Anwendungsfall erhalten. Das Übernehmen
+eines extern gelieferten Werts in ein selbst gepflegtes Feld (`name`,
+`hostname`, `ip_address`, `notes` in `systems`) bleibt -- wie bei
+NinjaOne/Level.io/Snipe-IT -- ausschließlich eine bewusste, manuelle Aktion
+über `get_tacticalrmm_system_details` plus eine spätere UI-Aktion; kein
+Kommando hier schreibt automatisch in diese vier Felder.
+
+### Verknüpfungs-Vorschlag: welches Feld als Abgleichsschlüssel
+
+Anders als Snipe-IT (das mangels Hostname-Feld auf `asset_tag`/`serial`
+ausweichen muss, siehe oben) hat ein Tactical-RMM-Agent ein echtes
+`hostname`-Feld -- Tactical RMM ist RMM-Überwachungssoftware, keine
+Asset-/Inventarverwaltung. `TacticalRmmPluginSection.tsx`s
+`matchKeyForDevice` verwendet deshalb, wie bei NinjaOne/Level.io, direkt
+`device.hostname` als Abgleichsschlüssel für den "Mit bestehendem System
+verknüpfen"-Vorschlag, verglichen gegen das einzige freie Textfeld, das ein
+lokales System dafür hat -- `System.hostname`.
+
+### Frontend (`TacticalRmmPluginSection.tsx`)
+
+Mechanisch an `SnipeitPluginSection.tsx`s Stand angelehnt (Clients
+eingeklappt mit Geräte-Anzahl-Zusammenfassung, Kunde-Zuordnungs-`<select>`
+inklusive "+ Neuen Kunden anlegen…", aufklappbare, filterbare,
+10-pro-Seite-paginierte Geräteliste mit `j`/`k`/`Enter`/`l`/`u`-
+Tastaturnavigation, Vergleichs-/Übernahme-Panel für verknüpfte Geräte). Der
+Verbindungs-Anlage-Dialog hat drei Felder wie bei Snipe-IT (Label, Base-URL,
+API-Key als `type="password"`) -- kein Client-ID/-Secret-Paar nötig, wie bei
+NinjaOne. `DeviceSummaryLine` zeigt zusätzlich einen Online/Offline/
+Überfällig-Statuspunkt, die Plattform (Windows/Linux/macOS) und den
+Site-Namen -- Anzeige-Kontext, der bei Ninja/Level/Snipe-IT keine
+Entsprechung hat. Anders als `NinjaPluginSection.tsx`/
+`SnipeitPluginSection.tsx` gibt es bewusst KEINEN "In X öffnen"-Link auf
+einer Geräte-Zeile (siehe oben, kein verifizierter Weboberflächen-Link).
+`PluginsView.tsx` bindet die Sektion als achte Karte neben
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`
 ein.
