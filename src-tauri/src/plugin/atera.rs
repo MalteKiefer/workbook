@@ -526,7 +526,11 @@ mod tests {
 
     #[test]
     fn parse_page_envelope_extracts_items_page_and_total_pages() {
-        let json = page_envelope(serde_json::json!([{"CustomerID": 1}, {"CustomerID": 2}]), 1, 3);
+        let json = page_envelope(
+            serde_json::json!([{"CustomerID": 1}, {"CustomerID": 2}]),
+            1,
+            3,
+        );
         let (items, page, total_pages) = parse_page_envelope(&json).unwrap();
         assert_eq!(items.len(), 2);
         assert_eq!(page, 1);
@@ -552,7 +556,11 @@ mod tests {
     #[test]
     fn collect_pages_merges_items_across_multiple_pages() {
         let pages = vec![
-            page_envelope(serde_json::json!([{"CustomerID": 1}, {"CustomerID": 2}]), 1, 2),
+            page_envelope(
+                serde_json::json!([{"CustomerID": 1}, {"CustomerID": 2}]),
+                1,
+                2,
+            ),
             page_envelope(serde_json::json!([{"CustomerID": 3}]), 2, 2),
         ];
         let items = collect_pages(&pages).unwrap();

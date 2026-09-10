@@ -30,7 +30,7 @@ use tauri::State;
 
 use crate::config::Config;
 use crate::plugin::atera::{
-    test_credentials, AteraAgent, AteraCustomer, AteraCustomerMapping, AteraConnectionMeta,
+    test_credentials, AteraAgent, AteraConnectionMeta, AteraCustomer, AteraCustomerMapping,
     AteraPlugin,
 };
 use crate::plugin::{self, Plugin, PluginCredentials};
@@ -714,7 +714,10 @@ mod tests {
 
     #[test]
     fn groups_agents_under_their_atera_customer_by_id() {
-        let customers = vec![sample_customer("1", "ACME"), sample_customer("2", "Contoso")];
+        let customers = vec![
+            sample_customer("1", "ACME"),
+            sample_customer("2", "Contoso"),
+        ];
         let agents = vec![
             sample_agent("a1", "1"),
             sample_agent("a2", "1"),
@@ -784,10 +787,7 @@ mod tests {
         let groups = group_agents_by_customer(&customers, &agents, &[], "conn-1");
 
         assert_eq!(groups.len(), 2);
-        let leftover = groups
-            .iter()
-            .find(|g| g.atera_customer_id == "99")
-            .unwrap();
+        let leftover = groups.iter().find(|g| g.atera_customer_id == "99").unwrap();
         assert_eq!(leftover.devices.len(), 1);
         assert_eq!(leftover.atera_customer_name, "99");
     }

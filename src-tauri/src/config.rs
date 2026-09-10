@@ -916,14 +916,12 @@ mod tests {
             id: "acme-1700000000000".to_string(),
             label: "ACME Atera".to_string(),
         });
-        config
-            .atera_customer_mappings
-            .push(AteraCustomerMapping {
-                connection_id: "acme-1700000000000".to_string(),
-                customer_id: "1".to_string(),
-                customer_name: "ACME Hauptsitz".to_string(),
-                local_customer_id: 7,
-            });
+        config.atera_customer_mappings.push(AteraCustomerMapping {
+            connection_id: "acme-1700000000000".to_string(),
+            customer_id: "1".to_string(),
+            customer_name: "ACME Hauptsitz".to_string(),
+            local_customer_id: 7,
+        });
 
         config.save(&path).unwrap();
         let loaded = Config::load_or_default(&path).unwrap();
