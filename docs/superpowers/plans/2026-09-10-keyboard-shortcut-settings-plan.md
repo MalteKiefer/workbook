@@ -986,7 +986,7 @@ All 8 files share the exact same 6-line pattern (only the `j`/`k`/`ArrowDown`/`A
 
 - [ ] **Step 1: Add the import**
 
-Add `import { getKeymap, matchesBinding } from "./keymap";` — wait, these files live in `src/components/`, same directory as `src/lib/keymap.ts`'s parent is `src/lib/`, so the correct relative path from any `src/components/*PluginSection.tsx` is `"../lib/keymap"`. Add:
+These files live in `src/components/`, so the correct relative path to `src/lib/keymap.ts` is `"../lib/keymap"`. Add:
 
 ```ts
 import { getKeymap, matchesBinding } from "../lib/keymap";
