@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
+import AuditLogPanel from "./AuditLogPanel";
 
 interface System {
   id: number;
@@ -193,6 +194,7 @@ export default function SystemForm() {
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
         </label>
         {error && <p style={{ color: "var(--danger)", fontSize: "0.82rem", margin: 0 }}>Fehler: {error}</p>}
+        {typeof systemEditorTarget === "number" && <AuditLogPanel entityType="system" entityId={systemEditorTarget} />}
         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.25rem" }}>
           <button type="button" onClick={cancel}>
             Abbrechen
