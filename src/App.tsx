@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
 import { useAppStore } from "./state/appStore";
 import { getUpdateCheckSettings, listenForOpenUpdateSettings, listenForUpdateCheckCompleted } from "./lib/updateCheck";
+import DashboardView from "./components/DashboardView";
 import CustomerListView from "./components/CustomerListView";
 import SystemListView from "./components/SystemListView";
 import JournalView from "./components/JournalView";
@@ -41,6 +42,7 @@ export default function App() {
   useGlobalHotkeys();
   const keymap = useKeymap();
   const view = useAppStore((s) => s.view);
+  const goToDashboard = useAppStore((s) => s.goToDashboard);
   const goToCustomers = useAppStore((s) => s.goToCustomers);
   const goToJournal = useAppStore((s) => s.goToJournal);
   const goToSettings = useAppStore((s) => s.goToSettings);
@@ -83,6 +85,9 @@ export default function App() {
         >
           Wartungsdoku
         </div>
+        <NavLink active={view === "dashboard"} onClick={goToDashboard}>
+          Dashboard
+        </NavLink>
         <NavLink active={view === "customers" || view === "systems"} onClick={goToCustomers}>
           Kunden
         </NavLink>
@@ -125,6 +130,7 @@ export default function App() {
         </div>
       </nav>
       <main style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "1.25rem" }}>
+        {view === "dashboard" && <DashboardView />}
         {view === "customers" && <CustomerListView />}
         {view === "systems" && <SystemListView />}
         {view === "journal" && <JournalView />}

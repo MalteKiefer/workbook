@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type View = "customers" | "systems" | "journal" | "settings";
+export type View = "dashboard" | "customers" | "systems" | "journal" | "settings";
 export type SettingsTab = "general" | "backup" | "plugins" | "keymap" | "update";
 
 interface AppState {
@@ -17,6 +17,7 @@ interface AppState {
   systemEditorCustomerId: number | null;
   shortcutOverviewOpen: boolean;
   updateAvailableVersion: string | null;
+  goToDashboard: () => void;
   goToCustomers: () => void;
   goToSystems: (customerId?: number) => void;
   goToJournal: () => void;
@@ -42,7 +43,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  view: "customers",
+  view: "dashboard",
   settingsTab: "general",
   selectedCustomerId: null,
   selectedSystemId: null,
@@ -55,6 +56,7 @@ export const useAppStore = create<AppState>((set) => ({
   systemEditorCustomerId: null,
   shortcutOverviewOpen: false,
   updateAvailableVersion: null,
+  goToDashboard: () => set({ view: "dashboard" }),
   goToCustomers: () => set({ view: "customers" }),
   goToSystems: (customerId) =>
     set((state) => ({
