@@ -11,7 +11,7 @@ import EntryDetailModal from "./components/EntryDetailModal";
 import ExportDialog from "./components/ExportDialog";
 import CustomerForm from "./components/CustomerForm";
 import SystemForm from "./components/SystemForm";
-import { formatShortcut } from "./lib/platform";
+import { getKeymap, formatBindingForDisplay } from "./lib/keymap";
 
 function NavLink({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -90,7 +90,7 @@ export default function App() {
             padding: "0.6rem 0.7rem 0",
           }}
         >
-          <span>{formatShortcut("K")} · Befehle</span>
+          <span>{formatBindingForDisplay(getKeymap().command_palette)} · Befehle</span>
           <span>? · Hilfe</span>
         </div>
       </nav>
