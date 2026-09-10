@@ -976,6 +976,7 @@ fn collect_hetzner(
                 name: device.name.clone(),
                 hostname: device.hostname.clone(),
                 ip_address: device.ip_address.clone(),
+                tenant_id: None,
             });
         }
     }

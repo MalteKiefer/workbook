@@ -97,6 +97,7 @@ const LINK_COMMAND: Record<string, string> = {
   action1: "link_system_to_action1",
   dattormm: "link_system_to_dattormm",
   acronis: "link_system_to_acronis",
+  hetzner: "link_system_to_hetzner",
 };
 
 // Falls back to the raw plugin id (still readable, e.g. "kaseya") for any
@@ -118,6 +119,7 @@ const PLUGIN_LABEL: Record<string, string> = {
   action1: "Action1",
   dattormm: "Datto RMM",
   acronis: "Acronis",
+  hetzner: "Hetzner Cloud",
 };
 
 function pluginLabel(plugin: string): string {
