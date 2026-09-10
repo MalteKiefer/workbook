@@ -99,14 +99,30 @@
 //!      own id was enough caused a live account's resources to be
 //!      massively under-counted, since most of them were actually
 //!      registered under child units/sites beneath the mapped customer
-//!      tenant, not the customer tenant node itself), cursor
-//!      `before`/`after`. Response `{"items": [{"id", "name", "agent_id",
-//!      "external_id", "type"}], "paging": {"cursors": {...}}}`. This
-//!      plugin uses `id` as `AcronisResource::external_id` and `name` as
-//!      the display name, NOT the resource's own, confusingly-named
-//!      `external_id` field (a different, Acronis-internal concept, not
-//!      this app's identity join key) and NOT `agent_id` (Acronis's own
-//!      agent concept, irrelevant here).
+//!      tenant, not the customer tenant node itself). ALSO sends
+//!      `is_group=false` and `type=resource.machine` -- another real,
+//!      live-verified fix: without these, the same endpoint also returns
+//!      dynamic/static resource GROUPS ("All", "All virtual machines",
+//!      "All PostgreSQL databases" -- confirmed against
+//!      developer.acronis.com's `is_group` query parameter, which is
+//!      request-only, never a response field) and non-machine resource
+//!      types (`resource.mssql_server` database instances, shown to a
+//!      real user as `mssql://...` entries) mixed in with real devices.
+//!      Cursor `before`/`after`. Response `{"items": [{"id", "name",
+//!      "agent_id", "external_id", "type", "aggregate_id"}], "paging":
+//!      {"cursors": {...}}}`. This plugin uses `id` as
+//!      `AcronisResource::external_id` and `name` as the display name,
+//!      NOT the resource's own, confusingly-named `external_id` field (a
+//!      different, Acronis-internal concept, not this app's identity join
+//!      key) and NOT `agent_id` (Acronis's own agent concept, irrelevant
+//!      here). `dedupe_resources_by_aggregate_id` runs right after this
+//!      fetch: the same physical/virtual machine can be reported as
+//!      multiple separate resource entries (different agents/backup
+//!      roles protecting it -- see `aggregate_id`/`aggregation_status`/
+//!      `aspects` in Acronis's own Resource schema), confirmed against a
+//!      real account that showed e.g. "SRV-LF-SU-20" and
+//!      "SRV-LF-SU-20.lflohmar.local" as two separate rows for the same
+//!      machine.
 //!   2. **Backup health**: `GET {resource_base}/alert_manager/v1/resource_status`,
 //!      filtered by the EXACT resource IDs found in step 1
 //!      (`id=<single id>` or `id=or(id1,id2,...)` for multiple, Acronis's
@@ -342,6 +358,7 @@ impl AcronisPlugin {
             fetch_tenant_subtree_csv(&agent, &self.datacenter_url, &token, &creds, tenant_id)?;
         let raw_resources =
             fetch_all_resources(&agent, &self.datacenter_url, &token, &subtree_csv)?;
+        let raw_resources = dedupe_resources_by_aggregate_id(raw_resources);
         let resources: Vec<AcronisResource> = raw_resources
             .iter()
             .filter_map(|value| map_resource(value, tenant_id, tenant_name))
@@ -608,6 +625,17 @@ fn fetch_all_tenants(
 /// `fetch_tenant_subtree_csv`) -- `resource_management/v4/resources`'s
 /// `tenant_id` filter is EXACT-MATCH per tenant, not recursive, verified
 /// against developer.acronis.com (a real live-bug fix, see module docs).
+/// A real, live-verified data-quality fix: without `is_group=false` and
+/// `type=resource.machine`, this endpoint also returns dynamic/static
+/// resource GROUPS ("All", "All virtual machines", "All PostgreSQL
+/// databases" -- never real devices, see `is_group`/`group_condition` in
+/// the module docs) and non-machine resource types (`resource.mssql_server`
+/// database instances, shown as `mssql://...` entries) mixed in with real
+/// machines, confirmed against a live account that showed both. Verified
+/// against developer.acronis.com's real OpenAPI spec: `is_group` (query
+/// param, NOT a response field) excludes groups; `type=resource.machine`
+/// (the confirmed real value for an actual machine, per the same spec's
+/// guide examples) excludes database/other resource types.
 fn fetch_all_resources(
     agent: &Agent,
     datacenter_url: &str,
@@ -618,7 +646,16 @@ fn fetch_all_resources(
         "{}/api/resource_management/v4/resources",
         datacenter_url.trim_end_matches('/')
     );
-    fetch_all_pages(agent, &url, token, &[("tenant_id", tenant_id_csv)])
+    fetch_all_pages(
+        agent,
+        &url,
+        token,
+        &[
+            ("tenant_id", tenant_id_csv),
+            ("is_group", "false"),
+            ("type", "resource.machine"),
+        ],
+    )
 }
 
 /// Filters by the exact resource IDs already fetched from
@@ -762,6 +799,41 @@ fn collect_subtree_tenant_ids(raw_tenants: &[serde_json::Value], root_id: &str) 
                 result.push(child.to_string());
                 queue.push(child);
             }
+        }
+    }
+    result
+}
+
+/// A real, live-verified fix: the same physical/virtual machine can be
+/// reported as multiple separate resource entries (different agents/
+/// backup roles protecting it -- see `aggregate_id`/`aggregation_status`/
+/// `aspects` in Acronis's own Resource schema, confirmed against
+/// developer.acronis.com), which showed up as e.g. "SRV-LF-SU-20" and
+/// "SRV-LF-SU-20.lflohmar.local" as two separate rows against a real
+/// account. Keeps only the FIRST resource seen per `aggregate_id`; a
+/// resource with no `aggregate_id` at all falls back to its own `id` as
+/// the dedup key (so it never collides with an unrelated resource that
+/// also happens to lack one). Order-preserving (first occurrence wins),
+/// pure and testable with hardcoded JSON, no network access.
+fn dedupe_resources_by_aggregate_id(
+    raw_resources: Vec<serde_json::Value>,
+) -> Vec<serde_json::Value> {
+    let mut seen_keys = std::collections::HashSet::new();
+    let mut result = Vec::new();
+    for value in raw_resources {
+        let key = value["aggregate_id"]
+            .as_str()
+            .map(str::to_string)
+            .or_else(|| value["id"].as_str().map(str::to_string));
+        let Some(key) = key else {
+            // No aggregate_id AND no id -- map_resource will skip this
+            // entry anyway (it requires a usable `id`), so let it through
+            // unchanged rather than silently dropping it here too.
+            result.push(value);
+            continue;
+        };
+        if seen_keys.insert(key) {
+            result.push(value);
         }
     }
     result
@@ -1003,6 +1075,37 @@ mod tests {
     fn resource_skips_entries_without_a_usable_id() {
         let value = serde_json::json!({"name": "OhneId"});
         assert!(map_resource(&value, "tenant-1", "Acme").is_none());
+    }
+
+    #[test]
+    fn dedupe_keeps_only_the_first_resource_per_aggregate_id() {
+        let raw = vec![
+            serde_json::json!({"id": "res-1", "name": "SRV-LF-SU-20", "aggregate_id": "agg-1"}),
+            serde_json::json!({"id": "res-2", "name": "SRV-LF-SU-20.lflohmar.local", "aggregate_id": "agg-1"}),
+        ];
+        let deduped = dedupe_resources_by_aggregate_id(raw);
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0]["id"], "res-1");
+    }
+
+    #[test]
+    fn dedupe_falls_back_to_id_when_aggregate_id_is_absent() {
+        let raw = vec![
+            serde_json::json!({"id": "res-1", "name": "webportal"}),
+            serde_json::json!({"id": "res-2", "name": "databaseserver"}),
+        ];
+        let deduped = dedupe_resources_by_aggregate_id(raw);
+        assert_eq!(deduped.len(), 2);
+    }
+
+    #[test]
+    fn dedupe_does_not_collide_resources_that_all_lack_an_id() {
+        let raw = vec![
+            serde_json::json!({"name": "OhneId1"}),
+            serde_json::json!({"name": "OhneId2"}),
+        ];
+        let deduped = dedupe_resources_by_aggregate_id(raw);
+        assert_eq!(deduped.len(), 2);
     }
 
     #[test]
