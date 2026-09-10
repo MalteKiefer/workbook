@@ -1,17 +1,18 @@
 # Plugin-Architektur
 
-Status: Acht echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Neun echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
 `commands::iru`), Jamf Pro (`plugin::jamf`, `commands::jamf`), Apple
-Business Manager (`plugin::abm`, `commands::abm`) und Tactical RMM
-(`plugin::tacticalrmm`, `commands::tacticalrmm`) --, alle mit
+Business Manager (`plugin::abm`, `commands::abm`), Tactical RMM
+(`plugin::tacticalrmm`, `commands::tacticalrmm`) und Pulseway
+(`plugin::pulseway`, `commands::pulseway`) --, alle mit
 Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
 Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
 einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
 von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`).
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`PulsewayPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -1418,3 +1419,231 @@ einer Geräte-Zeile (siehe oben, kein verifizierter Weboberflächen-Link).
 `PluginsView.tsx` bindet die Sektion als achte Karte neben
 `NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`
 ein.
+
+## Pulseway-Plugin (`plugin::pulseway`) -- neunte echte Integration
+
+`plugin/pulseway.rs` implementiert `Plugin` für Pulseways REST-API über
+HTTPS. Pulseway (<https://www.pulseway.com/>) ist in erster Linie ein
+Cloud-gehostetes RMM-Tool, bietet aber auch eine selbst gehostete
+"Enterprise Server"-Variante unter derselben API-Form an -- strukturell am
+nächsten an Tactical RMM: eine konfigurierbare `base_url` (Standardwert der
+Cloud-Host im Frontend-Formular, aber immer änderbar) UND eine echte
+Mehrfach-Mandantenfähigkeit innerhalb einer Verbindung, hier sogar VIER
+Ebenen tief ("Organization" -> "Site" -> "Group" -> "Device", eine Ebene
+mehr als Tactical RMMs "Client" -> "Site" -> "Agent"). Authentifizierung
+braucht dagegen, wie NinjaOne, ZWEI Geheimwerte (Token-ID + Token-Secret,
+siehe unten) statt Tactical RMMs einzelnem API-Key.
+
+Die Angaben unten stammen aus Pulseways eigener offizieller API-Referenz
+unter <https://api.pulseway.com>, MIT EINER AUSNAHME -- dem genauen
+Weboberflächen-Pfad zum Erzeugen eines Tokens, der aus einer
+Drittanbieter-Integrationsanleitung stammt, nicht aus Pulseways eigener
+Primärdokumentation, und deshalb unten ausdrücklich als "plausibel, nicht
+vollständig verifiziert" markiert ist -- dieselbe Ehrlichkeits-Konvention,
+die `plugin::tacticalrmm` für seine eigenen unbestätigten Angaben verwendet
+(siehe dort, "Kein verifizierter Weboberflächen-Link"):
+
+- **Authentifizierung**: HTTP Basic Auth --
+  `Authorization: Basic <base64("{token_id}:{token_secret}")>`. Der Nutzer
+  erzeugt ein Token-ID-/Token-Secret-Paar in Pulseways eigener
+  Weboberfläche (PLAUSIBEL, NICHT VOLLSTÄNDIG VERIFIZIERT: "Configuration ->
+  API Access -> Third Party Tokens -> Create Token", laut einer
+  Drittanbieter-Integrationsanleitung, nicht Pulseways eigener
+  Primärdokumentation). `basic_auth_header` baut den Header-Wert aus einem
+  `PulsewayCredentials`-Wert mit der `base64`-Crate (bereits Abhängigkeit,
+  0.23.1).
+- **Basis-URL**: der feste Cloud-Host `https://api.pulseway.com/v3` ist der
+  Standardwert (siehe Platzhalter im Frontend-Formular), aber Pulseway
+  dokumentiert auch eine selbst gehostete "Enterprise Server"-Variante unter
+  derselben API-Form (`https://<eigener-server>/api/v3`). Wie bei Tactical
+  RMM/NinjaOne/Snipe-IT (und anders als Level.ios feste `BASE_URL`-
+  Konstante) braucht eine Verbindung deshalb eine vom Nutzer angegebene,
+  immer änderbare `PulsewayConnectionMeta.base_url`.
+- **Mandanten-Hierarchie**: VIER Ebenen -- Organization -> Site -> Group ->
+  Device. Die Zuordnungs-Granularität bleibt trotzdem auf
+  Organisations-Ebene, exakt wie Tactical RMM auf Client-Ebene zuordnet und
+  NinjaOne auf Organisations-Ebene -- keine zweite Zuordnungs-Ebene für
+  Site/Group. Site und Group eines Geräts werden trotzdem als
+  reine Anzeige-Information mitgeliefert (`PulsewayDevice.site_name`/
+  `group_name`).
+- **Organisationen**: `GET /organizations` liefert einen Umschlag --
+  `{"Data": [...], "Meta": {"ResponseCode": 200, "TotalCount": <n>}}` --
+  PascalCase-Umschlagsschlüssel UND PascalCase-Feldnamen (`Id`, `Name`,
+  `Type`). WEDER Tactical RMMs nackter, unpaginierter Array NOCH Snipe-ITs
+  `{"total", "rows"}`-Form -- ein eigener Umschlag, der einen expliziten
+  `Data`-Unwrap braucht (siehe `map_organizations_pages`).
+- **Geräte**: `GET /devices`, derselbe `Data`/`Meta`-Umschlag. Verifizierte
+  Listenfelder: `Identifier` (ein String-GUID -- als `external_id`
+  verwendet, analog zu Tactical RMMs `agent_id`), `Name` (der Hostname des
+  Geräts -- Pulseways eigene API-Referenz dokumentiert dieses Feld ALS den
+  Hostnamen, es gibt kein separates `hostname`-Feld), `OrganizationId` (ein
+  echter NUMERISCHER Fremdschlüssel -- ein echter, verifizierter Unterschied
+  zu Tactical RMM, dessen Agenten-Liste gar keine Client-ID trägt und einen
+  NAMEN-basierten Join braucht, siehe oben; hier kann
+  `commands::pulseway::group_devices_by_organization` nach ID joinen, exakt
+  wie `commands::plugins::group_devices_by_organization` es für NinjaOne
+  tut), `OrganizationName`, `SiteName`, `GroupName`, `IsAgentInstalled`
+  (bool). **Verifizierte, bewusste Lücke**: die Listen-Schnittstelle hat
+  KEINE IP-Adresse, KEINEN Online-/Offline-Status und KEIN Plattform-/
+  OS-Feld -- diese drei existieren nur bei der Einzelgeräte-Detail-
+  Schnittstelle (siehe unten). `PulsewayDevice` hat deshalb GAR KEINE
+  `ip_address`-/`status`-/`platform`-Felder -- keine still auf `None`
+  gesetzten Felder, die fälschlich nahelegen würden, ein Abrufversuch hätte
+  stattgefunden, sondern Felder, die im Typ schlicht nicht existieren.
+- **Einzelgeräte-Detail**: `GET /devices/{id}` (`id` = das `Identifier`-GUID
+  aus der Liste) trägt die REICHHALTIGEN Felder, die der Listen-Schnittstelle
+  fehlen -- `IsOnline` (bool), `ComputerType` (String, z. B. `"windows"`),
+  `ExternalIpAddress` (String), `LocalIpAddresses` (ein Array von
+  Netzwerkadapter-Objekten, je mit `IpV4`/`IpV6`). AUSSCHLIESSLICH von
+  `Plugin::get_system_details` verwendet (ein Aufruf, Rohdaten unverändert
+  durchgereicht, exakt wie `plugin::tacticalrmm::get_system_details`) --
+  bewusst NIE pro Gerät während `list_systems`/eines Sync-Laufs aufgerufen,
+  das wäre ein N+1-Aufrufmuster gegen ein dokumentiertes Ratenlimit von rund
+  3600 Anfragen/Stunde (siehe unten). Der Listen-/Sync-Pfad verwendet
+  ausschließlich die schlanken `/devices`-Felder; Status/IP/Plattform
+  tauchen nur auf, wenn ein Nutzer die Details EINES Systems ansieht.
+- **Paginierung**: OData-artige `$top`/`$skip`-Query-Parameter,
+  `$count=true` für `Meta.TotalCount`. `Meta.NextQueryLink` (eine
+  vollständige URL zur nächsten Seite) wird erst zurückgeliefert, sobald die
+  Gesamtergebnisse 5000 überschreiten -- für typische MSP-Flottengrößen
+  darunter würde in der Praxis schon eine einzelne Anfrage mit großem `$top`
+  reichen, `fetch_all_pages` implementiert trotzdem eine ECHTE
+  Paginierungs-Schleife (folgt `Meta.NextQueryLink`, solange vorhanden,
+  sonst erhöht `$skip` um die Anzahl der Einträge der jeweils letzten Seite,
+  solange die gesammelte Anzahl noch unter `Meta.TotalCount` liegt) -- die
+  gleiche erschöpfende Abruf-Disziplin wie bei Tactical RMM, hier auf
+  Pulseways tatsächlich paginierte Form angepasst.
+- **Ratenlimits**: dokumentiert mit rund 3600 Anfragen/Stunde pro Token pro
+  Endpunkt (variiert je Endpunkt); bei Überschreitung Status 429 mit
+  `Retry-After`-Header. Für diese Integration ist keine besondere
+  Retry-/Backoff-Logik implementiert -- entspricht jedem bestehenden Plugin
+  in dieser Codebasis, keines davon implementiert Retry/Backoff; ein 429
+  fällt einfach in `map_ureq_error`s generischen "anderer Status ->
+  Unreachable"-Zweig wie jede andere Nicht-2xx-Antwort.
+- **Kein Weboberflächen-Deep-Link**: ein echtes `ExternalUrl`-Feld existiert
+  in Pulseways API, aber nur bei der separaten `/assets`-/`/assets/{id}`-
+  Ressource, NICHT bei `/devices` -- die Verwendung würde einen zusätzlichen
+  Aufruf pro Gerät erfordern, den dieses Plugin sonst nicht braucht (siehe
+  N+1-/Ratenlimit-Hinweis oben). Eine ehrliche Auslassung, analog zu
+  Tactical RMMs fehlendem `tacticalrmm_url` -- auch hier kein
+  `pulseway_url`-Feld/DTO-Attribut.
+- **HTTP-Client**: `ureq` 3.4.1, synchron, dieselbe Abhängigkeit wie jedes
+  andere echte Plugin in dieser Codebasis.
+- **Zugangsdaten-Kodierung**: Pulseway braucht ZWEI Geheimwerte (Token-ID +
+  Token-Secret), also trägt `PluginCredentials.secret` ein kleines
+  JSON-Objekt (`{"token_id":"...","token_secret":"..."}`), mit
+  `serde_json::from_str` geparst -- exakt `plugin::ninja::
+  NinjaCredentials`s Muster (`client_id`/`client_secret`), NICHT Tactical
+  RMMs Ein-String-Durchreichung.
+
+### Pulseway-Verbindungen, jede mit mehreren Organisationen
+
+Strukturell identisch zu Tactical RMMs/NinjaOnes Verbindungs-/Client- bzw.
+-Organisations-Modell:
+
+- Nicht-geheime Metadaten (`id`, `label`, `base_url`, bewusst OHNE
+  `customer_id`) liegen als `PulsewayConnectionMeta` in
+  `Config::pulseway_connections` (`#[serde(default)]`-kompatibel).
+  Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"pulseway:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei Tactical RMM/NinjaOne.
+- Welche Organisation innerhalb einer Verbindung welchem lokalen Kunden
+  entspricht (falls überhaupt), steht granular in
+  `Config::pulseway_org_mappings` (`PulsewayOrgMapping { connection_id,
+  organization_id, organization_name, customer_id }`). Eine nicht
+  zugeordnete Organisation liefert bei jeder Synchronisierung ihre Geräte
+  weiterhin (zur Ansicht), aber immer mit `linked_system_id: None`.
+- `commands::pulseway::group_devices_by_organization` gruppiert Geräte nach
+  Organisation -- strukturell analog zu `commands::plugins::
+  group_devices_by_organization`, MIT EINER bewussten, verifizierten
+  Übereinstimmung mit NinjaOne (und Abweichung von Tactical RMM): die
+  Zuordnung Gerät -> Organisation läuft über die echte numerische ID
+  (`device.organization_id == organization.id`), NICHT über den Namen, weil
+  Pulseways Geräte-Listen-API sehr wohl eine numerische Organisations-ID
+  trägt (siehe oben). Geräte, deren `organization_id` zu keiner bekannten
+  Organisation passt (sollte normalerweise nicht vorkommen, ist aber nicht
+  ausgeschlossen -- z. B. eine zwischen Organisations- und Geräte-Abruf im
+  selben Sync-Lauf gelöschte Organisation), werden nicht stillschweigend
+  verworfen, sondern als eigene Restgruppe angehängt -- mit dem Anzeigenamen
+  aus dem Geräte-eigenen `organization_name`-Feld (Pulseway-Geräte tragen
+  das redundant pro Gerät, anders als NinjaOne) statt der rohen ID, eine
+  kleine Verbesserung gegenüber `commands::plugins::
+  group_devices_by_organization`s Restgruppen-Behandlung.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie jedes andere Plugin:
+`sync_pulseway_connection` schreibt das Ergebnis jedes Laufs zusätzlich als
+JSON nach `data_dir/plugin-cache/pulseway-<connection_id>.json`
+(`{"synced_at_utc": "...", "groups": [...]}`). `get_cached_pulseway_sync`
+liest ausschließlich diese Datei (kein Netzwerkzugriff), rejoint dabei aber
+`customer_id` je Gruppe live gegen die AKTUELLEN
+`Config::pulseway_org_mappings` (nicht den beim letzten Sync eingefrorenen
+Wert) -- exakt wie `commands::tacticalrmm::get_cached_tacticalrmm_sync` --,
+und liefert `None`, wenn für eine Verbindung noch nie synchronisiert wurde.
+`remove_pulseway_connection` löscht diese Cache-Datei (bestes Bemühen) und
+alle `pulseway_org_mappings`-Zeilen der entfernten Verbindung gleich mit.
+
+### Tauri-Kommandos (`commands::pulseway`)
+
+`test_pulseway_connection`, `list_pulseway_connections`,
+`add_pulseway_connection`, `remove_pulseway_connection`,
+`list_pulseway_organizations`, `map_pulseway_organization`,
+`unmap_pulseway_organization`, `sync_pulseway_connection`,
+`get_cached_pulseway_sync`, `link_system_to_pulseway`,
+`unlink_system_from_pulseway`, `get_pulseway_system_details` -- dünne
+Wrapper nach dem Muster von `commands::tacticalrmm`. `add_pulseway_connection`
+nimmt ein Token-ID-/Token-Secret-Paar entgegen (nicht einen einzelnen
+API-Key) und kodiert es vor dem Speichern über
+`plugin::secrets::store_secret` als JSON
+(`{"token_id":"...","token_secret":"..."}`), exakt wie
+`commands::plugins::add_ninja_connection`s Client-ID-/-Secret-Paar.
+`list_pulseway_organizations` liefert die Live-Organisationsliste einer
+Verbindung (analog zu `list_tacticalrmm_clients`/
+`list_ninja_organizations`), wird aber vom Frontend nicht aufgerufen --
+`PulsewayPluginSection.tsx` ist wie jede andere Plugin-Sektion konsequent
+Cache-first (`get_cached_pulseway_sync` beim Öffnen,
+`sync_pulseway_connection` nur auf "Aktualisieren"); der Befehl bleibt für
+Symmetrie und einen möglichen künftigen Ersteinrichtungs-Anwendungsfall
+erhalten. Das Übernehmen eines extern gelieferten Werts in ein selbst
+gepflegtes Feld (`name`, `hostname`, `ip_address`, `notes` in `systems`)
+bleibt -- wie bei jedem anderen Plugin -- ausschließlich eine bewusste,
+manuelle Aktion über `get_pulseway_system_details` plus eine spätere
+UI-Aktion; kein Kommando hier schreibt automatisch in diese vier Felder.
+`sync_pulseway_connection` ruft `get_system_details` (die
+Einzelgeräte-Detail-Schnittstelle) nur für BEREITS verknüpfte Geräte auf --
+niemals für alle Geräte einer Synchronisierung -- um das N+1-Aufrufmuster
+gegen das Ratenlimit zu vermeiden (siehe oben).
+
+### Verknüpfungs-Vorschlag: welches Feld als Abgleichsschlüssel
+
+Wie Tactical RMM/NinjaOne hat ein Pulseway-Gerät ein Feld, das als Hostname
+dient (`Name`, siehe oben) -- `PulsewayPluginSection.tsx`s
+`matchKeyForDevice` verwendet deshalb direkt `device.hostname` (immer
+identisch zu `device.name`, siehe DTO-Kommentar) als Abgleichsschlüssel für
+den "Mit bestehendem System verknüpfen"-Vorschlag, verglichen gegen das
+einzige freie Textfeld, das ein lokales System dafür hat --
+`System.hostname`.
+
+### Frontend (`PulsewayPluginSection.tsx`)
+
+Mechanisch an `TacticalRmmPluginSection.tsx`s Stand angelehnt
+(Organisationen eingeklappt mit Geräte-Anzahl-Zusammenfassung,
+Kunde-Zuordnungs-`<select>` inklusive "+ Neuen Kunden anlegen…",
+aufklappbare, filterbare, 10-pro-Seite-paginierte Geräteliste mit
+`j`/`k`/`Enter`/`l`/`u`-Tastaturnavigation, Vergleichs-/Übernahme-Panel für
+verknüpfte Geräte). Der Verbindungs-Anlage-Dialog hat VIER Felder (Label,
+Base-URL, Token-ID, Token-Secret als `type="password"`) statt Tactical RMMs
+drei -- ein Token-ID-/Token-Secret-Paar nötig, wie bei NinjaOnes Client-ID/
+-Secret (`NinjaPluginSection.tsx`). `DeviceSummaryLine` zeigt statt eines
+Online/Offline/Überfällig-Statuspunkts und einer Plattform-Badge (die es bei
+Pulseway auf der Listen-Schnittstelle verifiziert nicht gibt, siehe oben)
+Site- und Gruppen-Namen sowie einen einfachen "Agent installiert"/"Kein
+Agent"-Punkt (`IsAgentInstalled`). Wie bei Tactical RMM gibt es bewusst
+KEINEN "In Pulseway öffnen"-Link auf einer Geräte-Zeile (siehe oben, kein
+verifizierter Weboberflächen-Link ohne zusätzlichen Aufruf).
+`PluginsView.tsx` bindet die Sektion als neunte Karte neben
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`
+ein, alphabetisch zwischen `NinjaPluginSection.tsx` und
+`SnipeitPluginSection.tsx`.
