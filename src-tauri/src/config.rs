@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
 use crate::plugin::abm::AbmConnectionMeta;
+use crate::plugin::acronis::{AcronisConnectionMeta, AcronisTenantMapping};
 use crate::plugin::action1::{Action1ConnectionMeta, Action1OrgMapping};
 use crate::plugin::atera::{AteraConnectionMeta, AteraCustomerMapping};
 use crate::plugin::dattormm::{DattoRmmConnectionMeta, DattoRmmSiteMapping};
@@ -333,6 +334,27 @@ pub struct Config {
     /// principle as `tacticalrmm_client_mappings`/`jamf_site_mappings`.
     /// `#[serde(default)]`-compatible with configs from before this change.
     pub dattormm_site_mappings: Vec<DattoRmmSiteMapping>,
+    /// Non-secret metadata per configured Acronis Cyber Protect Cloud
+    /// connection (one Acronis API client; a user can create as many
+    /// connections as they like). Like Ninja/Snipe-IT/Tactical RMM, an
+    /// Acronis connection is NOT bound to exactly one local customer;
+    /// see `acronis_tenant_mappings`. `datacenter_url` deliberately lives
+    /// here, non-secret, like Tactical RMM's `base_url`; see
+    /// `plugin::acronis` module docs. The associated OAuth2 client
+    /// ID/secret live exclusively in the OS keyring, see
+    /// `plugin::secrets`. `#[serde(default)]`-compatible with configs from
+    /// before this change, analogous to `tacticalrmm_connections` above.
+    pub acronis_connections: Vec<AcronisConnectionMeta>,
+    /// Mapping of individual Acronis tenants (`kind == "customer"`, within
+    /// a connection) to local customers. A single Acronis API client (one
+    /// connection) can see multiple customer tenants, e.g. because the
+    /// user is themselves an MSP running several of their own customers as
+    /// separate Acronis tenants, hence this separate, granular mapping
+    /// table instead of a `customer_id` field directly on the connection,
+    /// exactly the same principle as `tacticalrmm_client_mappings`.
+    /// `#[serde(default)]`-compatible with configs from before this
+    /// change.
+    pub acronis_tenant_mappings: Vec<AcronisTenantMapping>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -394,6 +416,8 @@ impl Default for Config {
             action1_org_mappings: Vec::new(),
             dattormm_connections: Vec::new(),
             dattormm_site_mappings: Vec::new(),
+            acronis_connections: Vec::new(),
+            acronis_tenant_mappings: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -1348,6 +1372,84 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.dattormm_site_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_acronis_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.acronis_connections.push(AcronisConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Acronis".to_string(),
+            datacenter_url: "https://eu2-cloud.acronis.com".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.acronis_connections.len(), 1);
+        assert_eq!(
+            loaded.acronis_connections[0].datacenter_url,
+            "https://eu2-cloud.acronis.com"
+        );
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_acronis_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the Acronis integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.acronis_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_acronis_tenant_mappings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.acronis_connections.push(AcronisConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Acronis".to_string(),
+            datacenter_url: "https://eu2-cloud.acronis.com".to_string(),
+        });
+        config.acronis_tenant_mappings.push(AcronisTenantMapping {
+            connection_id: "acme-1700000000000".to_string(),
+            tenant_id: "tenant-1".to_string(),
+            tenant_name: "ACME Hauptsitz".to_string(),
+            customer_id: 7,
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.acronis_tenant_mappings.len(), 1);
+        assert_eq!(loaded.acronis_tenant_mappings[0].tenant_id, "tenant-1");
+        assert_eq!(loaded.acronis_tenant_mappings[0].customer_id, 7);
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_acronis_tenant_mappings_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the tenant mapping was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.acronis_tenant_mappings.is_empty());
     }
 
     #[test]

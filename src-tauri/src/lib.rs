@@ -312,6 +312,18 @@ pub fn run() {
             commands::dattormm::link_system_to_dattormm,
             commands::dattormm::unlink_system_from_dattormm,
             commands::dattormm::get_dattormm_system_details,
+            commands::acronis::test_acronis_connection,
+            commands::acronis::list_acronis_connections,
+            commands::acronis::add_acronis_connection,
+            commands::acronis::remove_acronis_connection,
+            commands::acronis::list_acronis_tenants,
+            commands::acronis::map_acronis_tenant,
+            commands::acronis::unmap_acronis_tenant,
+            commands::acronis::sync_acronis_connection,
+            commands::acronis::get_cached_acronis_sync,
+            commands::acronis::link_system_to_acronis,
+            commands::acronis::unlink_system_from_acronis,
+            commands::acronis::get_acronis_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())
