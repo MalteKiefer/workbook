@@ -17,6 +17,7 @@ use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
 use crate::plugin::pulseway::{PulsewayConnectionMeta, PulsewayOrgMapping};
 use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
 use crate::plugin::tacticalrmm::{TacticalRmmClientMapping, TacticalRmmConnectionMeta};
+use crate::plugin::vultr::VultrConnectionMeta;
 
 /// Theme preference for the UI (see `src/styles/theme.css` and
 /// `src/lib/theme.ts` on the frontend side). Pure TOML/JSON serde -- no DB
@@ -366,6 +367,17 @@ pub struct Config {
     /// configs from before this change, analogous to `level_connections`
     /// above.
     pub hetzner_connections: Vec<HetznerConnectionMeta>,
+    /// Non-secret metadata per configured Vultr connection (one Vultr API
+    /// key; a user can create as many connections as they like -- e.g. one
+    /// per Vultr sub-account, see `plugin::vultr` module docs, "Tenancy").
+    /// Like a Level/Intune connection, a Vultr connection is bound directly
+    /// to exactly one local customer (`VultrConnectionMeta.customer_id`) --
+    /// a single Vultr API key sees exactly one account's instances, no
+    /// further sub-tenant concept visible through it. The associated API
+    /// key lives exclusively in the OS keyring, see `plugin::secrets`.
+    /// `#[serde(default)]`-compatible with configs from before this change,
+    /// analogous to `level_connections` above.
+    pub vultr_connections: Vec<VultrConnectionMeta>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -430,6 +442,7 @@ impl Default for Config {
             acronis_connections: Vec::new(),
             acronis_tenant_mappings: Vec::new(),
             hetzner_connections: Vec::new(),
+            vultr_connections: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -646,6 +659,41 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.level_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_vultr_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.vultr_connections.push(VultrConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            customer_id: 7,
+            label: "ACME Vultr".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.vultr_connections.len(), 1);
+        assert_eq!(loaded.vultr_connections[0].customer_id, 7);
+        assert_eq!(loaded.vultr_connections[0].label, "ACME Vultr");
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_vultr_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the Vultr integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.vultr_connections.is_empty());
     }
 
     #[test]

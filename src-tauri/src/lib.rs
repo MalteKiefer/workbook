@@ -333,6 +333,15 @@ pub fn run() {
             commands::hetzner::link_system_to_hetzner,
             commands::hetzner::unlink_system_from_hetzner,
             commands::hetzner::get_hetzner_system_details,
+            commands::vultr::test_vultr_connection,
+            commands::vultr::list_vultr_connections,
+            commands::vultr::add_vultr_connection,
+            commands::vultr::remove_vultr_connection,
+            commands::vultr::sync_vultr_connection,
+            commands::vultr::get_cached_vultr_sync,
+            commands::vultr::link_system_to_vultr,
+            commands::vultr::unlink_system_from_vultr,
+            commands::vultr::get_vultr_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())

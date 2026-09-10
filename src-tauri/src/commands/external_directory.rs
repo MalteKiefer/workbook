@@ -1,9 +1,10 @@
 //! Pure read-access aggregation across all configured RMM/asset management
 //! plugin connections (Ninja, Level, Snipe-IT, Intune, Iru, Jamf, ABM,
 //! Tactical RMM, Atera, Pulseway, Kaseya, Action1, Datto RMM, Acronis,
-//! Hetzner Cloud) for a given local customer: returns all devices/assets/
-//! resources/servers that (a) belong to this customer according to the most
-//! recently synced plugin caches, and (b) are not yet linked to any local
+//! Hetzner Cloud, Vultr) for a given local customer: returns all
+//! devices/assets/resources/servers/instances that (a) belong to this
+//! customer according to the most recently synced plugin caches, and (b)
+//! are not yet linked to any local
 //! system.
 //!
 //! Background: the system field when creating a maintenance entry
@@ -15,15 +16,17 @@
 //! keystroke/customer switch in the frontend without waiting on network
 //! latency.
 //!
-//! IMPORTANT, a real gap fixed here: the six plugins added after this module
-//! was first written (Atera, Pulseway, Kaseya, Action1, Datto RMM, Acronis)
-//! were never wired into `list_unlinked_external_systems_for_customer_pure`
-//! -- their devices/resources were entirely invisible in the Journal entry's
+//! IMPORTANT, a real gap fixed here: six plugins added after this module was
+//! first written (Atera, Pulseway, Kaseya, Action1, Datto RMM, Acronis) were
+//! never wired into `list_unlinked_external_systems_for_customer_pure` --
+//! their devices/resources were entirely invisible in the Journal entry's
 //! System field, even when a customer had dozens of unlinked, correctly
 //! mapped devices in one of those plugins. Adding a new plugin's `collect_*`
 //! function here is a required step, not optional wiring -- see the six
 //! `collect_atera`/`collect_pulseway`/`collect_kaseya`/`collect_action1`/
-//! `collect_dattormm`/`collect_acronis` functions below for the pattern.
+//! `collect_dattormm`/`collect_acronis` functions below for the pattern (and
+//! `collect_vultr`, added together with Vultr itself, for a fresh example of
+//! a new plugin done right from the start).
 //!
 //! Deliberately reuses the real, already `Deserialize`-capable cache DTOs of
 //! the plugin modules (`commands::plugins::CachedNinjaSyncDto`,
@@ -37,7 +40,8 @@
 //! `commands::action1::CachedAction1SyncDto`,
 //! `commands::dattormm::CachedDattoRmmSyncDto`,
 //! `commands::acronis::CachedAcronisSyncDto`,
-//! `commands::hetzner::CachedHetznerSyncDto`), instead of defining the JSON
+//! `commands::hetzner::CachedHetznerSyncDto`,
+//! `commands::vultr::CachedVultrSyncDto`), instead of defining the JSON
 //! shape here a second time -- that way this module stays automatically in
 //! sync if one of those shapes ever changes.
 //!
@@ -88,6 +92,7 @@ use crate::commands::plugins::CachedNinjaSyncDto;
 use crate::commands::pulseway::CachedPulsewaySyncDto;
 use crate::commands::snipeit::CachedSnipeitSyncDto;
 use crate::commands::tacticalrmm::CachedTacticalRmmSyncDto;
+use crate::commands::vultr::CachedVultrSyncDto;
 use crate::config::Config;
 use crate::{AppError, AppState};
 
@@ -322,6 +327,20 @@ fn read_hetzner_cache_file(
     let text = std::fs::read_to_string(&path)?;
     let cached: CachedHetznerSyncDto = serde_json::from_str(&text)
         .map_err(|e| AppError::Plugin(format!("Hetzner-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_vultr_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedVultrSyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("vultr-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedVultrSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Vultr-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
@@ -983,6 +1002,46 @@ fn collect_hetzner(
     Ok(())
 }
 
+/// Vultr: exactly the same pattern as Level/Intune (`collect_level`/
+/// `collect_intune`) -- no separate organization/mapping layer, a connection
+/// belongs directly to exactly one customer (`VultrConnectionMeta.
+/// customer_id`), see the `plugin::vultr` module documentation, "Tenancy".
+/// No staleness problem like with Ninja/Snipe-IT: `customer_id` is a direct
+/// connection field, not frozen in a cache file. `hostname` is always `None`
+/// -- Vultr's instance object has no separate hostname field surfaced here,
+/// the display-name fallback chain already folds it into `name` server-side
+/// (see `plugin::vultr::map_instance`).
+fn collect_vultr(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.vultr_connections {
+        if connection.customer_id != customer_id {
+            continue;
+        }
+        let Some(cache) = read_vultr_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for instance in &cache.instances {
+            if instance.linked_system_id.is_some() {
+                continue;
+            }
+            out.push(UnlinkedExternalSystemDto {
+                plugin: "vultr".to_string(),
+                connection_id: connection.id.clone(),
+                external_id: instance.external_id.clone(),
+                name: instance.name.clone(),
+                hostname: None,
+                ip_address: instance.ip_address.clone(),
+                tenant_id: None,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Pure core logic, without `State<AppState>` -- testable with a hardcoded
 /// `Config` plus a `tempfile::tempdir()`, analogous to
 /// `commands::plugins::group_devices_by_organization`. The
@@ -1013,6 +1072,7 @@ pub fn list_unlinked_external_systems_for_customer_pure(
     collect_dattormm(config, data_dir, customer_id, &mut result)?;
     collect_acronis(config, data_dir, customer_id, &mut result)?;
     collect_hetzner(config, data_dir, customer_id, &mut result)?;
+    collect_vultr(config, data_dir, customer_id, &mut result)?;
     Ok(result)
 }
 
@@ -1063,6 +1123,7 @@ mod tests {
     use crate::commands::tacticalrmm::{
         ExternalSystemDto as TacticalRmmExternalSystemDto, TacticalRmmClientDeviceGroupDto,
     };
+    use crate::commands::vultr::ExternalSystemDto as VultrExternalSystemDto;
     use crate::plugin::abm::AbmConnectionMeta;
     use crate::plugin::acronis::{AcronisConnectionMeta, AcronisTenantMapping};
     use crate::plugin::action1::{Action1ConnectionMeta, Action1OrgMapping};
@@ -1078,6 +1139,7 @@ mod tests {
     use crate::plugin::pulseway::{PulsewayConnectionMeta, PulsewayOrgMapping};
     use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
     use crate::plugin::tacticalrmm::{TacticalRmmClientMapping, TacticalRmmConnectionMeta};
+    use crate::plugin::vultr::VultrConnectionMeta;
 
     fn write_json<T: serde::Serialize>(path: &Path, value: &T) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -1118,6 +1180,10 @@ mod tests {
 
     fn hetzner_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
         plugin_cache_dir(data_dir).join(format!("hetzner-{connection_id}.json"))
+    }
+
+    fn vultr_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("vultr-{connection_id}.json"))
     }
 
     fn ninja_device(external_id: &str, linked_system_id: Option<i64>) -> NinjaExternalSystemDto {
@@ -2826,6 +2892,41 @@ mod tests {
     }
 
     #[test]
+    fn vultr_instance_appears_when_its_connection_is_bound_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.vultr_connections.push(VultrConnectionMeta {
+            id: "vultr-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME Vultr".to_string(),
+        });
+        let cache = CachedVultrSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            instances: vec![VultrExternalSystemDto {
+                external_id: "inst-1".to_string(),
+                name: "Vultr Instance 1".to_string(),
+                ip_address: Some("203.0.113.10".to_string()),
+                ipv6_address: None,
+                status: Some("running".to_string()),
+                platform: Some("vc2-2c-4gb".to_string()),
+                region: Some("ewr".to_string()),
+                linked_system_id: None,
+            }],
+        };
+        write_json(&vultr_cache_path(dir.path(), "vultr-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "vultr");
+        assert_eq!(result[0].connection_id, "vultr-conn-1");
+        assert_eq!(result[0].external_id, "inst-1");
+        assert_eq!(result[0].hostname, None);
+        assert_eq!(result[0].ip_address.as_deref(), Some("203.0.113.10"));
+    }
+
+    #[test]
     fn already_linked_hetzner_device_is_excluded() {
         let dir = tempdir().unwrap();
         let mut config = Config::default();
@@ -2848,6 +2949,36 @@ mod tests {
             }],
         };
         write_json(&hetzner_cache_path(dir.path(), "hetzner-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn already_linked_vultr_instance_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.vultr_connections.push(VultrConnectionMeta {
+            id: "vultr-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME Vultr".to_string(),
+        });
+        let cache = CachedVultrSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            instances: vec![VultrExternalSystemDto {
+                external_id: "inst-1".to_string(),
+                name: "Vultr Instance 1".to_string(),
+                ip_address: None,
+                ipv6_address: None,
+                status: None,
+                platform: None,
+                region: None,
+                linked_system_id: Some(3),
+            }],
+        };
+        write_json(&vultr_cache_path(dir.path(), "vultr-conn-1"), &cache);
 
         let result =
             list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
@@ -2886,6 +3017,36 @@ mod tests {
     }
 
     #[test]
+    fn vultr_connection_bound_to_a_different_customer_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.vultr_connections.push(VultrConnectionMeta {
+            id: "vultr-conn-1".to_string(),
+            customer_id: 99,
+            label: "ACME Vultr".to_string(),
+        });
+        let cache = CachedVultrSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            instances: vec![VultrExternalSystemDto {
+                external_id: "inst-1".to_string(),
+                name: "Vultr Instance 1".to_string(),
+                ip_address: None,
+                ipv6_address: None,
+                status: None,
+                platform: None,
+                region: None,
+                linked_system_id: None,
+            }],
+        };
+        write_json(&vultr_cache_path(dir.path(), "vultr-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
     fn hetzner_connection_never_synced_is_skipped_gracefully_not_as_an_error() {
         let dir = tempdir().unwrap();
         let mut config = Config::default();
@@ -2893,6 +3054,22 @@ mod tests {
             id: "hetzner-conn-1".to_string(),
             customer_id: 7,
             label: "ACME Hetzner".to_string(),
+        });
+
+        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn vultr_connection_never_synced_is_skipped_gracefully_not_as_an_error() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.vultr_connections.push(VultrConnectionMeta {
+            id: "vultr-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME Vultr".to_string(),
         });
 
         let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7);

@@ -13,6 +13,7 @@ import NinjaPluginSection from "./NinjaPluginSection";
 import PulsewayPluginSection from "./PulsewayPluginSection";
 import SnipeitPluginSection from "./SnipeitPluginSection";
 import TacticalRmmPluginSection from "./TacticalRmmPluginSection";
+import VultrPluginSection from "./VultrPluginSection";
 
 // Thin shell: each plugin integration gets its own settings section
 // component so this file doesn't become an unmaintainable single file as
@@ -20,11 +21,11 @@ import TacticalRmmPluginSection from "./TacticalRmmPluginSection";
 // section heading each one renders (Acronis-Verbindungen,
 // Action1-Verbindungen, Apple-Business-Manager-Verbindungen,
 // Atera-Verbindungen, Datto-RMM-Verbindungen, Hetzner-Verbindungen,
-// Intune-Verbindungen, Iru-Verbindungen, ...) so the list stays predictable
-// as more plugins are added, independent of integration order. See
-// NinjaPluginSection.tsx (extracted, unchanged behavior),
-// LevelPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Level.io-Plugin"),
-// SnipeitPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
+// Intune-Verbindungen, Iru-Verbindungen, ..., Vultr-Verbindungen) so the
+// list stays predictable as more plugins are added, independent of
+// integration order. See NinjaPluginSection.tsx (extracted, unchanged
+// behavior), LevelPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
+// "Level.io-Plugin"), SnipeitPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
 // "Snipe-IT-Plugin"), IntunePluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
 // "Microsoft-Intune-Plugin"), IruPluginSection.tsx
 // (docs/PLUGIN_ARCHITECTURE.md "Iru-Plugin"), JamfPluginSection.tsx
@@ -39,9 +40,10 @@ import TacticalRmmPluginSection from "./TacticalRmmPluginSection";
 // (docs/PLUGIN_ARCHITECTURE.md "Action1-Plugin"), DattoRmmPluginSection.tsx
 // (docs/PLUGIN_ARCHITECTURE.md "Datto-RMM-Plugin"),
 // AcronisPluginSection.tsx (backup-status, NOT device management; see
-// docs/PLUGIN_ARCHITECTURE.md "Acronis-Plugin"), and
-// HetznerPluginSection.tsx (server inventory, see
-// docs/PLUGIN_ARCHITECTURE.md "Hetzner-Cloud-Plugin").
+// docs/PLUGIN_ARCHITECTURE.md "Acronis-Plugin"), HetznerPluginSection.tsx
+// (server inventory, see docs/PLUGIN_ARCHITECTURE.md
+// "Hetzner-Cloud-Plugin"), and VultrPluginSection.tsx (server inventory,
+// NOT device management; see docs/PLUGIN_ARCHITECTURE.md "Vultr-Plugin").
 export default function PluginsView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
@@ -61,6 +63,7 @@ export default function PluginsView() {
       <PulsewayPluginSection />
       <SnipeitPluginSection />
       <TacticalRmmPluginSection />
+      <VultrPluginSection />
     </div>
   );
 }
