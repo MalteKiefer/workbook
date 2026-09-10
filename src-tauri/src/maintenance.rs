@@ -96,6 +96,11 @@ mod tests {
     #[test]
     fn overdue_when_baseline_timestamp_is_unparseable() {
         let now = Utc::now();
-        assert!(is_overdue(Some(90), Some("not a timestamp"), "also not one", now));
+        assert!(is_overdue(
+            Some(90),
+            Some("not a timestamp"),
+            "also not one",
+            now
+        ));
     }
 }

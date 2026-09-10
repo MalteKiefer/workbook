@@ -321,7 +321,9 @@ mod tests {
         .unwrap();
         assert_eq!(with_interval.maintenance_interval_days, Some(90));
         assert_eq!(
-            get(&conn, with_interval.id).unwrap().maintenance_interval_days,
+            get(&conn, with_interval.id)
+                .unwrap()
+                .maintenance_interval_days,
             Some(90)
         );
     }
@@ -367,7 +369,11 @@ mod tests {
         )
         .unwrap();
 
-        for performed_at in ["2026-01-01T12:00:00.000Z", "2026-06-01T12:00:00.000Z", "2026-03-01T12:00:00.000Z"] {
+        for performed_at in [
+            "2026-01-01T12:00:00.000Z",
+            "2026-06-01T12:00:00.000Z",
+            "2026-03-01T12:00:00.000Z",
+        ] {
             conn.execute(
                 "INSERT INTO entries (customer_id, system_id, title, body_md, category, performed_at_utc, performed_at_tz, created_at_utc, created_at_tz, updated_at_utc, updated_at_tz)
                  VALUES (?1, ?2, 'Wartung', '', 'wartung', ?3, 'Europe/Berlin', ?3, 'Europe/Berlin', ?3, 'Europe/Berlin')",
