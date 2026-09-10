@@ -2723,7 +2723,16 @@ nicht geraten:
   "ist die Sicherung ok"-Feld, und zwei getrennte APIs sind beteiligt:
   1. **Ressourcen-Identität**: `GET
      {resource_base}/resource_management/v4/resources`, Query-Parameter
-     `tenant_id=<ein zugeordneter Mandant>`, Cursor `before`/`after`.
+     `tenant_id=<kommagetrennter Teilbaum des zugeordneten Mandanten:
+     seine eigene ID PLUS alle untergeordneten Mandanten/Units>` (siehe
+     `fetch_tenant_subtree_csv`/`collect_subtree_tenant_ids` -- ein
+     echter, live verifizierter Fix: dieser Filter ist EXAKTE
+     Einzel-Übereinstimmung, NICHT rekursiv, gegen developer.acronis.com
+     bestätigt, nachdem eine anfängliche Annahme, die ID des zugeordneten
+     Mandanten allein genüge, bei einem echten Konto zu einer massiv zu
+     niedrigen Ressourcen-Zahl führte, weil die meisten Geräte tatsächlich
+     unter untergeordneten Units/Standorten registriert waren, nicht
+     direkt unter dem Kunden-Mandanten selbst), Cursor `before`/`after`.
      Antwort `{"items": [{"id", "name", "agent_id", "external_id",
      "type"}], "paging": {"cursors": {...}}}`. Dieses Plugin verwendet
      `id` als `AcronisResource::external_id` und `name` als Anzeigename,
@@ -2732,10 +2741,14 @@ nicht geraten:
      dieser Anwendung) und NICHT `agent_id` (Acronis' eigenes
      Agenten-Konzept, hier irrelevant).
   2. **Sicherungs-Gesundheit**: `GET {resource_base}/alert_manager/v1/resource_status`,
-     Query-Parameter `tenant=<derselbe zugeordnete Mandant>` (man beachte
-     den anders benannten Query-Parameter, `tenant`, nicht `tenant_id`,
-     eine echte, leicht zu übersehende Inkonsistenz in Acronis' eigener
-     API, hier exakt wie verifiziert übernommen). Antwort: `{"items":
+     gefiltert nach den EXAKTEN Ressourcen-IDs aus Schritt 1
+     (`id=<eine ID>` oder `id=or(id1,id2,...)` für mehrere, Acronis'
+     eigene Filter-Ausdruckssyntax) -- ein korrigierter, echter Fehler in
+     einer früheren Version dieses Moduls, das einen undokumentierten,
+     stillschweigend ignorierten `tenant=<id>`-Parameter sandte;
+     gegen Acronis' echte OpenAPI-Spezifikation verifiziert, dass dieser
+     Endpunkt GAR KEINEN `tenant`/`tenant_id`-Parameter besitzt, nur `id`
+     und `embed_alert`. Antwort: `{"items":
      [{"id": "<resourceId>", "severity":
      "ok|information|warning|error|critical", "alert": {...}}]}`. DAS
      ist die "ist die Sicherung gerade in Ordnung"-Antwort für dieses

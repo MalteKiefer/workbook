@@ -90,7 +90,16 @@
 //!   guess**: the docs don't offer one single obvious "is backup OK"
 //!   field, and two separate APIs are involved:
 //!   1. **Resource identity**: `GET {resource_base}/resource_management/v4/resources`,
-//!      query param `tenant_id=<a mapped tenant's id>`, cursor
+//!      query param `tenant_id=<comma-joined subtree of a mapped tenant's
+//!      id + all its descendant tenants/units>` (see
+//!      `fetch_tenant_subtree_csv`/`collect_subtree_tenant_ids` -- a real,
+//!      live-verified fix: this filter is EXACT-MATCH per tenant, NOT
+//!      recursive, confirmed against developer.acronis.com's real OpenAPI
+//!      spec, after an initial assumption that a single mapped tenant's
+//!      own id was enough caused a live account's resources to be
+//!      massively under-counted, since most of them were actually
+//!      registered under child units/sites beneath the mapped customer
+//!      tenant, not the customer tenant node itself), cursor
 //!      `before`/`after`. Response `{"items": [{"id", "name", "agent_id",
 //!      "external_id", "type"}], "paging": {"cursors": {...}}}`. This
 //!      plugin uses `id` as `AcronisResource::external_id` and `name` as
@@ -99,10 +108,14 @@
 //!      this app's identity join key) and NOT `agent_id` (Acronis's own
 //!      agent concept, irrelevant here).
 //!   2. **Backup health**: `GET {resource_base}/alert_manager/v1/resource_status`,
-//!      query param `tenant=<the SAME mapped tenant's id>` (note the
-//!      differently-named query parameter, `tenant`, not `tenant_id`,
-//!      a genuine, easy-to-miss inconsistency in Acronis's own API,
-//!      preserved here exactly as verified). Response: `{"items": [{"id":
+//!      filtered by the EXACT resource IDs found in step 1
+//!      (`id=<single id>` or `id=or(id1,id2,...)` for multiple, Acronis's
+//!      own filter-expression syntax) -- a corrected, real mistake in an
+//!      earlier version of this module, which sent an undocumented,
+//!      silently-ignored `tenant=<id>` parameter; verified against
+//!      developer.acronis.com's real OpenAPI spec that this endpoint has
+//!      NO `tenant`/`tenant_id` parameter at all, only `id` and
+//!      `embed_alert`. Response: `{"items": [{"id":
 //!      "<resourceId>", "severity": "ok|information|warning|error|critical",
 //!      "alert": {...}}]}`. THIS is the "is backup currently fine"
 //!      answer for this plugin. `join_resources_with_severity` joins on
@@ -113,7 +126,9 @@
 //!      enum, so a future new severity value doesn't break parsing). A
 //!      resource with NO matching alert-manager entry (never backed up,
 //!      or not protected at all) gets `backup_status: None`, a legitimate,
-//!      expected case, not an error.
+//!      expected case, not an error. If step 1 finds zero resources, step
+//!      2 is skipped entirely (no `id` filter can be built from an empty
+//!      set).
 //!   3. **Deliberately NOT attempted**: filtering
 //!      `resource_management/v4/resource_statuses`'s `policies[]` array by
 //!      a specific backup-policy-type CTI string. That string was never
@@ -308,7 +323,11 @@ impl AcronisPlugin {
     /// Live fetch of a single mapped tenant's resources, joined with their
     /// current backup severity (see module docs on the two-API join).
     /// Richer than the trait method `list_systems`, which is deliberately
-    /// empty here (see module docs).
+    /// empty here (see module docs). Resolves `tenant_id`'s full subtree
+    /// first (see `collect_subtree_tenant_ids`) since resources can be
+    /// registered under a child unit/site of the mapped customer tenant,
+    /// not only the customer tenant itself -- a real, live-verified fix,
+    /// not a defensive guess.
     pub fn list_resources_with_status(
         &self,
         credentials: &PluginCredentials,
@@ -319,25 +338,34 @@ impl AcronisPlugin {
         let agent = build_agent();
         let token = fetch_access_token(&agent, &self.datacenter_url, &creds)?;
 
-        let raw_resources = fetch_all_resources(&agent, &self.datacenter_url, &token, tenant_id)?;
+        let subtree_csv =
+            fetch_tenant_subtree_csv(&agent, &self.datacenter_url, &token, &creds, tenant_id)?;
+        let raw_resources =
+            fetch_all_resources(&agent, &self.datacenter_url, &token, &subtree_csv)?;
         let resources: Vec<AcronisResource> = raw_resources
             .iter()
             .filter_map(|value| map_resource(value, tenant_id, tenant_name))
             .collect();
 
-        let raw_severities = fetch_all_severities(&agent, &self.datacenter_url, &token, tenant_id)?;
+        if resources.is_empty() {
+            return Ok(resources);
+        }
+        let resource_ids: Vec<&str> = resources.iter().map(|r| r.external_id.as_str()).collect();
+        let raw_severities =
+            fetch_all_severities(&agent, &self.datacenter_url, &token, &resource_ids)?;
         let severities = map_severities_response(&raw_severities);
 
         Ok(join_resources_with_severity(resources, &severities))
     }
 
-    /// Live fetch of the UNFILTERED, tenant-wide
+    /// Live fetch of the UNFILTERED, tenant-(sub)tree-wide
     /// `resource_management/v4/resource_statuses` payload; see module
     /// docs on why this is tenant-scoped, not resource-scoped, and why
     /// `Plugin::get_system_details` can't be the real implementation for
     /// this plugin. Raw JSON, passed straight through, the same "caller/UI
     /// interprets it" contract every other plugin's `get_system_details`
-    /// uses.
+    /// uses. Same subtree resolution as `list_resources_with_status`, for
+    /// the same reason.
     pub fn get_resource_statuses(
         &self,
         credentials: &PluginCredentials,
@@ -346,12 +374,36 @@ impl AcronisPlugin {
         let creds = parse_credentials(credentials)?;
         let agent = build_agent();
         let token = fetch_access_token(&agent, &self.datacenter_url, &creds)?;
+        let subtree_csv =
+            fetch_tenant_subtree_csv(&agent, &self.datacenter_url, &token, &creds, tenant_id)?;
         let url = format!(
             "{}/api/resource_management/v4/resource_statuses",
             self.datacenter_url.trim_end_matches('/')
         );
-        fetch_json(&agent, &url, &token, &[("tenant_id", tenant_id)])
+        fetch_json(&agent, &url, &token, &[("tenant_id", &subtree_csv)])
     }
+}
+
+/// Shared by `list_resources_with_status`/`get_resource_statuses`:
+/// resolves the API client's own root tenant, walks the full accessible
+/// `/tenants` tree under it (same call `list_tenants` makes, but kept
+/// UNFILTERED by `kind` here -- child units/folders are exactly what this
+/// needs, not just `kind == "customer"` tenants), then narrows to
+/// `mapped_tenant_id`'s own subtree (see `collect_subtree_tenant_ids`) and
+/// comma-joins it into the single string value
+/// `resource_management/v4`'s `tenant_id` filter expects (see module
+/// docs -- confirmed `type: string`, not an array parameter).
+fn fetch_tenant_subtree_csv(
+    agent: &Agent,
+    datacenter_url: &str,
+    token: &str,
+    creds: &AcronisCredentials,
+    mapped_tenant_id: &str,
+) -> Result<String, PluginError> {
+    let root_tenant_id = fetch_root_tenant_id(agent, datacenter_url, token, &creds.client_id)?;
+    let raw_tenants = fetch_all_tenants(agent, datacenter_url, token, &root_tenant_id)?;
+    let subtree_ids = collect_subtree_tenant_ids(&raw_tenants, mapped_tenant_id);
+    Ok(subtree_ids.join(","))
 }
 
 /// Checks a datacenter URL/client ID/client secret triple against Acronis
@@ -552,32 +604,49 @@ fn fetch_all_tenants(
     )
 }
 
+/// `tenant_id_csv` is already a comma-joined subtree of tenant IDs (see
+/// `fetch_tenant_subtree_csv`) -- `resource_management/v4/resources`'s
+/// `tenant_id` filter is EXACT-MATCH per tenant, not recursive, verified
+/// against developer.acronis.com (a real live-bug fix, see module docs).
 fn fetch_all_resources(
     agent: &Agent,
     datacenter_url: &str,
     token: &str,
-    tenant_id: &str,
+    tenant_id_csv: &str,
 ) -> Result<Vec<serde_json::Value>, PluginError> {
     let url = format!(
         "{}/api/resource_management/v4/resources",
         datacenter_url.trim_end_matches('/')
     );
-    fetch_all_pages(agent, &url, token, &[("tenant_id", tenant_id)])
+    fetch_all_pages(agent, &url, token, &[("tenant_id", tenant_id_csv)])
 }
 
-/// Note the query parameter here is `tenant`, NOT `tenant_id`, a
-/// verified, genuine inconsistency in Acronis's own API (see module docs).
+/// Filters by the exact resource IDs already fetched from
+/// `/resource_management/v4/resources`, NOT by tenant -- verified against
+/// developer.acronis.com's real OpenAPI spec that
+/// `/alert_manager/v1/resource_status` has NO `tenant`/`tenant_id`
+/// parameter at all (a corrected, genuine mistake in an earlier version
+/// of this module, which sent an undocumented, silently-ignored `tenant`
+/// query param); its only filters are `id` (an array, using Acronis's
+/// `or(id1,id2,...)` filter-expression syntax for multiple values, per
+/// the same spec) and `embed_alert`. A single ID is sent plain, matching
+/// the same real spec/guide-confirmed convention.
 fn fetch_all_severities(
     agent: &Agent,
     datacenter_url: &str,
     token: &str,
-    tenant_id: &str,
+    resource_ids: &[&str],
 ) -> Result<Vec<serde_json::Value>, PluginError> {
     let url = format!(
         "{}/api/alert_manager/v1/resource_status",
         datacenter_url.trim_end_matches('/')
     );
-    fetch_all_pages(agent, &url, token, &[("tenant", tenant_id)])
+    let id_filter = if resource_ids.len() == 1 {
+        resource_ids[0].to_string()
+    } else {
+        format!("or({})", resource_ids.join(","))
+    };
+    fetch_all_pages(agent, &url, token, &[("id", &id_filter)])
 }
 
 fn map_ureq_error(e: ureq::Error) -> PluginError {
@@ -642,6 +711,60 @@ fn filter_customer_tenants(tenants: &[AcronisTenant]) -> Vec<AcronisTenant> {
         .filter(|t| t.kind == "customer")
         .cloned()
         .collect()
+}
+
+/// Maximum tenant IDs sent in one comma-joined `tenant_id` filter value on
+/// `/resource_management/v4/resources`/`resource_statuses`, per that
+/// endpoint's own documented "Maximum 100 items" limit (verified against
+/// developer.acronis.com's OpenAPI spec). A single mapped customer having
+/// more than 100 descendant tenants/units is not a realistic case for this
+/// app's single-admin scale; truncating rather than paginating multiple
+/// requests keeps this simple, matching every other defensive cap already
+/// used in this module (`MAX_PAGES`).
+const MAX_SUBTREE_TENANT_IDS: usize = 100;
+
+/// Resolves every tenant ID in `root_id`'s subtree (itself plus all
+/// transitive children by `parent_id`) from a raw, UNFILTERED `/tenants`
+/// page collection (see module docs: a genuine fix for a real live bug --
+/// `resource_management/v4/resources`'s `tenant_id` filter is EXACT-MATCH
+/// only, verified against developer.acronis.com, NOT recursive into child
+/// tenants/units the way Account Management's `subtree_root_id` is. A
+/// mapped "customer" tenant can have resources actually registered under
+/// its own child units/sites, invisible if only the customer tenant's own
+/// ID is queried -- this function computes the full descendant set so the
+/// resources call can pass all of them). Pure, testable with hardcoded
+/// JSON. A tenant entry missing a usable `id` is skipped (matches
+/// `map_tenant`'s own tolerance); an entry whose `parent_id` points at an
+/// ID not present in `raw_tenants` (e.g. a page boundary or an
+/// inaccessible ancestor) simply never gets visited as a child, it does
+/// not panic or error. Capped at `MAX_SUBTREE_TENANT_IDS` entries.
+fn collect_subtree_tenant_ids(raw_tenants: &[serde_json::Value], root_id: &str) -> Vec<String> {
+    let mut children_by_parent: HashMap<&str, Vec<&str>> = HashMap::new();
+    for value in raw_tenants {
+        let (Some(id), Some(parent_id)) = (value["id"].as_str(), value["parent_id"].as_str())
+        else {
+            continue;
+        };
+        children_by_parent.entry(parent_id).or_default().push(id);
+    }
+
+    let mut result = vec![root_id.to_string()];
+    let mut queue: Vec<&str> = vec![root_id];
+    while let Some(current) = queue.pop() {
+        if result.len() >= MAX_SUBTREE_TENANT_IDS {
+            break;
+        }
+        if let Some(children) = children_by_parent.get(current) {
+            for &child in children {
+                if result.len() >= MAX_SUBTREE_TENANT_IDS {
+                    break;
+                }
+                result.push(child.to_string());
+                queue.push(child);
+            }
+        }
+    }
+    result
 }
 
 /// A single resource object from
@@ -776,6 +899,78 @@ mod tests {
     fn filter_customer_tenants_returns_empty_for_no_customer_kind_tenants() {
         let tenants = vec![tenant("1", "root"), tenant("2", "partner")];
         assert!(filter_customer_tenants(&tenants).is_empty());
+    }
+
+    fn raw_tenant(id: &str, parent_id: &str) -> serde_json::Value {
+        serde_json::json!({"id": id, "parent_id": parent_id, "name": id, "kind": "unit"})
+    }
+
+    #[test]
+    fn subtree_of_a_leaf_tenant_with_no_children_is_just_itself() {
+        let raw = vec![raw_tenant("customer-1", "root")];
+        let ids = collect_subtree_tenant_ids(&raw, "customer-1");
+        assert_eq!(ids, vec!["customer-1"]);
+    }
+
+    #[test]
+    fn subtree_walks_a_linear_chain_of_descendants() {
+        let raw = vec![
+            raw_tenant("customer-1", "root"),
+            raw_tenant("site-a", "customer-1"),
+            raw_tenant("unit-a1", "site-a"),
+        ];
+        let mut ids = collect_subtree_tenant_ids(&raw, "customer-1");
+        ids.sort();
+        assert_eq!(ids, vec!["customer-1", "site-a", "unit-a1"]);
+    }
+
+    #[test]
+    fn subtree_walks_a_branching_tree_of_descendants() {
+        let raw = vec![
+            raw_tenant("customer-1", "root"),
+            raw_tenant("site-a", "customer-1"),
+            raw_tenant("site-b", "customer-1"),
+            raw_tenant("unit-a1", "site-a"),
+        ];
+        let mut ids = collect_subtree_tenant_ids(&raw, "customer-1");
+        ids.sort();
+        assert_eq!(ids, vec!["customer-1", "site-a", "site-b", "unit-a1"]);
+    }
+
+    #[test]
+    fn subtree_excludes_tenants_outside_the_requested_root() {
+        let raw = vec![
+            raw_tenant("customer-1", "root"),
+            raw_tenant("site-a", "customer-1"),
+            raw_tenant("customer-2", "root"),
+            raw_tenant("site-x", "customer-2"),
+        ];
+        let mut ids = collect_subtree_tenant_ids(&raw, "customer-1");
+        ids.sort();
+        assert_eq!(ids, vec!["customer-1", "site-a"]);
+    }
+
+    #[test]
+    fn subtree_skips_entries_missing_id_or_parent_id_without_panicking() {
+        let raw = vec![
+            raw_tenant("customer-1", "root"),
+            serde_json::json!({"name": "broken", "kind": "unit"}),
+            raw_tenant("site-a", "customer-1"),
+        ];
+        let mut ids = collect_subtree_tenant_ids(&raw, "customer-1");
+        ids.sort();
+        assert_eq!(ids, vec!["customer-1", "site-a"]);
+    }
+
+    #[test]
+    fn subtree_is_capped_at_max_subtree_tenant_ids() {
+        let mut raw = Vec::new();
+        for i in 0..150 {
+            raw.push(raw_tenant(&format!("child-{i}"), "customer-1"));
+        }
+        let ids = collect_subtree_tenant_ids(&raw, "customer-1");
+        assert_eq!(ids.len(), MAX_SUBTREE_TENANT_IDS);
+        assert!(ids.contains(&"customer-1".to_string()));
     }
 
     #[test]
