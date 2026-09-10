@@ -252,6 +252,18 @@ pub fn run() {
             commands::tacticalrmm::link_system_to_tacticalrmm,
             commands::tacticalrmm::unlink_system_from_tacticalrmm,
             commands::tacticalrmm::get_tacticalrmm_system_details,
+            commands::action1::test_action1_connection,
+            commands::action1::list_action1_connections,
+            commands::action1::add_action1_connection,
+            commands::action1::remove_action1_connection,
+            commands::action1::list_action1_organizations,
+            commands::action1::map_action1_organization,
+            commands::action1::unmap_action1_organization,
+            commands::action1::sync_action1_connection,
+            commands::action1::get_cached_action1_sync,
+            commands::action1::link_system_to_action1,
+            commands::action1::unlink_system_from_action1,
+            commands::action1::get_action1_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())
