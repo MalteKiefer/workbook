@@ -313,7 +313,10 @@ where
     Ok(all)
 }
 
-fn fetch_all_instances(agent: &Agent, api_key: &str) -> Result<Vec<serde_json::Value>, PluginError> {
+fn fetch_all_instances(
+    agent: &Agent,
+    api_key: &str,
+) -> Result<Vec<serde_json::Value>, PluginError> {
     fetch_all_instances_via(|cursor| fetch_instances_page(agent, api_key, cursor, PAGE_LIMIT))
 }
 
@@ -361,7 +364,10 @@ fn map_ureq_error(e: ureq::Error) -> PluginError {
 /// consistency (a `""` label or hostname is exactly as useless as a missing
 /// one).
 fn non_empty_str(value: &serde_json::Value, key: &str) -> Option<String> {
-    value[key].as_str().filter(|s| !s.is_empty()).map(str::to_string)
+    value[key]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// Maps a (already merged across all pages) list of raw Vultr instance
@@ -515,7 +521,8 @@ mod tests {
 
     #[test]
     fn empty_label_string_falls_back_to_hostname() {
-        let json = serde_json::json!([{"id": "inst-1", "label": "", "hostname": "srv-01.example.com"}]);
+        let json =
+            serde_json::json!([{"id": "inst-1", "label": "", "hostname": "srv-01.example.com"}]);
         let instances = map_instances(json.as_array().unwrap());
         assert_eq!(instances[0].name, "srv-01.example.com");
     }
@@ -557,7 +564,8 @@ mod tests {
 
     #[test]
     fn status_field_surfaces_power_status_not_lifecycle_status() {
-        let json = serde_json::json!([{"id": "inst-1", "status": "active", "power_status": "stopped"}]);
+        let json =
+            serde_json::json!([{"id": "inst-1", "status": "active", "power_status": "stopped"}]);
         let instances = map_instances(json.as_array().unwrap());
         assert_eq!(instances[0].status.as_deref(), Some("stopped"));
     }
