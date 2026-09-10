@@ -126,7 +126,7 @@ mod tests {
         let row_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(row_count, 1);
+        assert_eq!(row_count, MIGRATIONS.len() as i64);
     }
 
     #[test]
