@@ -2,6 +2,7 @@ import { useAppStore } from "../state/appStore";
 import GeneralSettingsView from "./GeneralSettingsView";
 import BackupView from "./BackupView";
 import PluginsView from "./PluginsView";
+import KeymapSettingsView from "./KeymapSettingsView";
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -44,10 +45,14 @@ export default function SettingsView() {
         <TabButton active={settingsTab === "plugins"} onClick={() => setSettingsTab("plugins")}>
           Plugins
         </TabButton>
+        <TabButton active={settingsTab === "keymap"} onClick={() => setSettingsTab("keymap")}>
+          Tastaturbelegung
+        </TabButton>
       </div>
       {settingsTab === "general" && <GeneralSettingsView />}
       {settingsTab === "backup" && <BackupView />}
       {settingsTab === "plugins" && <PluginsView />}
+      {settingsTab === "keymap" && <KeymapSettingsView />}
     </div>
   );
 }
