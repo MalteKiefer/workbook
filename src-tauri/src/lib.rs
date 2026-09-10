@@ -252,6 +252,18 @@ pub fn run() {
             commands::tacticalrmm::link_system_to_tacticalrmm,
             commands::tacticalrmm::unlink_system_from_tacticalrmm,
             commands::tacticalrmm::get_tacticalrmm_system_details,
+            commands::atera::test_atera_connection,
+            commands::atera::list_atera_connections,
+            commands::atera::add_atera_connection,
+            commands::atera::remove_atera_connection,
+            commands::atera::list_atera_customers,
+            commands::atera::map_atera_customer,
+            commands::atera::unmap_atera_customer,
+            commands::atera::sync_atera_connection,
+            commands::atera::get_cached_atera_sync,
+            commands::atera::link_system_to_atera,
+            commands::atera::unlink_system_from_atera,
+            commands::atera::get_atera_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())

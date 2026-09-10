@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
 use crate::plugin::abm::AbmConnectionMeta;
+use crate::plugin::atera::{AteraConnectionMeta, AteraCustomerMapping};
 use crate::plugin::intune::IntuneConnectionMeta;
 use crate::plugin::iru::IruConnectionMeta;
 use crate::plugin::jamf::{JamfConnectionMeta, JamfSiteMapping};
@@ -230,6 +231,28 @@ pub struct Config {
     /// `snipeit_company_mappings`. `#[serde(default)]`-compatible with
     /// configs from before this change.
     pub tacticalrmm_client_mappings: Vec<TacticalRmmClientMapping>,
+    /// Non-secret metadata per configured Atera connection (a cloud-hosted
+    /// Atera account; a user can create as many connections as they like).
+    /// Like a Ninja/Snipe-IT/Tactical-RMM connection, an Atera connection is
+    /// NOT bound to exactly one local customer -- see
+    /// `atera_customer_mappings`. Deliberately WITHOUT a `base_url` field --
+    /// unlike Tactical RMM/NinjaOne/Snipe-IT, Atera is a single, fixed SaaS
+    /// host (`plugin::atera::BASE_URL`), so there's nothing for the user to
+    /// supply beyond the API key. The associated API key lives exclusively
+    /// in the OS keyring, see `plugin::secrets`. `#[serde(default)]`-
+    /// compatible with configs from before this change, analogous to
+    /// `ninja_connections` above.
+    pub atera_connections: Vec<AteraConnectionMeta>,
+    /// Mapping of individual Atera "Customers" (within a connection) to
+    /// local customers. A single Atera account (one connection) can manage
+    /// multiple Customers -- e.g. because the user is themselves an MSP who
+    /// runs several of their own customers as separate Customers in a
+    /// shared Atera account -- hence this separate, granular mapping table
+    /// instead of a `local_customer_id` field directly on the connection --
+    /// exactly the same principle as `tacticalrmm_client_mappings`/
+    /// `ninja_org_mappings`. `#[serde(default)]`-compatible with configs
+    /// from before this change.
+    pub atera_customer_mappings: Vec<AteraCustomerMapping>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -281,6 +304,8 @@ impl Default for Config {
             abm_connections: Vec::new(),
             tacticalrmm_connections: Vec::new(),
             tacticalrmm_client_mappings: Vec::new(),
+            atera_connections: Vec::new(),
+            atera_customer_mappings: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -847,6 +872,81 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.tacticalrmm_client_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_atera_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.atera_connections.push(AteraConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Atera".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.atera_connections.len(), 1);
+        assert_eq!(loaded.atera_connections[0].label, "ACME Atera");
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_atera_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the Atera integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.atera_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_atera_customer_mappings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.atera_connections.push(AteraConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Atera".to_string(),
+        });
+        config
+            .atera_customer_mappings
+            .push(AteraCustomerMapping {
+                connection_id: "acme-1700000000000".to_string(),
+                customer_id: "1".to_string(),
+                customer_name: "ACME Hauptsitz".to_string(),
+                local_customer_id: 7,
+            });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.atera_customer_mappings.len(), 1);
+        assert_eq!(loaded.atera_customer_mappings[0].customer_id, "1");
+        assert_eq!(loaded.atera_customer_mappings[0].local_customer_id, 7);
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_atera_customer_mappings_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the customer mapping was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.atera_customer_mappings.is_empty());
     }
 
     #[test]
