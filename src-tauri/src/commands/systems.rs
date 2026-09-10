@@ -127,6 +127,58 @@ pub fn list_systems_with_maintenance_status(
         .collect()
 }
 
+/// A single overdue system for the Dashboard's cross-customer overview,
+/// carrying its customer's name alongside it since `Dashboard` has no other
+/// way to resolve `customer_id` -> name without a second round trip per row.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct OverdueSystemDto {
+    pub system_id: i64,
+    pub system_name: String,
+    pub customer_id: i64,
+    pub customer_name: String,
+    pub last_performed_at_utc: Option<String>,
+}
+
+/// Overdue systems across every active customer, for the Dashboard view.
+/// Reuses the exact same `maintenance::is_overdue` logic as
+/// `list_systems_with_maintenance_status`, just fanned out over every
+/// customer instead of one -- this app's expected data volumes (one
+/// admin, at most a few hundred systems) make the nested loop below fine
+/// without a dedicated SQL join.
+#[tauri::command]
+pub fn list_overdue_systems(state: State<AppState>) -> Result<Vec<OverdueSystemDto>, AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let customers = crate::db::customers::list(&conn, false)?;
+    let now = chrono::Utc::now();
+
+    let mut result = Vec::new();
+    for customer in customers {
+        let customer_systems = systems::list_by_customer(&conn, customer.id, false)?;
+        for system in customer_systems {
+            let last_performed_at_utc = systems::latest_performed_at(&conn, system.id)?;
+            let overdue = crate::maintenance::is_overdue(
+                system.maintenance_interval_days,
+                last_performed_at_utc.as_deref(),
+                &system.created_at_utc,
+                now,
+            );
+            if overdue {
+                result.push(OverdueSystemDto {
+                    system_id: system.id,
+                    system_name: system.name,
+                    customer_id: customer.id,
+                    customer_name: customer.name.clone(),
+                    last_performed_at_utc,
+                });
+            }
+        }
+    }
+    Ok(result)
+}
+
 /// Bulk-creates systems from a CSV file at `csv_path`, all under the same
 /// `customer_id` -- picked via the frontend's native file dialog while
 /// looking at one customer's system list, see `SystemListView.tsx`. A bad
