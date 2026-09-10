@@ -27,6 +27,27 @@ function datetimeLocalToIsoUtc(value: string): string | null {
   return value.length === 16 ? `${value}:00Z` : `${value}Z`;
 }
 
+// Characters that can't appear in a Windows/Linux/macOS file name — replaced
+// rather than dropped so "Kunde / Standort" doesn't silently collapse into
+// "Kunde Standort".
+function sanitizeForFilename(name: string): string {
+  return name.replace(/[\\/:*?"<>|]/g, "_").trim();
+}
+
+// "YYYYMMDD_HHMM__Kunde[__System].pdf" — timestamped at export time (local
+// time, same as the OS clock the user reads the save dialog with), customer
+// name always included, system name only when a single system was selected
+// (not left as the "Alle Systeme" default) since only then does it actually
+// narrow down what's in the file.
+function buildExportFilename(customerName: string, systemName: string | null): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const parts = [stamp, sanitizeForFilename(customerName)];
+  if (systemName) parts.push(sanitizeForFilename(systemName));
+  return `${parts.join("__")}.pdf`;
+}
+
 export default function ExportDialog() {
   const exportDialogOpen = useAppStore((s) => s.exportDialogOpen);
   const selectedCustomerId = useAppStore((s) => s.selectedCustomerId);
@@ -132,8 +153,10 @@ export default function ExportDialog() {
     setError(null);
     setStatus(null);
     try {
+      const customerName = customers.find((c) => c.id === customerId)?.name ?? "Kunde";
+      const systemName = systemId === "" ? null : systems.find((s) => s.id === systemId)?.name ?? null;
       const destPath = await save({
-        defaultPath: "Wartungsdokumentation.pdf",
+        defaultPath: buildExportFilename(customerName, systemName),
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
       if (!destPath) return;
