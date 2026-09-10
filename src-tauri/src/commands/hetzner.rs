@@ -13,7 +13,9 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 
 use crate::config::Config;
-use crate::plugin::hetzner::{test_credentials, HetznerConnectionMeta, HetznerPlugin, HetznerServer};
+use crate::plugin::hetzner::{
+    test_credentials, HetznerConnectionMeta, HetznerPlugin, HetznerServer,
+};
 use crate::plugin::{self, Plugin, PluginCredentials};
 use crate::{db, time, AppError, AppState};
 
@@ -109,9 +111,7 @@ fn find_connection(
         .find(|c| c.id == connection_id)
         .cloned()
         .ok_or_else(|| {
-            AppError::NotFound(format!(
-                "Hetzner-Verbindung {connection_id} nicht gefunden"
-            ))
+            AppError::NotFound(format!("Hetzner-Verbindung {connection_id} nicht gefunden"))
         })
 }
 
@@ -129,10 +129,7 @@ fn build_plugin(
             meta.id
         ))
     })?;
-    Ok((
-        HetznerPlugin::new(plugin_id),
-        PluginCredentials { secret },
-    ))
+    Ok((HetznerPlugin::new(plugin_id), PluginCredentials { secret }))
 }
 
 /// Best-effort, analogous to
@@ -171,9 +168,8 @@ fn write_hetzner_cache(
         synced_at_utc: synced_at_utc.to_string(),
         devices: devices.to_vec(),
     };
-    let json = serde_json::to_string_pretty(&cache).map_err(|e| {
-        AppError::Plugin(format!("Hetzner-Cache konnte nicht kodiert werden: {e}"))
-    })?;
+    let json = serde_json::to_string_pretty(&cache)
+        .map_err(|e| AppError::Plugin(format!("Hetzner-Cache konnte nicht kodiert werden: {e}")))?;
     std::fs::write(hetzner_cache_path(data_dir, connection_id), json)?;
     Ok(())
 }

@@ -408,7 +408,9 @@ fn map_server(value: &serde_json::Value) -> Option<HetznerServer> {
 /// it as if it were one server's plain IP would be wrong, not just an
 /// omission (see module documentation, "IPv4 vs. IPv6").
 fn extract_ipv4_address(value: &serde_json::Value) -> Option<String> {
-    value["public_net"]["ipv4"]["ip"].as_str().map(str::to_string)
+    value["public_net"]["ipv4"]["ip"]
+        .as_str()
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -477,7 +479,7 @@ mod tests {
 
     #[test]
     fn collect_paginated_walks_until_next_page_is_none() {
-        let pages = vec![
+        let pages = [
             serde_json::json!({"servers": [{"id": 1}], "meta": {"pagination": {"next_page": 2}}}),
             serde_json::json!({"servers": [{"id": 2}, {"id": 3}], "meta": {"pagination": {"next_page": null}}}),
         ];
