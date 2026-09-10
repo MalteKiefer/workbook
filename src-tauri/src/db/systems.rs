@@ -1,6 +1,7 @@
 use chrono_tz::Tz;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::db::audit_log;
 use crate::error::AppError;
 use crate::time::now_with_tz;
 
@@ -65,7 +66,18 @@ pub fn create(conn: &Connection, input: NewSystem, tz: &Tz) -> Result<System, Ap
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?7, ?8)",
         params![input.customer_id, input.name, input.system_type, input.hostname, input.ip_address, input.notes, now_utc, now_tz],
     )?;
-    get(conn, conn.last_insert_rowid())
+    let system = get(conn, conn.last_insert_rowid())?;
+    if let Err(e) = audit_log::record(
+        conn,
+        "system",
+        system.id,
+        "created",
+        &format!("System \"{}\" angelegt", system.name),
+        tz,
+    ) {
+        eprintln!("Audit-Log-Eintrag konnte nicht gespeichert werden: {e}");
+    }
+    Ok(system)
 }
 
 pub fn get(conn: &Connection, id: i64) -> Result<System, AppError> {
@@ -111,17 +123,38 @@ pub fn update(
     if changed == 0 {
         return Err(AppError::NotFound(format!("System {id} nicht gefunden")));
     }
-    get(conn, id)
+    let system = get(conn, id)?;
+    if let Err(e) = audit_log::record(
+        conn,
+        "system",
+        system.id,
+        "updated",
+        &format!("System \"{}\" bearbeitet", system.name),
+        tz,
+    ) {
+        eprintln!("Audit-Log-Eintrag konnte nicht gespeichert werden: {e}");
+    }
+    Ok(system)
 }
 
 pub fn archive(conn: &Connection, id: i64, tz: &Tz) -> Result<(), AppError> {
     let (now_utc, now_tz) = now_with_tz(tz);
+    // Fetched before archiving purely to include the system's name in the
+    // audit-log summary; the archive itself doesn't need this row.
+    let name = get(conn, id).ok().map(|s| s.name);
     let changed = conn.execute(
         "UPDATE systems SET archived_at_utc = ?1, archived_at_tz = ?2 WHERE id = ?3",
         params![now_utc, now_tz, id],
     )?;
     if changed == 0 {
         return Err(AppError::NotFound(format!("System {id} nicht gefunden")));
+    }
+    let summary = match name {
+        Some(name) => format!("System \"{name}\" archiviert"),
+        None => format!("System #{id} archiviert"),
+    };
+    if let Err(e) = audit_log::record(conn, "system", id, "archived", &summary, tz) {
+        eprintln!("Audit-Log-Eintrag konnte nicht gespeichert werden: {e}");
     }
     Ok(())
 }
@@ -258,5 +291,88 @@ mod tests {
         .unwrap();
         assert_eq!(updated.name, "Neu");
         assert_eq!(updated.created_at_utc, created.created_at_utc);
+    }
+
+    fn audit_log_rows(conn: &Connection, entity_type: &str, action: &str) -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = ?1 AND action = ?2",
+            params![entity_type, action],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn create_records_audit_log_entry() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "FS01".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        assert_eq!(audit_log_rows(&conn, "system", "created"), 1);
+    }
+
+    #[test]
+    fn update_records_audit_log_entry() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        let created = create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "Alt".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        update(
+            &conn,
+            created.id,
+            UpdateSystem {
+                name: "Neu".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        assert_eq!(audit_log_rows(&conn, "system", "updated"), 1);
+    }
+
+    #[test]
+    fn archive_records_audit_log_entry() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        let created = create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "Alt".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        archive(&conn, created.id, &berlin()).unwrap();
+        assert_eq!(audit_log_rows(&conn, "system", "archived"), 1);
     }
 }

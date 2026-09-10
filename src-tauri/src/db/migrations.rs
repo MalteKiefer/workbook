@@ -10,10 +10,16 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("../../migrations/0001_init.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("../../migrations/0001_init.sql"),
+    },
+    Migration {
+        version: 3,
+        sql: include_str!("../../migrations/0003_audit_log.sql"),
+    },
+];
 
 pub fn current_version(conn: &Connection) -> Result<i64, AppError> {
     let table_count: i64 = conn.query_row(
@@ -85,7 +91,7 @@ mod tests {
 
         run_migrations(&mut conn, &db_path, &berlin()).unwrap();
 
-        assert_eq!(current_version(&conn).unwrap(), 1);
+        assert_eq!(current_version(&conn).unwrap(), 3);
 
         for table in [
             "customers",
@@ -96,6 +102,7 @@ mod tests {
             "attachments",
             "external_refs",
             "entries_fts",
+            "audit_log",
         ] {
             let count: i64 = conn
                 .query_row(
@@ -120,7 +127,7 @@ mod tests {
         let row_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(row_count, 1);
+        assert_eq!(row_count, MIGRATIONS.len() as i64);
     }
 
     #[test]

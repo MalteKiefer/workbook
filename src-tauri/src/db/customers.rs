@@ -1,6 +1,7 @@
 use chrono_tz::Tz;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::db::audit_log;
 use crate::error::AppError;
 use crate::time::now_with_tz;
 
@@ -54,7 +55,18 @@ pub fn create(conn: &Connection, input: NewCustomer, tz: &Tz) -> Result<Customer
          VALUES (?1, ?2, ?3, ?4, ?5, ?4, ?5)",
         params![input.name, input.short_code, input.notes, now_utc, now_tz],
     )?;
-    get(conn, conn.last_insert_rowid())
+    let customer = get(conn, conn.last_insert_rowid())?;
+    if let Err(e) = audit_log::record(
+        conn,
+        "customer",
+        customer.id,
+        "created",
+        &format!("Kunde \"{}\" angelegt", customer.name),
+        tz,
+    ) {
+        eprintln!("Audit-Log-Eintrag konnte nicht gespeichert werden: {e}");
+    }
+    Ok(customer)
 }
 
 pub fn get(conn: &Connection, id: i64) -> Result<Customer, AppError> {
@@ -96,17 +108,38 @@ pub fn update(
     if changed == 0 {
         return Err(AppError::NotFound(format!("Kunde {id} nicht gefunden")));
     }
-    get(conn, id)
+    let customer = get(conn, id)?;
+    if let Err(e) = audit_log::record(
+        conn,
+        "customer",
+        customer.id,
+        "updated",
+        &format!("Kunde \"{}\" bearbeitet", customer.name),
+        tz,
+    ) {
+        eprintln!("Audit-Log-Eintrag konnte nicht gespeichert werden: {e}");
+    }
+    Ok(customer)
 }
 
 pub fn archive(conn: &Connection, id: i64, tz: &Tz) -> Result<(), AppError> {
     let (now_utc, now_tz) = now_with_tz(tz);
+    // Fetched before archiving purely to include the customer's name in the
+    // audit-log summary; the archive itself doesn't need this row.
+    let name = get(conn, id).ok().map(|c| c.name);
     let changed = conn.execute(
         "UPDATE customers SET archived_at_utc = ?1, archived_at_tz = ?2 WHERE id = ?3",
         params![now_utc, now_tz, id],
     )?;
     if changed == 0 {
         return Err(AppError::NotFound(format!("Kunde {id} nicht gefunden")));
+    }
+    let summary = match name {
+        Some(name) => format!("Kunde \"{name}\" archiviert"),
+        None => format!("Kunde #{id} archiviert"),
+    };
+    if let Err(e) = audit_log::record(conn, "customer", id, "archived", &summary, tz) {
+        eprintln!("Audit-Log-Eintrag konnte nicht gespeichert werden: {e}");
     }
     Ok(())
 }
@@ -227,5 +260,74 @@ mod tests {
             &berlin(),
         );
         assert!(matches!(result, Err(AppError::Database(_))));
+    }
+
+    fn audit_log_rows(conn: &Connection, entity_type: &str, action: &str) -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = ?1 AND action = ?2",
+            params![entity_type, action],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn create_records_audit_log_entry() {
+        let conn = migrated_connection();
+        create(
+            &conn,
+            NewCustomer {
+                name: "ACME GmbH".into(),
+                short_code: "ACME".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        assert_eq!(audit_log_rows(&conn, "customer", "created"), 1);
+    }
+
+    #[test]
+    fn update_records_audit_log_entry() {
+        let conn = migrated_connection();
+        let created = create(
+            &conn,
+            NewCustomer {
+                name: "Alt".into(),
+                short_code: "ALT".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        update(
+            &conn,
+            created.id,
+            UpdateCustomer {
+                name: "Neu".into(),
+                short_code: "NEU".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        assert_eq!(audit_log_rows(&conn, "customer", "updated"), 1);
+    }
+
+    #[test]
+    fn archive_records_audit_log_entry() {
+        let conn = migrated_connection();
+        let created = create(
+            &conn,
+            NewCustomer {
+                name: "Archiv".into(),
+                short_code: "ARC".into(),
+                notes: "".into(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        archive(&conn, created.id, &berlin()).unwrap();
+        assert_eq!(audit_log_rows(&conn, "customer", "archived"), 1);
     }
 }

@@ -177,6 +177,7 @@ pub fn run() {
             commands::backup::set_auto_backup_settings,
             commands::backup::set_backup_encryption_enabled,
             commands::backup::set_backup_encryption_passphrase,
+            commands::audit_log::list_audit_log_for_entity,
             commands::plugins::test_ninja_connection,
             commands::plugins::list_ninja_connections,
             commands::plugins::add_ninja_connection,
