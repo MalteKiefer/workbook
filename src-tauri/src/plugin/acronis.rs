@@ -54,7 +54,17 @@
 //!   Snipe-IT/Iru/Jamf. `AcronisCredentials` therefore stays a clean
 //!   two-value JSON (`client_id`, `client_secret`), just like
 //!   `plugin::ninja::NinjaCredentials`.
-//! - **Base URL**: `{datacenter_url}/api/2` for every endpoint below.
+//! - **Base URL, a real gotcha, corrected after a live 404**: Acronis
+//!   splits its platform into separate APIs with DIFFERENT base paths
+//!   under the same `datacenter_url`, verified against
+//!   developer.acronis.com after an initial (wrong) assumption that every
+//!   endpoint shared one prefix caused real 404s against a live tenant.
+//!   Account Management v2 (`idp/token`, `clients/{client_id}`,
+//!   `tenants`) lives under `{datacenter_url}/api/2` (`{base}` below).
+//!   Resource and Policy Management v4 and Alert Manager v1 do NOT --
+//!   they live directly under `{datacenter_url}/api` (no `2/` segment),
+//!   a separate `{resource_base}` used only by `fetch_all_resources`/
+//!   `fetch_all_severities`/`get_resource_statuses`.
 //! - **Extra discovery step, unique to this plugin**: after obtaining a
 //!   bearer token, `GET {datacenter_url}/api/2/clients/{client_id}`
 //!   (Bearer auth) returns `{"tenant_id": "<uuid>", "type": "api_client",
@@ -79,7 +89,7 @@
 //! - **Backup status per device, a genuine scope decision, not a
 //!   guess**: the docs don't offer one single obvious "is backup OK"
 //!   field, and two separate APIs are involved:
-//!   1. **Resource identity**: `GET {base}/resource_management/v4/resources`,
+//!   1. **Resource identity**: `GET {resource_base}/resource_management/v4/resources`,
 //!      query param `tenant_id=<a mapped tenant's id>`, cursor
 //!      `before`/`after`. Response `{"items": [{"id", "name", "agent_id",
 //!      "external_id", "type"}], "paging": {"cursors": {...}}}`. This
@@ -88,7 +98,7 @@
 //!      `external_id` field (a different, Acronis-internal concept, not
 //!      this app's identity join key) and NOT `agent_id` (Acronis's own
 //!      agent concept, irrelevant here).
-//!   2. **Backup health**: `GET {base}/alert_manager/v1/resource_status`,
+//!   2. **Backup health**: `GET {resource_base}/alert_manager/v1/resource_status`,
 //!      query param `tenant=<the SAME mapped tenant's id>` (note the
 //!      differently-named query parameter, `tenant`, not `tenant_id`,
 //!      a genuine, easy-to-miss inconsistency in Acronis's own API,
@@ -110,7 +120,7 @@
 //!      confirmed against real docs/specs, and guessing it wrong would
 //!      silently show meaningless data to the user (worse than showing
 //!      nothing). For a richer per-resource payload, this plugin instead
-//!      calls `GET {base}/resource_management/v4/resource_statuses?tenant_id=<id>`
+//!      calls `GET {resource_base}/resource_management/v4/resource_statuses?tenant_id=<id>`
 //!      UNFILTERED and passes the raw JSON straight through (see
 //!      `get_resource_statuses` below), the same "raw, free-form JSON,
 //!      caller/UI interprets it" contract every other plugin here uses for
@@ -337,7 +347,7 @@ impl AcronisPlugin {
         let agent = build_agent();
         let token = fetch_access_token(&agent, &self.datacenter_url, &creds)?;
         let url = format!(
-            "{}/api/2/resource_management/v4/resource_statuses",
+            "{}/api/resource_management/v4/resource_statuses",
             self.datacenter_url.trim_end_matches('/')
         );
         fetch_json(&agent, &url, &token, &[("tenant_id", tenant_id)])
@@ -549,7 +559,7 @@ fn fetch_all_resources(
     tenant_id: &str,
 ) -> Result<Vec<serde_json::Value>, PluginError> {
     let url = format!(
-        "{}/api/2/resource_management/v4/resources",
+        "{}/api/resource_management/v4/resources",
         datacenter_url.trim_end_matches('/')
     );
     fetch_all_pages(agent, &url, token, &[("tenant_id", tenant_id)])
@@ -564,7 +574,7 @@ fn fetch_all_severities(
     tenant_id: &str,
 ) -> Result<Vec<serde_json::Value>, PluginError> {
     let url = format!(
-        "{}/api/2/alert_manager/v1/resource_status",
+        "{}/api/alert_manager/v1/resource_status",
         datacenter_url.trim_end_matches('/')
     );
     fetch_all_pages(agent, &url, token, &[("tenant", tenant_id)])

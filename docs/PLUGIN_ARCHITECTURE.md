@@ -2682,7 +2682,18 @@ nicht geraten:
   `AcronisCredentials` bleibt dadurch ein sauberer Zwei-Werte-JSON
   (`client_id`, `client_secret`), genau wie
   `plugin::ninja::NinjaCredentials`.
-- **Basis-URL**: `{datacenter_url}/api/2` für jeden Endpunkt unten.
+- **Basis-URL, eine echte Falle, korrigiert nach einem echten 404 im
+  Live-Betrieb**: Acronis teilt seine Plattform in getrennte APIs mit
+  UNTERSCHIEDLICHEN Basis-Pfaden unter derselben `datacenter_url` auf,
+  verifiziert gegen developer.acronis.com nachdem eine anfängliche
+  (falsche) Annahme, alle Endpunkte teilten sich ein Präfix, echte
+  404-Fehler gegen einen echten Mandanten verursacht hatte. Account
+  Management v2 (`idp/token`, `clients/{client_id}`, `tenants`) liegt
+  unter `{datacenter_url}/api/2` (`{base}` unten). Resource and Policy
+  Management v4 und Alert Manager v1 liegen NICHT dort -- sie liegen
+  direkt unter `{datacenter_url}/api` (ohne `2/`-Segment), eine eigene
+  `{resource_base}`, nur von `fetch_all_resources`/`fetch_all_severities`/
+  `get_resource_statuses` verwendet.
 - **Zusätzlicher Discovery-Schritt, einzigartig für dieses Plugin**: nach
   Erhalt eines Bearer-Tokens liefert `GET
   {datacenter_url}/api/2/clients/{client_id}` (Bearer-Auth) `{"tenant_id":
@@ -2711,7 +2722,7 @@ nicht geraten:
   Vermutung**: die Dokumentation bietet kein einziges, offensichtliches
   "ist die Sicherung ok"-Feld, und zwei getrennte APIs sind beteiligt:
   1. **Ressourcen-Identität**: `GET
-     {base}/resource_management/v4/resources`, Query-Parameter
+     {resource_base}/resource_management/v4/resources`, Query-Parameter
      `tenant_id=<ein zugeordneter Mandant>`, Cursor `before`/`after`.
      Antwort `{"items": [{"id", "name", "agent_id", "external_id",
      "type"}], "paging": {"cursors": {...}}}`. Dieses Plugin verwendet
@@ -2720,7 +2731,7 @@ nicht geraten:
      (ein anderes, Acronis-internes Konzept, nicht der Identitäts-Schlüssel
      dieser Anwendung) und NICHT `agent_id` (Acronis' eigenes
      Agenten-Konzept, hier irrelevant).
-  2. **Sicherungs-Gesundheit**: `GET {base}/alert_manager/v1/resource_status`,
+  2. **Sicherungs-Gesundheit**: `GET {resource_base}/alert_manager/v1/resource_status`,
      Query-Parameter `tenant=<derselbe zugeordnete Mandant>` (man beachte
      den anders benannten Query-Parameter, `tenant`, nicht `tenant_id`,
      eine echte, leicht zu übersehende Inkonsistenz in Acronis' eigener
@@ -2744,7 +2755,7 @@ nicht geraten:
      falsch zu erraten würde dem Nutzer stillschweigend bedeutungslose
      Daten zeigen. Für eine reichhaltigere Pro-Ressource-Nutzlast ruft
      dieses Plugin stattdessen `GET
-     {base}/resource_management/v4/resource_statuses?tenant_id=<id>`
+     {resource_base}/resource_management/v4/resource_statuses?tenant_id=<id>`
      UNGEFILTERT auf und reicht das rohe JSON unverändert durch (siehe
      `get_resource_statuses` unten), derselbe "rohes, freies JSON, der
      Aufrufer/die UI interpretiert es"-Vertrag, den jedes andere Plugin
