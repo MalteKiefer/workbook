@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
@@ -15,6 +16,12 @@ interface Customer {
   archived_at_utc: string | null;
 }
 
+// Kept in sync with src-tauri/src/commands/customers.rs::BulkArchiveSummary.
+interface BulkArchiveSummary {
+  archived: number;
+  errors: string[];
+}
+
 export default function CustomerListView() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -27,6 +34,10 @@ export default function CustomerListView() {
   const [importBusy, setImportBusy] = useState(false);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkArchiveBusy, setBulkArchiveBusy] = useState(false);
+  const [bulkArchiveErrors, setBulkArchiveErrors] = useState<string[] | null>(null);
 
   const reload = useCallback(() => {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
@@ -80,6 +91,40 @@ export default function CustomerListView() {
     reload();
   }
 
+  function toggleSelected(id: number, e: MouseEvent) {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll(e: MouseEvent) {
+    e.stopPropagation();
+    setSelectedIds((prev) =>
+      prev.size === customers.length && customers.length > 0 ? new Set() : new Set(customers.map((c) => c.id)),
+    );
+  }
+
+  async function handleBulkArchive() {
+    if (!window.confirm(`${selectedIds.size} Kunden wirklich archivieren?`)) return;
+    setBulkArchiveErrors(null);
+    setBulkArchiveBusy(true);
+    try {
+      const summary = await invoke<BulkArchiveSummary>("archive_customers", { ids: Array.from(selectedIds) });
+      setSelectedIds(new Set());
+      reload();
+      if (summary.errors.length > 0) setBulkArchiveErrors(summary.errors);
+    } finally {
+      setBulkArchiveBusy(false);
+    }
+  }
+
   async function handleImportCsv() {
     setImportError(null);
     try {
@@ -100,7 +145,16 @@ export default function CustomerListView() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
         <h1 style={{ fontSize: "1.1rem" }}>Kunden</h1>
-        <span style={{ display: "flex", gap: "0.4rem" }}>
+        <span style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.85rem" }}>
+            <input
+              type="checkbox"
+              checked={selectedIds.size === customers.length && customers.length > 0}
+              onClick={toggleSelectAll}
+              onChange={() => {}}
+            />
+            Alle auswählen
+          </label>
           <button disabled={importBusy} onClick={() => void handleImportCsv()}>
             CSV importieren…
           </button>
@@ -111,6 +165,51 @@ export default function CustomerListView() {
       </div>
       {importError && <p style={{ color: "var(--danger)", fontSize: "0.82rem", marginBottom: "0.75rem" }}>Fehler: {importError}</p>}
       {importSummary && <ImportSummaryPanel summary={importSummary} onDismiss={() => setImportSummary(null)} />}
+      {selectedIds.size > 0 && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "0.5rem 0.6rem",
+            marginBottom: "0.75rem",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--bg-surface)",
+          }}
+        >
+          <span style={{ fontSize: "0.85rem" }}>{selectedIds.size} ausgewählt</span>
+          <button disabled={bulkArchiveBusy} onClick={() => void handleBulkArchive()}>
+            Archivieren
+          </button>
+        </div>
+      )}
+      {bulkArchiveErrors && bulkArchiveErrors.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.4rem",
+            padding: "0.75rem",
+            marginBottom: "0.75rem",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--bg-surface)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              <strong style={{ color: "var(--danger)" }}>{bulkArchiveErrors.length}</strong> Fehler beim Archivieren
+            </p>
+            <button onClick={() => setBulkArchiveErrors(null)}>Schließen</button>
+          </div>
+          <ul style={{ margin: 0, padding: "0 0 0 1.1rem", fontSize: "0.8rem", color: "var(--text-secondary)", maxHeight: "8rem", overflow: "auto" }}>
+            {bulkArchiveErrors.map((message, i) => (
+              <li key={i}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {customers.map((c, i) => (
           <li
@@ -124,6 +223,13 @@ export default function CustomerListView() {
               alignItems: "center",
             }}
           >
+            <input
+              type="checkbox"
+              checked={selectedIds.has(c.id)}
+              onClick={(e) => toggleSelected(c.id, e)}
+              onChange={() => {}}
+              style={{ marginRight: "0.6rem" }}
+            />
             <span
               onClick={() => {
                 selectCustomer(c.id);
