@@ -38,13 +38,19 @@ export default function KeyRecorder({ value, mode, onChange }: KeyRecorderProps)
         return;
       }
 
-      if (pendingFirst === null) {
-        setPendingFirst(e.key.toLowerCase());
-        return;
+      if (mode === "sequence") {
+        if (e.ctrlKey || e.metaKey || e.altKey) {
+          return;
+        }
+
+        if (pendingFirst === null) {
+          setPendingFirst(e.key.toLowerCase());
+          return;
+        }
+        onChange(`${pendingFirst} ${e.key.toLowerCase()}`);
+        setRecording(false);
+        setPendingFirst(null);
       }
-      onChange(`${pendingFirst} ${e.key.toLowerCase()}`);
-      setRecording(false);
-      setPendingFirst(null);
     }
 
     window.addEventListener("keydown", onKeyDown, true);
