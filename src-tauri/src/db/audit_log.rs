@@ -49,8 +49,13 @@ pub fn list_for_entity(
     entity_type: &str,
     entity_id: i64,
 ) -> Result<Vec<AuditLogEntry>, AppError> {
+    // Tiebreak on `id DESC` in addition to `at_utc DESC`: `at_utc` only has
+    // millisecond resolution, so two records written in quick succession
+    // (e.g. back-to-back calls in a CSV import loop, or just a fast test)
+    // can share the same timestamp -- `id` (autoincrementing) is what
+    // actually guarantees "newest first" in that case.
     let mut stmt = conn.prepare(
-        "SELECT * FROM audit_log WHERE entity_type = ?1 AND entity_id = ?2 ORDER BY at_utc DESC",
+        "SELECT * FROM audit_log WHERE entity_type = ?1 AND entity_id = ?2 ORDER BY at_utc DESC, id DESC",
     )?;
     let rows = stmt.query_map(params![entity_type, entity_id], row_to_entry)?;
     let mut result = Vec::new();
@@ -97,8 +102,24 @@ mod tests {
     fn list_for_entity_orders_newest_first() {
         let conn = migrated_connection();
         record(&conn, "customer", 1, "created", "erster Eintrag", &berlin()).unwrap();
-        record(&conn, "customer", 1, "updated", "zweiter Eintrag", &berlin()).unwrap();
-        record(&conn, "customer", 1, "updated", "dritter Eintrag", &berlin()).unwrap();
+        record(
+            &conn,
+            "customer",
+            1,
+            "updated",
+            "zweiter Eintrag",
+            &berlin(),
+        )
+        .unwrap();
+        record(
+            &conn,
+            "customer",
+            1,
+            "updated",
+            "dritter Eintrag",
+            &berlin(),
+        )
+        .unwrap();
 
         let entries = list_for_entity(&conn, "customer", 1).unwrap();
         assert_eq!(entries.len(), 3);
