@@ -8158,6 +8158,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "chrono-tz",
+ "csv",
  "dirs 7.0.0",
  "iana-time-zone",
  "image",

@@ -3,6 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
 import { getKeymap, matchesBinding } from "../lib/keymap";
+import { pickCsvFile, type ImportSummary } from "../lib/csvImport";
+import { formatInvokeError } from "../lib/errors";
+import ImportSummaryPanel from "./ImportSummaryPanel";
 
 interface Customer {
   id: number;
@@ -20,6 +23,10 @@ export default function CustomerListView() {
   const formOpen = useAppStore((s) => s.formOpen);
   const customerEditorTarget = useAppStore((s) => s.customerEditorTarget);
   const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
+
+  const [importBusy, setImportBusy] = useState(false);
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
@@ -73,14 +80,37 @@ export default function CustomerListView() {
     reload();
   }
 
+  async function handleImportCsv() {
+    setImportError(null);
+    try {
+      const csvPath = await pickCsvFile();
+      if (csvPath === null) return;
+      setImportBusy(true);
+      const summary = await invoke<ImportSummary>("import_customers_from_csv", { csvPath });
+      setImportSummary(summary);
+      reload();
+    } catch (e) {
+      setImportError(formatInvokeError(e));
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
         <h1 style={{ fontSize: "1.1rem" }}>Kunden</h1>
-        <button className="btn-primary" onClick={() => openCustomerEditor("new")}>
-          + Neuer Kunde
-        </button>
+        <span style={{ display: "flex", gap: "0.4rem" }}>
+          <button disabled={importBusy} onClick={() => void handleImportCsv()}>
+            CSV importieren…
+          </button>
+          <button className="btn-primary" onClick={() => openCustomerEditor("new")}>
+            + Neuer Kunde
+          </button>
+        </span>
       </div>
+      {importError && <p style={{ color: "var(--danger)", fontSize: "0.82rem", marginBottom: "0.75rem" }}>Fehler: {importError}</p>}
+      {importSummary && <ImportSummaryPanel summary={importSummary} onDismiss={() => setImportSummary(null)} />}
       <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {customers.map((c, i) => (
           <li

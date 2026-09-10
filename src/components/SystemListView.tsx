@@ -3,6 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
 import { getKeymap, matchesBinding } from "../lib/keymap";
+import { pickCsvFile, type ImportSummary } from "../lib/csvImport";
+import { formatInvokeError } from "../lib/errors";
+import ImportSummaryPanel from "./ImportSummaryPanel";
 
 interface System {
   id: number;
@@ -30,6 +33,10 @@ export default function SystemListView() {
   const [systems, setSystems] = useState<System[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [customerName, setCustomerName] = useState<string | null>(null);
+
+  const [importBusy, setImportBusy] = useState(false);
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     if (selectedCustomerId === null) return;
@@ -88,6 +95,26 @@ export default function SystemListView() {
     reload();
   }
 
+  async function handleImportCsv() {
+    if (selectedCustomerId === null) return;
+    setImportError(null);
+    try {
+      const csvPath = await pickCsvFile();
+      if (csvPath === null) return;
+      setImportBusy(true);
+      const summary = await invoke<ImportSummary>("import_systems_from_csv", {
+        customerId: selectedCustomerId,
+        csvPath,
+      });
+      setImportSummary(summary);
+      reload();
+    } catch (e) {
+      setImportError(formatInvokeError(e));
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
   if (selectedCustomerId === null) {
     return (
       <div>
@@ -108,10 +135,17 @@ export default function SystemListView() {
             Systeme von {customerName ?? `Kunde #${selectedCustomerId}`}
           </h1>
         </div>
-        <button className="btn-primary" onClick={() => openSystemEditor("new", selectedCustomerId)}>
-          + Neues System
-        </button>
+        <span style={{ display: "flex", gap: "0.4rem" }}>
+          <button disabled={importBusy} onClick={() => void handleImportCsv()}>
+            CSV importieren…
+          </button>
+          <button className="btn-primary" onClick={() => openSystemEditor("new", selectedCustomerId)}>
+            + Neues System
+          </button>
+        </span>
       </div>
+      {importError && <p style={{ color: "var(--danger)", fontSize: "0.82rem", marginBottom: "0.75rem" }}>Fehler: {importError}</p>}
+      {importSummary && <ImportSummaryPanel summary={importSummary} onDismiss={() => setImportSummary(null)} />}
       <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {systems.map((s, i) => (
           <li

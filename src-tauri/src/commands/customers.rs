@@ -1,6 +1,7 @@
 use tauri::State;
 
 use crate::db::customers::{self, Customer, NewCustomer, UpdateCustomer};
+use crate::import::{self, ImportSummary};
 use crate::{time, AppError, AppState};
 
 #[tauri::command]
@@ -47,4 +48,54 @@ pub fn archive_customer(state: State<AppState>, id: i64) -> Result<(), AppError>
         .map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
     customers::archive(&conn, id, &tz)
+}
+
+/// Bulk-creates customers from a CSV file at `csv_path` (picked via the
+/// frontend's native file dialog, see `CustomerListView.tsx`). One bad row
+/// -- a missing required field, or a `short_code` collision with an
+/// existing customer -- is recorded in `ImportSummary.errors` and skipped;
+/// it never aborts the rest of the file. See `import::parse_customers_csv`
+/// for the column-header matching rules.
+#[tauri::command]
+pub fn import_customers_from_csv(
+    state: State<AppState>,
+    csv_path: String,
+) -> Result<ImportSummary, AppError> {
+    let content = std::fs::read_to_string(&csv_path)?;
+    let rows = import::parse_customers_csv(&content).map_err(AppError::Import)?;
+
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let tz = time::system_timezone()?;
+
+    let mut imported = 0;
+    let mut errors = Vec::new();
+    for (row, parsed) in rows {
+        match parsed {
+            Ok(new_customer) => match customers::create(&conn, new_customer, &tz) {
+                Ok(_) => imported += 1,
+                Err(e) => errors.push(import::ImportRowError {
+                    row,
+                    message: friendly_customer_error(&e),
+                }),
+            },
+            Err(message) => errors.push(import::ImportRowError { row, message }),
+        }
+    }
+
+    Ok(ImportSummary { imported, errors })
+}
+
+/// Rewrites the raw SQLite `UNIQUE constraint failed: customers.short_code`
+/// message into something a non-technical reader recognizes, without
+/// hiding any other database error's real message.
+fn friendly_customer_error(e: &AppError) -> String {
+    let message = e.to_string();
+    if message.contains("UNIQUE constraint failed") && message.contains("short_code") {
+        "Kürzel bereits vergeben.".to_string()
+    } else {
+        message
+    }
 }

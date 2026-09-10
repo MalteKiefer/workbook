@@ -9,6 +9,7 @@ pub mod db;
 pub mod error;
 pub mod export;
 pub mod hotkeys;
+pub mod import;
 pub mod plugin;
 pub mod quickcapture;
 pub mod time;
@@ -131,10 +132,12 @@ pub fn run() {
             commands::customers::create_customer,
             commands::customers::update_customer,
             commands::customers::archive_customer,
+            commands::customers::import_customers_from_csv,
             commands::systems::list_systems,
             commands::systems::create_system,
             commands::systems::update_system,
             commands::systems::archive_system,
+            commands::systems::import_systems_from_csv,
             commands::tags::list_tags,
             commands::tags::list_tags_with_counts,
             commands::entries::list_entries,

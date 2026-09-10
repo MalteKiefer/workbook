@@ -1,6 +1,7 @@
 use tauri::State;
 
 use crate::db::systems::{self, NewSystem, System, UpdateSystem};
+use crate::import::{self, ImportSummary};
 use crate::{time, AppError, AppState};
 
 #[tauri::command]
@@ -48,4 +49,45 @@ pub fn archive_system(state: State<AppState>, id: i64) -> Result<(), AppError> {
         .map_err(|e| AppError::Database(e.to_string()))?;
     let tz = time::system_timezone()?;
     systems::archive(&conn, id, &tz)
+}
+
+/// Bulk-creates systems from a CSV file at `csv_path`, all under the same
+/// `customer_id` -- picked via the frontend's native file dialog while
+/// looking at one customer's system list, see `SystemListView.tsx`. A bad
+/// row (missing name) is recorded in `ImportSummary.errors` and skipped;
+/// it never aborts the rest of the file. Unlike customers, there's no
+/// unique-constraint collision to worry about here -- systems have no
+/// unique column. See `import::parse_systems_csv` for the column-header
+/// matching rules.
+#[tauri::command]
+pub fn import_systems_from_csv(
+    state: State<AppState>,
+    customer_id: i64,
+    csv_path: String,
+) -> Result<ImportSummary, AppError> {
+    let content = std::fs::read_to_string(&csv_path)?;
+    let rows = import::parse_systems_csv(&content, customer_id).map_err(AppError::Import)?;
+
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let tz = time::system_timezone()?;
+
+    let mut imported = 0;
+    let mut errors = Vec::new();
+    for (row, parsed) in rows {
+        match parsed {
+            Ok(new_system) => match systems::create(&conn, new_system, &tz) {
+                Ok(_) => imported += 1,
+                Err(e) => errors.push(import::ImportRowError {
+                    row,
+                    message: e.to_string(),
+                }),
+            },
+            Err(message) => errors.push(import::ImportRowError { row, message }),
+        }
+    }
+
+    Ok(ImportSummary { imported, errors })
 }
