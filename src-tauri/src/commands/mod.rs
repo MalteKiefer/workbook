@@ -3,6 +3,7 @@ pub mod acronis;
 pub mod action1;
 pub mod atera;
 pub mod attachments;
+pub mod audit_log;
 pub mod backup;
 pub mod customers;
 pub mod dattormm;
