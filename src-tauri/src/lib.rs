@@ -166,6 +166,8 @@ pub fn run() {
             commands::attachments::open_attachment,
             commands::export::export_markdown,
             commands::export::export_pdf,
+            commands::export::export_markdown_all_customers,
+            commands::export::export_pdf_all_customers,
             commands::backup::create_backup,
             commands::backup::restore_backup,
             commands::backup::is_backup_file_encrypted,

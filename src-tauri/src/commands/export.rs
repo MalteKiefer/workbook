@@ -41,6 +41,113 @@ pub fn export_markdown(
     )
 }
 
+/// Exports every active customer's Markdown journal into its own
+/// subfolder (named by `short_code`, which is unique -- unlike `name`) under
+/// `dest_dir`. `export::markdown::export_markdown` creates each subfolder
+/// itself (see its own `std::fs::create_dir_all`), same as the
+/// single-customer `export_markdown` command above already relies on.
+///
+/// Aborts on the first customer whose export fails (propagated via `?`)
+/// rather than collecting per-customer errors and continuing -- see
+/// `.report-export-all.md` for the reasoning (unlike a CSV import row typo,
+/// a failure here is much more likely to be a systemic problem such as a
+/// full disk or a permissions error that will just as surely doom every
+/// other customer's export too, so failing loudly beats silently completing
+/// a partial batch).
+#[tauri::command]
+pub fn export_markdown_all_customers(
+    state: State<AppState>,
+    from_utc: Option<String>,
+    to_utc: Option<String>,
+    dest_dir: String,
+) -> Result<(), AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let (data_dir, late_entry_threshold_hours) = {
+        let config = state.config.lock().expect("Config-Mutex vergiftet");
+        (config.data_dir.clone(), config.late_entry_threshold_hours)
+    };
+
+    let customers = db::customers::list(&conn, false)?;
+    let base_dir = std::path::Path::new(&dest_dir);
+    for customer in customers {
+        let filter = EntryFilter {
+            customer_id: Some(customer.id),
+            system_id: None,
+            category: None,
+            tag: None,
+            from_utc: from_utc.clone(),
+            to_utc: to_utc.clone(),
+        };
+        let customer_dir = base_dir.join(&customer.short_code);
+        crate::export::markdown::export_markdown(
+            &conn,
+            &data_dir,
+            &customer_dir,
+            customer.id,
+            &filter,
+            late_entry_threshold_hours,
+        )?;
+    }
+    Ok(())
+}
+
+/// Exports every active customer's PDF manual as a separate file (named
+/// `<short_code>.pdf`) inside `dest_dir`. Same per-customer content as
+/// `export_pdf` above, same abort-on-first-failure reasoning as
+/// `export_markdown_all_customers`.
+#[tauri::command]
+pub fn export_pdf_all_customers(
+    state: State<AppState>,
+    from_utc: Option<String>,
+    to_utc: Option<String>,
+    dest_dir: String,
+) -> Result<(), AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let (data_dir, late_entry_threshold_hours) = {
+        let config = state.config.lock().expect("Config-Mutex vergiftet");
+        (config.data_dir.clone(), config.late_entry_threshold_hours)
+    };
+    let tz = time::system_timezone()?;
+    let (now_utc, now_tz) = time::now_with_tz(&tz);
+    let generated_at_display = time::format_timestamp_for_display(&now_utc, &now_tz)?;
+
+    std::fs::create_dir_all(&dest_dir)?;
+    let base_dir = std::path::Path::new(&dest_dir);
+
+    let customers = db::customers::list(&conn, false)?;
+    for customer in customers {
+        let systems = db::systems::list_by_customer(&conn, customer.id, false)?;
+        let filter = EntryFilter {
+            customer_id: Some(customer.id),
+            system_id: None,
+            category: None,
+            tag: None,
+            from_utc: from_utc.clone(),
+            to_utc: to_utc.clone(),
+        };
+        let mut entries = db::entries::list(&conn, &filter)?;
+        entries.reverse(); // see export_pdf above for why
+
+        let sections = build_pdf_sections(&systems, entries, late_entry_threshold_hours)?;
+        let pdf_bytes = export::pdf::render_manual_pdf(
+            &data_dir,
+            &customer.name,
+            generated_at_display.clone(),
+            sections,
+        )?;
+        let dest_path = base_dir.join(format!("{}.pdf", customer.short_code));
+        std::fs::write(&dest_path, pdf_bytes)
+            .map_err(|e| AppError::Io(format!("PDF konnte nicht geschrieben werden: {e}")))?;
+    }
+    Ok(())
+}
+
 /// Exports the "continuous manual" PDF (cover page, table of contents,
 /// organized by system, embedded images, header/footer with customer name
 /// and creation date) for one customer, optionally filtered by system
