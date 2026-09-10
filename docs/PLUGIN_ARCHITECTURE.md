@@ -1,17 +1,18 @@
 # Plugin-Architektur
 
-Status: Acht echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Neun echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
 `commands::iru`), Jamf Pro (`plugin::jamf`, `commands::jamf`), Apple
-Business Manager (`plugin::abm`, `commands::abm`) und Tactical RMM
-(`plugin::tacticalrmm`, `commands::tacticalrmm`) --, alle mit
+Business Manager (`plugin::abm`, `commands::abm`), Tactical RMM
+(`plugin::tacticalrmm`, `commands::tacticalrmm`) und Atera
+(`plugin::atera`, `commands::atera`) --, alle mit
 Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
 Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
 einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
 von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`).
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AteraPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -1418,3 +1419,191 @@ einer Geräte-Zeile (siehe oben, kein verifizierter Weboberflächen-Link).
 `PluginsView.tsx` bindet die Sektion als achte Karte neben
 `NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`
 ein.
+
+## Atera-Plugin (`plugin::atera`) -- neunte echte Integration
+
+`plugin/atera.rs` implementiert `Plugin` für Ateras REST-API über HTTPS.
+Atera (<https://www.atera.com/>) ist ein Cloud-gehostetes RMM/PSA-Tool für
+Managed Service Provider -- kombiniert bewusst zwei Muster, die bereits an
+anderer Stelle in dieser Codebase existieren, statt ein drittes einzuführen:
+
+- Wie Level.io (`plugin::level`) und ANDERS als Tactical RMM/NinjaOne/
+  Snipe-IT: Atera ist ein fester, einzelner Cloud-Host, nicht selbst
+  gehostet -- kein vom Nutzer angegebenes `base_url`-Feld an
+  `AteraConnectionMeta`, nur die Konstante `BASE_URL`
+  (`https://app.atera.com/api/v3`).
+- Wie Tactical RMM (`plugin::tacticalrmm`) und NinjaOne (`plugin::ninja`),
+  und ANDERS als Level.io: Atera bildet eine echte Mehrmandantenfähigkeit
+  innerhalb einer Verbindung ab ("Customer" -> "Agent") -- eine Verbindung
+  (ein API-Key) kann mehrere Atera-Kunden sehen, jeder einzeln über
+  `AteraCustomerMapping`/`Config::atera_customer_mappings` einem lokalen
+  Kunden zugeordnet, exakt dieselbe Verbindungs-/Zuordnungstabellen-Form wie
+  `TacticalRmmConnectionMeta`/`TacticalRmmClientMapping`.
+
+Jede Angabe unten stammt aus dem Auftrags-Briefing für diese Integration,
+selbst bereits gegen Ateras eigene offizielle API-Dokumentation verifiziert
+(nicht hier neu hergeleitet oder geraten):
+
+- **Authentifizierung**: statischer API-Key im eigenen `X-API-KEY`-Header
+  (NICHT `Authorization: Bearer`) -- derselbe Header-Name/dieselbe
+  Konvention wie Tactical RMM. Der Nutzer erzeugt ihn selbst in Ateras
+  eigener Weboberfläche (Admin -> Data Management -> API). Ein einzelner
+  Geheimwert, 1:1 als `PluginCredentials.secret` durchgereicht -- wie
+  Tactical RMM/Level.io/Snipe-IT, keine JSON-Kodierung mehrerer Werte nötig
+  (anders als NinjaOne).
+- **Basis-URL**: fest, ein einzelner SaaS-Host,
+  `https://app.atera.com/api/v3` (`BASE_URL`) -- wie
+  `plugin::level::BASE_URL`, keine Verbindungs-spezifische Konfigurierbarkeit,
+  keine Region-/Instanz-Varianten.
+- **Kunden (Mehrmandantenfähigkeit)**: `GET /customers`, ein PAGINIERTER
+  Umschlag (camelCase-Umschlag-Schlüssel, PascalCase-Feld-Namen innerhalb der
+  Elemente -- tatsächlich unterschiedliche Schreibweisen in derselben
+  Antwort, kein Tippfehler):
+  `{"items": [{"CustomerID": <Zahl>, "CustomerName": "...", ...}],
+  "page": <Zahl>, "itemsInPage": <Zahl>, "totalPages": <Zahl>,
+  "totalItemCount": <Zahl>, "nextLink": "..."}`. Anders als Tactical RMMs
+  nacktem, unpaginiertem `/clients/`-Array braucht das eine echte
+  Paginierungs-Schleife -- `fetch_all_pages` läuft `page`/`totalPages` ab
+  (nicht `nextLink`, einfacher und gleichwertig korrekt: `nextLink` ist
+  lediglich `page + 1` mit demselben `itemsInPage` neu zusammengesetzt), bis
+  `page >= totalPages`, durchgehend mit `itemsInPage=50` (dem dokumentierten
+  Maximum).
+- **Agenten (NICHT "Devices")**: `GET /agents`, derselbe paginierte
+  Umschlag wie `/customers` -- Ateras "Devices" ist ein eigenes SNMP-/
+  Netzwerk-Monitoring-Konzept, bewusst nicht hier verwendet. Element-Felder
+  (`AgentQueryDTO`, PascalCase): `AgentID` (Zahl, als `external_id`
+  verwendet, als String), `MachineName` (String, Hostname/Anzeigename),
+  `IpAddresses` (ein ECHTES JSON-Array lokaler IPs, anders als Tactical
+  RMMs Komma-getrennter String -- `extract_ip_address` ist dadurch
+  einfacher), `ReportedFromIP` (String, öffentliche/externe IP als
+  Rückfallebene), `Online` (bool, auf die in dieser Codebase übliche
+  String-Konvention `"online"`/`"offline"` abgebildet, z. B.
+  `plugin::tacticalrmm`), `OS` (String, Plattform-/Betriebssystem-
+  Anzeigetext), `CustomerID` (Zahl) -- ein ECHTER numerischer Fremdschlüssel
+  direkt am Agenten, anders als Tactical RMMs Namens-basierte
+  Client-Zuordnung (siehe `plugin::tacticalrmm`-Moduldokumentation) --
+  die Gruppierung nach Kunde nutzt hier eine echte ID-Zuordnung, exakt wie
+  bei `plugin::ninja`s `organizationId`, keinen Namens-Abgleich.
+  `CustomerName` (String, für die Anzeige).
+- **Einzelner Agent im Detail**: `GET /agents/{agentId}`.
+- **Kein verifiziertes Dashboard-Link-Format**: das Schema trägt ein
+  `AppViewUrl`-Feld am Agenten-Objekt laut Ateras eigener API, dessen genaue
+  URL-Form aber nicht unabhängig bestätigt wurde. `map_agent` reicht es
+  UNVERÄNDERT durch, falls vorhanden (`AteraAgent.view_url`), konstruiert
+  aber niemals selbst eine URL, wenn es fehlt -- dasselbe Prinzip der
+  "ehrlichen Auslassung" wie Tactical RMMs fehlendes `tacticalrmm_url`
+  (siehe `plugin::tacticalrmm`-Moduldokumentation), hier nur pro Agent
+  aufgelöst statt das Feld ganz aus dem Typ auszulassen, weil Atera es
+  manchmal tatsächlich liefert.
+- **Rate-Limits**: von Atera nicht offiziell dokumentiert -- keine
+  Sonderbehandlung eingebaut (kein Backoff/Retry), dieselbe "nicht
+  dokumentiert, also nicht geraten"-Haltung wie Tactical RMMs Moduldokumentation
+  zu Rate-Limits.
+- **HTTP-Client**: `ureq` 3.4.1, synchron, dieselbe Abhängigkeit wie jedes
+  andere Plugin in dieser Codebase.
+
+### Atera-Verbindungen, jede mit mehreren Atera-Kunden
+
+Strukturell an Tactical RMMs/NinjaOnes Verbindungs-/Client- bzw.
+-Organisations-Modell angelehnt, mit EINER bewussten Abweichung (keine
+`base_url`):
+
+- Nicht-geheime Metadaten (`id`, `label`, bewusst OHNE `base_url` -- siehe
+  oben -- und bewusst OHNE `customer_id`) liegen als `AteraConnectionMeta` in
+  `Config::atera_connections` (`#[serde(default)]`-kompatibel).
+  Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"atera:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei Tactical RMM/NinjaOne/Level.io/Snipe-IT.
+- Welcher Atera-Kunde innerhalb einer Verbindung welchem lokalen Kunden
+  entspricht (falls überhaupt), steht granular in
+  `Config::atera_customer_mappings` (`AteraCustomerMapping { connection_id,
+  customer_id, customer_name, local_customer_id }` -- bewusst
+  `local_customer_id` statt schlicht `customer_id` für den lokalen
+  Fremdschlüssel, um Ateras eigenes "Customer"-Konzept nicht mit der
+  lokalen `Customer`-Entität zu verwechseln). Ein nicht zugeordneter
+  Atera-Kunde liefert bei jeder Synchronisierung seine Agenten weiterhin
+  (zur Ansicht), aber immer mit `linked_system_id: None`.
+- `commands::atera::group_agents_by_customer` gruppiert Agenten nach
+  Atera-Kunde -- strukturell analog zu `commands::plugins::
+  group_devices_by_organization` (NinjaOne), NICHT zu Tactical RMMs
+  namens-basiertem `group_agents_by_client`: die Zuordnung Agent ->
+  Atera-Kunde läuft über eine ECHTE numerische ID
+  (`agent.customer_id == customer.id`), weil Ateras Agenten-Listen-API einen
+  echten `CustomerID`-Fremdschlüssel trägt (siehe oben).
+  Agenten, deren `customer_id` zu keinem bekannten Atera-Kunden passt
+  (sollte normalerweise nicht vorkommen, ist aber nicht ausgeschlossen --
+  z. B. ein zwischen Kunden- und Agenten-Abruf im selben Sync-Lauf
+  gelöschter Kunde), werden nicht stillschweigend verworfen, sondern als
+  eigene Restgruppe angehängt, mit der rohen ID als synthetischer ID UND
+  Anzeigename (kein Name bekannt) -- exakt wie bei NinjaOnes
+  Restgruppen-Behandlung.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie Tactical RMM/NinjaOne/Level.io/Snipe-IT:
+`sync_atera_connection` schreibt das Ergebnis jedes Laufs zusätzlich als
+JSON nach `data_dir/plugin-cache/atera-<connection_id>.json`
+(`{"synced_at_utc": "...", "groups": [...]}`). `get_cached_atera_sync`
+liest ausschließlich diese Datei (kein Netzwerkzugriff), rejoint dabei aber
+`customer_id` je Gruppe live gegen die AKTUELLEN
+`Config::atera_customer_mappings` (nicht den beim letzten Sync
+eingefrorenen Wert) -- exakt wie
+`commands::tacticalrmm::get_cached_tacticalrmm_sync` --, und liefert
+`None`, wenn für eine Verbindung noch nie synchronisiert wurde.
+`remove_atera_connection` löscht diese Cache-Datei (bestes Bemühen) und alle
+`atera_customer_mappings`-Zeilen der entfernten Verbindung gleich mit.
+
+### Tauri-Kommandos (`commands::atera`)
+
+`test_atera_connection`, `list_atera_connections`, `add_atera_connection`,
+`remove_atera_connection`, `list_atera_customers`, `map_atera_customer`,
+`unmap_atera_customer`, `sync_atera_connection`, `get_cached_atera_sync`,
+`link_system_to_atera`, `unlink_system_from_atera`,
+`get_atera_system_details` -- dünne Wrapper nach dem Muster von
+`commands::tacticalrmm`. `list_atera_customers` liefert die Live-
+Kundenliste einer Verbindung (analog zu `list_tacticalrmm_clients`), wird
+aber vom Frontend nicht aufgerufen -- `AteraPluginSection.tsx` ist wie
+`TacticalRmmPluginSection.tsx` konsequent Cache-first
+(`get_cached_atera_sync` beim Öffnen, `sync_atera_connection` nur auf
+"Aktualisieren"); der Befehl bleibt für Symmetrie und einen möglichen
+künftigen Ersteinrichtungs-Anwendungsfall erhalten. Das Übernehmen eines
+extern gelieferten Werts in ein selbst gepflegtes Feld (`name`, `hostname`,
+`ip_address`, `notes` in `systems`) bleibt -- wie bei allen anderen Plugins
+-- ausschließlich eine bewusste, manuelle Aktion über
+`get_atera_system_details` plus eine spätere UI-Aktion; kein Kommando hier
+schreibt automatisch in diese vier Felder.
+
+### Verknüpfungs-Vorschlag: welches Feld als Abgleichsschlüssel
+
+Wie Tactical RMM (und anders als Snipe-IT, das mangels Hostname-Feld auf
+`asset_tag`/`serial` ausweichen muss) hat ein Atera-Agent ein echtes
+Hostname-Äquivalent (`MachineName`) -- Atera ist RMM-Software, keine
+Asset-/Inventarverwaltung. `AteraPluginSection.tsx`s `matchKeyForDevice`
+verwendet deshalb, wie bei Tactical RMM/NinjaOne/Level.io, direkt
+`device.hostname` als Abgleichsschlüssel für den "Mit bestehendem System
+verknüpfen"-Vorschlag, verglichen gegen das einzige freie Textfeld, das ein
+lokales System dafür hat -- `System.hostname`.
+
+### Frontend (`AteraPluginSection.tsx`)
+
+Mechanisch an `TacticalRmmPluginSection.tsx`s Stand angelehnt (Atera-Kunden
+eingeklappt mit Geräte-Anzahl-Zusammenfassung, Kunde-Zuordnungs-`<select>`
+inklusive "+ Neuen Kunden anlegen…", aufklappbare, filterbare,
+10-pro-Seite-paginierte Geräteliste mit `j`/`k`/`Enter`/`l`/`u`-
+Tastaturnavigation über `getKeymap()`/`matchesBinding` -- wie alle anderen
+Plugin-Sektionen --, Vergleichs-/Übernahme-Panel für verknüpfte Geräte). Der
+Verbindungs-Anlage-Dialog hat NUR ZWEI Felder (Label, API-Key als
+`type="password"`) -- kein Base-URL-Feld, wie bei Level.io, und kein
+Client-ID/-Secret-Paar, wie bei NinjaOne; das ist der einzige bedeutsame
+UI-Unterschied zu Tactical RMMs dreifeldrigem Formular.
+`DeviceSummaryLine` zeigt zusätzlich einen Online/Offline-Statuspunkt und
+Ateras freien `OS`-Anzeigetext (kein Label-Nachschlagen wie bei Tactical
+RMMs `windows`/`linux`/`darwin` -- Ateras `OS`-Feld ist freier Text, keine
+kleine verifizierte Konstantenmenge). Anders als Tactical RMM (aber wie
+NinjaOne/Snipe-IT) KANN eine Geräte-Zeile einen "In Atera öffnen"-Link
+zeigen (`AteraLink`) -- aber nur, wenn Atera für diesen Agenten tatsächlich
+ein `AppViewUrl` geliefert hat; ohne dieses Feld erscheint schlicht kein
+Link, keine geratene URL. `PluginsView.tsx` bindet die Sektion alphabetisch
+zwischen `AbmPluginSection.tsx` und `IntunePluginSection.tsx` ein (siehe
+Kommentar dort).
