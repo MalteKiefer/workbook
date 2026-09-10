@@ -11,6 +11,7 @@ pub mod jamf;
 pub mod keymap;
 pub mod level;
 pub mod plugins;
+pub mod pulseway;
 pub mod quickcapture;
 pub mod search;
 pub mod settings;
