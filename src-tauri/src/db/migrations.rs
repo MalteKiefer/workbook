@@ -10,10 +10,16 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("../../migrations/0001_init.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("../../migrations/0001_init.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("../../migrations/0002_maintenance_intervals.sql"),
+    },
+];
 
 pub fn current_version(conn: &Connection) -> Result<i64, AppError> {
     let table_count: i64 = conn.query_row(
@@ -85,7 +91,7 @@ mod tests {
 
         run_migrations(&mut conn, &db_path, &berlin()).unwrap();
 
-        assert_eq!(current_version(&conn).unwrap(), 1);
+        assert_eq!(current_version(&conn).unwrap(), 2);
 
         for table in [
             "customers",
