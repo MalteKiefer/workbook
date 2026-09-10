@@ -13,6 +13,7 @@ interface System {
   hostname: string;
   ip_address: string;
   notes: string;
+  maintenance_interval_days: number | null;
 }
 
 // Curated Typ choices covering both physical/network assets (which have a
@@ -51,6 +52,10 @@ export default function SystemForm() {
   const [hostname, setHostname] = useState("");
   const [ipAddress, setIpAddress] = useState("");
   const [notes, setNotes] = useState("");
+  // Kept as the raw input string (rather than number | null) so the field
+  // can be empty while typing -- converted to number | null only when
+  // building the invoke() payload in handleSubmit.
+  const [maintenanceIntervalDays, setMaintenanceIntervalDays] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const isEditMode = typeof systemEditorTarget === "number";
@@ -66,6 +71,7 @@ export default function SystemForm() {
       setHostname("");
       setIpAddress("");
       setNotes("");
+      setMaintenanceIntervalDays("");
       return;
     }
 
@@ -87,6 +93,9 @@ export default function SystemForm() {
           setHostname(match.hostname);
           setIpAddress(match.ip_address);
           setNotes(match.notes);
+          setMaintenanceIntervalDays(
+            match.maintenance_interval_days === null ? "" : String(match.maintenance_interval_days)
+          );
         }
       })
       .catch((e) => setError(formatInvokeError(e)));
@@ -122,11 +131,31 @@ export default function SystemForm() {
     // already having typed something) rather than silently persisting it.
     const effectiveHostname = showNetworkFields ? hostname : "";
     const effectiveIpAddress = showNetworkFields ? ipAddress : "";
+    // Empty field means no interval (null), same convention as every other
+    // optional value in this form.
+    const trimmedInterval = maintenanceIntervalDays.trim();
+    const effectiveMaintenanceIntervalDays = trimmedInterval === "" ? null : Number(trimmedInterval);
     try {
       if (isEditMode) {
         await invoke("update_system", {
           id: systemEditorTarget,
-          input: { name, system_type: systemType, hostname: effectiveHostname, ip_address: effectiveIpAddress, notes },
+          input: {
+            name,
+            system_type: systemType,
+            hostname: effectiveHostname,
+            ip_address: effectiveIpAddress,
+            notes,
+            // Snake_case, not camelCase: this is a field inside the `input`
+            // struct (UpdateSystem), deserialized by serde using its own
+            // field names -- Tauri's automatic camelCase<->snake_case
+            // conversion only applies to a command's own top-level
+            // parameter names (e.g. `id` above, or `customerId` in
+            // list_systems_with_maintenance_status), not to nested struct
+            // fields. Matches every other multi-word field already in this
+            // payload (system_type, ip_address) and elsewhere in the
+            // codebase (e.g. EntryEditor.tsx's body_md/performed_at_utc).
+            maintenance_interval_days: effectiveMaintenanceIntervalDays,
+          },
         });
       } else {
         await invoke("create_system", {
@@ -137,6 +166,7 @@ export default function SystemForm() {
             hostname: effectiveHostname,
             ip_address: effectiveIpAddress,
             notes,
+            maintenance_interval_days: effectiveMaintenanceIntervalDays,
           },
         });
       }
@@ -189,6 +219,17 @@ export default function SystemForm() {
             </label>
           </>
         )}
+        <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+          Wartungsintervall (Tage)
+          <input
+            type="number"
+            min={1}
+            step={1}
+            placeholder="kein Intervall"
+            value={maintenanceIntervalDays}
+            onChange={(e) => setMaintenanceIntervalDays(e.target.value)}
+          />
+        </label>
         <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
           Notizen
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />

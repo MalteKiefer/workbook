@@ -16,6 +16,10 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0001_init.sql"),
     },
     Migration {
+        version: 2,
+        sql: include_str!("../../migrations/0002_maintenance_intervals.sql"),
+    },
+    Migration {
         version: 3,
         sql: include_str!("../../migrations/0003_audit_log.sql"),
     },

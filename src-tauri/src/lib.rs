@@ -10,6 +10,7 @@ pub mod error;
 pub mod export;
 pub mod hotkeys;
 pub mod import;
+pub mod maintenance;
 pub mod plugin;
 pub mod quickcapture;
 pub mod time;
@@ -139,6 +140,7 @@ pub fn run() {
             commands::systems::update_system,
             commands::systems::archive_system,
             commands::systems::archive_systems,
+            commands::systems::list_systems_with_maintenance_status,
             commands::systems::import_systems_from_csv,
             commands::tags::list_tags,
             commands::tags::list_tags_with_counts,
