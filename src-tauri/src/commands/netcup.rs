@@ -126,7 +126,9 @@ fn find_connection(config: &Config, connection_id: &str) -> Result<NetcupConnect
 /// API token) from the key store, based on a connection metadata row.
 /// Unlike Ninja, the netcup API token is already the full secret string --
 /// no JSON encoding needed, since netcup only needs a single secret value.
-fn build_plugin(meta: &NetcupConnectionMeta) -> Result<(NetcupPlugin, PluginCredentials), AppError> {
+fn build_plugin(
+    meta: &NetcupConnectionMeta,
+) -> Result<(NetcupPlugin, PluginCredentials), AppError> {
     let plugin_id = plugin_id_for(&meta.id);
     let secret = plugin::secrets::load_secret(&plugin_id)?.ok_or_else(|| {
         AppError::Plugin(format!(
@@ -200,7 +202,10 @@ fn read_netcup_cache(
 /// here (see `ExternalSystemDto`'s own doc comment on why), exactly what
 /// `NetcupServer` itself provides: the list call never carries either
 /// field.
-fn to_external_system_dto(server: NetcupServer, linked_system_id: Option<i64>) -> ExternalSystemDto {
+fn to_external_system_dto(
+    server: NetcupServer,
+    linked_system_id: Option<i64>,
+) -> ExternalSystemDto {
     ExternalSystemDto {
         external_id: server.external_id,
         name: server.name,
@@ -217,7 +222,9 @@ pub fn test_netcup_connection(api_token: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-pub fn list_netcup_connections(state: State<AppState>) -> Result<Vec<NetcupConnectionDto>, AppError> {
+pub fn list_netcup_connections(
+    state: State<AppState>,
+) -> Result<Vec<NetcupConnectionDto>, AppError> {
     let config = state.config.lock().expect("Config-Mutex vergiftet");
     Ok(config.netcup_connections.iter().map(to_dto).collect())
 }

@@ -251,7 +251,10 @@ fn build_agent() -> Agent {
 /// via `offset`/`limit` (see module docs, "Pagination"), stopping as soon as
 /// a page's length is shorter than `PAGE_LIMIT` (`page_indicates_more`) or
 /// `MAX_PAGES` is reached, whichever comes first.
-fn fetch_all_servers(agent: &Agent, api_token: &str) -> Result<Vec<serde_json::Value>, PluginError> {
+fn fetch_all_servers(
+    agent: &Agent,
+    api_token: &str,
+) -> Result<Vec<serde_json::Value>, PluginError> {
     let mut all = Vec::new();
     let mut offset: u32 = 0;
     for _ in 0..MAX_PAGES {
@@ -452,7 +455,8 @@ mod tests {
 
     #[test]
     fn display_name_falls_back_to_raw_name_when_nickname_and_hostname_are_null() {
-        let json = serde_json::json!([{"id": 1, "name": "v001", "hostname": null, "nickname": null}]);
+        let json =
+            serde_json::json!([{"id": 1, "name": "v001", "hostname": null, "nickname": null}]);
         let servers = map_servers(json.as_array().unwrap());
         assert_eq!(servers[0].name, "v001");
     }
