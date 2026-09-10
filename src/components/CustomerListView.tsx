@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
+import { getKeymap, matchesBinding } from "../lib/keymap";
 
 interface Customer {
   id: number;
@@ -41,10 +42,11 @@ export default function CustomerListView() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (formOpen || isTypingTarget(document.activeElement)) return;
-      if (e.key === "j") {
+      const keymap = getKeymap();
+      if (matchesBinding(e, keymap.list_next)) {
         e.preventDefault();
         setSelectedIndex((i) => Math.min(i + 1, customers.length - 1));
-      } else if (e.key === "k") {
+      } else if (matchesBinding(e, keymap.list_prev)) {
         e.preventDefault();
         setSelectedIndex((i) => Math.max(i - 1, 0));
       } else if (e.key === "Enter") {
@@ -54,7 +56,7 @@ export default function CustomerListView() {
           selectCustomer(customer.id);
           goToSystems(customer.id);
         }
-      } else if (e.key === "e") {
+      } else if (matchesBinding(e, keymap.edit_selected)) {
         const customer = customers[selectedIndex];
         if (customer) {
           e.preventDefault();
