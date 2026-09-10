@@ -59,6 +59,7 @@ export default function ExportDialog() {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [systems, setSystems] = useState<System[]>([]);
+  const [allCustomers, setAllCustomers] = useState(false);
   const [customerId, setCustomerId] = useState<number | "">("");
   const [systemId, setSystemId] = useState<number | "">("");
   const [fromInput, setFromInput] = useState("");
@@ -87,6 +88,7 @@ export default function ExportDialog() {
   // Seed fields from ambient store selection whenever the dialog opens.
   useEffect(() => {
     if (!exportDialogOpen) return;
+    setAllCustomers(false);
     setCustomerId(selectedCustomerId ?? "");
     setSystemId(selectedSystemId ?? "");
     setFromInput("");
@@ -120,7 +122,7 @@ export default function ExportDialog() {
   };
 
   async function handleExportMarkdown() {
-    if (customerId === "") {
+    if (!allCustomers && customerId === "") {
       setError("Kunde ist erforderlich");
       return;
     }
@@ -130,14 +132,23 @@ export default function ExportDialog() {
       const destDir = await open({ directory: true, title: "Zielverzeichnis wählen" });
       if (!destDir) return;
       setBusy(true);
-      await invoke("export_markdown", {
-        customerId,
-        systemId: systemId === "" ? null : systemId,
-        fromUtc: datetimeLocalToIsoUtc(fromInput),
-        toUtc: datetimeLocalToIsoUtc(toInput),
-        destDir,
-      });
-      setStatus(`Markdown-Export abgeschlossen: ${destDir}`);
+      if (allCustomers) {
+        await invoke("export_markdown_all_customers", {
+          fromUtc: datetimeLocalToIsoUtc(fromInput),
+          toUtc: datetimeLocalToIsoUtc(toInput),
+          destDir,
+        });
+        setStatus(`Markdown-Export (alle Kunden) abgeschlossen: ${destDir}`);
+      } else {
+        await invoke("export_markdown", {
+          customerId,
+          systemId: systemId === "" ? null : systemId,
+          fromUtc: datetimeLocalToIsoUtc(fromInput),
+          toUtc: datetimeLocalToIsoUtc(toInput),
+          destDir,
+        });
+        setStatus(`Markdown-Export abgeschlossen: ${destDir}`);
+      }
     } catch (e) {
       setError(formatInvokeError(e));
     } finally {
@@ -146,29 +157,41 @@ export default function ExportDialog() {
   }
 
   async function handleExportPdf() {
-    if (customerId === "") {
+    if (!allCustomers && customerId === "") {
       setError("Kunde ist erforderlich");
       return;
     }
     setError(null);
     setStatus(null);
     try {
-      const customerName = customers.find((c) => c.id === customerId)?.name ?? "Kunde";
-      const systemName = systemId === "" ? null : systems.find((s) => s.id === systemId)?.name ?? null;
-      const destPath = await save({
-        defaultPath: buildExportFilename(customerName, systemName),
-        filters: [{ name: "PDF", extensions: ["pdf"] }],
-      });
-      if (!destPath) return;
-      setBusy(true);
-      await invoke("export_pdf", {
-        customerId,
-        systemId: systemId === "" ? null : systemId,
-        fromUtc: datetimeLocalToIsoUtc(fromInput),
-        toUtc: datetimeLocalToIsoUtc(toInput),
-        destPath,
-      });
-      setStatus(`PDF-Export abgeschlossen: ${destPath}`);
+      if (allCustomers) {
+        const destDir = await open({ directory: true, title: "Zielverzeichnis wählen" });
+        if (!destDir) return;
+        setBusy(true);
+        await invoke("export_pdf_all_customers", {
+          fromUtc: datetimeLocalToIsoUtc(fromInput),
+          toUtc: datetimeLocalToIsoUtc(toInput),
+          destDir,
+        });
+        setStatus(`PDF-Export (alle Kunden) abgeschlossen: ${destDir}`);
+      } else {
+        const customerName = customers.find((c) => c.id === customerId)?.name ?? "Kunde";
+        const systemName = systemId === "" ? null : systems.find((s) => s.id === systemId)?.name ?? null;
+        const destPath = await save({
+          defaultPath: buildExportFilename(customerName, systemName),
+          filters: [{ name: "PDF", extensions: ["pdf"] }],
+        });
+        if (!destPath) return;
+        setBusy(true);
+        await invoke("export_pdf", {
+          customerId,
+          systemId: systemId === "" ? null : systemId,
+          fromUtc: datetimeLocalToIsoUtc(fromInput),
+          toUtc: datetimeLocalToIsoUtc(toInput),
+          destPath,
+        });
+        setStatus(`PDF-Export abgeschlossen: ${destPath}`);
+      }
     } catch (e) {
       setError(formatInvokeError(e));
     } finally {
@@ -183,6 +206,15 @@ export default function ExportDialog() {
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "26rem", maxWidth: "90vw" }}>
         <h2 style={{ margin: 0, fontSize: "1rem" }}>Kunde exportieren</h2>
 
+        <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.9rem" }}>
+          <input
+            type="checkbox"
+            checked={allCustomers}
+            onChange={(e) => setAllCustomers(e.target.checked)}
+          />
+          Alle Kunden exportieren
+        </label>
+
         <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
           Kunde
           <select
@@ -192,7 +224,8 @@ export default function ExportDialog() {
               setCustomerId(value);
               setSystemId("");
             }}
-            required
+            required={!allCustomers}
+            disabled={allCustomers}
             autoFocus
           >
             <option value="">Kunde wählen…</option>
@@ -209,7 +242,7 @@ export default function ExportDialog() {
           <select
             value={systemId}
             onChange={(e) => setSystemId(e.target.value === "" ? "" : Number(e.target.value))}
-            disabled={customerId === ""}
+            disabled={allCustomers || customerId === ""}
           >
             <option value="">Alle Systeme</option>
             {systems.map((s) => (
@@ -238,10 +271,18 @@ export default function ExportDialog() {
           <button type="button" onClick={cancel}>
             Abbrechen
           </button>
-          <button type="button" disabled={customerId === "" || busy} onClick={() => void handleExportMarkdown()}>
+          <button
+            type="button"
+            disabled={(!allCustomers && customerId === "") || busy}
+            onClick={() => void handleExportMarkdown()}
+          >
             Als Markdown exportieren
           </button>
-          <button type="button" disabled={customerId === "" || busy} onClick={() => void handleExportPdf()}>
+          <button
+            type="button"
+            disabled={(!allCustomers && customerId === "") || busy}
+            onClick={() => void handleExportPdf()}
+          >
             Als PDF exportieren
           </button>
         </div>
