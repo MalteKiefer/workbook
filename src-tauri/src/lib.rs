@@ -276,6 +276,18 @@ pub fn run() {
             commands::pulseway::link_system_to_pulseway,
             commands::pulseway::unlink_system_from_pulseway,
             commands::pulseway::get_pulseway_system_details,
+            commands::kaseya::test_kaseya_connection,
+            commands::kaseya::list_kaseya_connections,
+            commands::kaseya::add_kaseya_connection,
+            commands::kaseya::remove_kaseya_connection,
+            commands::kaseya::list_kaseya_organizations,
+            commands::kaseya::map_kaseya_organization,
+            commands::kaseya::unmap_kaseya_organization,
+            commands::kaseya::sync_kaseya_connection,
+            commands::kaseya::get_cached_kaseya_sync,
+            commands::kaseya::link_system_to_kaseya,
+            commands::kaseya::unlink_system_from_kaseya,
+            commands::kaseya::get_kaseya_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())

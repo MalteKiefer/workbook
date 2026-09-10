@@ -7,6 +7,7 @@ use crate::plugin::atera::{AteraConnectionMeta, AteraCustomerMapping};
 use crate::plugin::intune::IntuneConnectionMeta;
 use crate::plugin::iru::IruConnectionMeta;
 use crate::plugin::jamf::{JamfConnectionMeta, JamfSiteMapping};
+use crate::plugin::kaseya::{KaseyaConnectionMeta, KaseyaOrgMapping};
 use crate::plugin::level::LevelConnectionMeta;
 use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
 use crate::plugin::pulseway::{PulsewayConnectionMeta, PulsewayOrgMapping};
@@ -273,6 +274,25 @@ pub struct Config {
     /// principle as `tacticalrmm_client_mappings`/`ninja_org_mappings`.
     /// `#[serde(default)]`-compatible with configs from before this change.
     pub pulseway_org_mappings: Vec<PulsewayOrgMapping>,
+    /// Non-secret metadata per configured Kaseya VSA connection (a self-
+    /// hosted/single-tenant VSA server; a user can create as many
+    /// connections as they like). Like a Ninja/Snipe-IT/Tactical RMM
+    /// connection, a Kaseya connection is NOT bound to exactly one local
+    /// customer -- see `kaseya_org_mappings`. The associated Token ID/
+    /// Secret pair lives exclusively in the OS keyring, see
+    /// `plugin::secrets`. `#[serde(default)]`-compatible with configs from
+    /// before this change, analogous to `tacticalrmm_connections` above.
+    pub kaseya_connections: Vec<KaseyaConnectionMeta>,
+    /// Mapping of individual Kaseya VSA "Organizations" (within a
+    /// connection) to local customers. A single VSA instance (one
+    /// connection) can manage multiple organizations -- e.g. because the
+    /// user is themselves an MSP who runs several of their own customers as
+    /// separate organizations in a shared VSA instance -- hence this
+    /// separate, granular mapping table instead of a `customer_id` field
+    /// directly on the connection -- exactly the same principle as
+    /// `tacticalrmm_client_mappings`/`ninja_org_mappings`.
+    /// `#[serde(default)]`-compatible with configs from before this change.
+    pub kaseya_org_mappings: Vec<KaseyaOrgMapping>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -328,6 +348,8 @@ impl Default for Config {
             atera_customer_mappings: Vec::new(),
             pulseway_connections: Vec::new(),
             pulseway_org_mappings: Vec::new(),
+            kaseya_connections: Vec::new(),
+            kaseya_org_mappings: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -1045,6 +1067,84 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.pulseway_org_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_kaseya_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.kaseya_connections.push(KaseyaConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Kaseya VSA".to_string(),
+            base_url: "https://vsa.example.com/api".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.kaseya_connections.len(), 1);
+        assert_eq!(
+            loaded.kaseya_connections[0].base_url,
+            "https://vsa.example.com/api"
+        );
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_kaseya_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the Kaseya VSA integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.kaseya_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_kaseya_org_mappings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.kaseya_connections.push(KaseyaConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Kaseya VSA".to_string(),
+            base_url: "https://vsa.example.com/api".to_string(),
+        });
+        config.kaseya_org_mappings.push(KaseyaOrgMapping {
+            connection_id: "acme-1700000000000".to_string(),
+            organization_id: "1".to_string(),
+            organization_name: "ACME Hauptsitz".to_string(),
+            customer_id: 7,
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.kaseya_org_mappings.len(), 1);
+        assert_eq!(loaded.kaseya_org_mappings[0].organization_id, "1");
+        assert_eq!(loaded.kaseya_org_mappings[0].customer_id, 7);
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_kaseya_org_mappings_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the organization mapping was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.kaseya_org_mappings.is_empty());
     }
 
     #[test]
