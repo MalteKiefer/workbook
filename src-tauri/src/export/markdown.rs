@@ -192,6 +192,7 @@ mod tests {
                 hostname: "".into(),
                 ip_address: "".into(),
                 notes: "".into(),
+                maintenance_interval_days: None,
             },
             &berlin(),
         )

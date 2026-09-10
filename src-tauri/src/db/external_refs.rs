@@ -153,6 +153,7 @@ mod tests {
                 hostname: "fs01.acme.local".into(),
                 ip_address: "10.0.0.5".into(),
                 notes: "".into(),
+                maintenance_interval_days: None,
             },
             &berlin(),
         )
@@ -292,6 +293,7 @@ mod tests {
                 hostname: "".into(),
                 ip_address: "".into(),
                 notes: "".into(),
+                maintenance_interval_days: None,
             },
             &berlin(),
         )

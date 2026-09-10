@@ -153,6 +153,10 @@ pub fn parse_systems_csv(content: &str, customer_id: i64) -> ParsedRows<NewSyste
                 hostname: field(&record, hostname_idx),
                 ip_address: field(&record, ip_idx),
                 notes: field(&record, notes_idx),
+                // CSV import has no maintenance-interval column -- imported
+                // systems start with no schedule, same as any other field
+                // that isn't part of the CSV layout.
+                maintenance_interval_days: None,
             }),
         ));
     }
