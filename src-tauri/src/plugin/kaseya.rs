@@ -375,7 +375,11 @@ fn build_agent() -> Agent {
 
 /// Issues an authenticated `GET {url}` and returns the parsed JSON body.
 /// Auth header is `Authorization: Basic ...` (see module docs).
-fn fetch_json(agent: &Agent, url: &str, auth_header: &str) -> Result<serde_json::Value, PluginError> {
+fn fetch_json(
+    agent: &Agent,
+    url: &str,
+    auth_header: &str,
+) -> Result<serde_json::Value, PluginError> {
     let mut response = agent
         .get(url)
         .header("Authorization", auth_header)

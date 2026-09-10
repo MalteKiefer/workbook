@@ -177,7 +177,9 @@ fn find_connection(config: &Config, connection_id: &str) -> Result<KaseyaConnect
 /// `plugin::kaseya::parse_credentials`), this layer just passes the raw
 /// secret string through, exactly like `commands::plugins::build_plugin`
 /// (NinjaOne).
-fn build_plugin(meta: &KaseyaConnectionMeta) -> Result<(KaseyaPlugin, PluginCredentials), AppError> {
+fn build_plugin(
+    meta: &KaseyaConnectionMeta,
+) -> Result<(KaseyaPlugin, PluginCredentials), AppError> {
     let plugin_id = plugin_id_for(&meta.id);
     let secret = plugin::secrets::load_secret(&plugin_id)?.ok_or_else(|| {
         AppError::Plugin(format!(
@@ -250,7 +252,10 @@ fn read_kaseya_cache(
     Ok(Some(cached))
 }
 
-fn to_external_system_dto(device: KaseyaDevice, linked_system_id: Option<i64>) -> ExternalSystemDto {
+fn to_external_system_dto(
+    device: KaseyaDevice,
+    linked_system_id: Option<i64>,
+) -> ExternalSystemDto {
     ExternalSystemDto {
         external_id: device.external_id,
         name: device.name,
@@ -372,7 +377,9 @@ pub fn test_kaseya_connection(
 }
 
 #[tauri::command]
-pub fn list_kaseya_connections(state: State<AppState>) -> Result<Vec<KaseyaConnectionDto>, AppError> {
+pub fn list_kaseya_connections(
+    state: State<AppState>,
+) -> Result<Vec<KaseyaConnectionDto>, AppError> {
     let config = state.config.lock().expect("Config-Mutex vergiftet");
     Ok(config.kaseya_connections.iter().map(to_dto).collect())
 }
@@ -863,7 +870,7 @@ mod tests {
 
         let groups = group_devices_by_organization(&organizations, &devices, &[], "conn-1");
 
-        assert!(groups.iter().all(|g| g.organization_id != ""));
+        assert!(groups.iter().all(|g| !g.organization_id.is_empty()));
     }
 
     fn sample_group() -> KaseyaOrgDeviceGroupDto {
