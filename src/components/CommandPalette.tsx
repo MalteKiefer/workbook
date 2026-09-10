@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { formatInvokeError } from "../lib/errors";
+import { formatShortcut } from "../lib/platform";
 
 interface DirectoryHit {
   kind: "customer" | "system";
@@ -108,7 +109,7 @@ export default function CommandPalette() {
       {
         id: "quick-capture",
         label: "Schnellerfassung öffnen",
-        shortcut: "Strg+N",
+        shortcut: formatShortcut("N"),
         run: () => {
           void invoke("open_quick_capture_with_context", {
             customerId: selectedCustomerId,

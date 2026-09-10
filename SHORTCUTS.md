@@ -179,3 +179,13 @@ opens.
   never compiled there; the file `src-tauri/src/context_capture/x11.rs`
   says so itself (`NOT COMPILED OR TESTED ON THIS HOST`). It should be
   verified for real before production use on Linux.
+- **macOS:** every `Ctrl+<letter>` binding in this document (`Ctrl+K`,
+  `Ctrl+N`, `Ctrl+S`, `Ctrl+V`) also responds to `Cmd+<letter>` — the
+  in-app UI (sidebar footer, Command Palette, quick capture's Save button,
+  the `?` shortcut overview) displays `⌘` there instead of `Strg+`
+  (`src/lib/platform.ts`). The three *global* hotkeys in the table above
+  stay literally `Ctrl+Alt+...` on macOS too, since they are user-editable
+  strings in `config.toml` rather than a fixed binding — set them to
+  `Cmd+Alt+...` there if you want the Mac-native combination. Window
+  context capture is unimplemented on macOS (falls back to
+  `context_capture::unsupported`); quick capture itself is unaffected.

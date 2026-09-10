@@ -42,7 +42,7 @@ export function useGlobalHotkeys() {
         return;
       }
 
-      if (e.ctrlKey && e.key.toLowerCase() === "n") {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
         void invoke("open_quick_capture_with_context", {
           customerId: selectedCustomerId,

@@ -2,30 +2,37 @@ import { useEffect } from "react";
 import Modal from "./Modal";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
 import { useAppStore } from "../state/appStore";
+import { formatShortcut } from "../lib/platform";
 
 interface ShortcutRow {
   keys: string;
   description: string;
 }
 
-// Static content — kept in sync with the real per-view bindings (see
-// SHORTCUTS.md at the repo root for the fully detailed, view-by-view
-// reference; this is the compact in-app version).
-const SHORTCUTS: ShortcutRow[] = [
-  { keys: "Strg+K", description: "Command Palette öffnen" },
-  { keys: "Strg+N", description: "Schnellerfassungsfenster öffnen — für einen Eintrag im Hauptfenster: Strg+K → „Neuer Eintrag“" },
-  { keys: "Strg+S", description: "Speichern (im geöffneten Editor)" },
-  { keys: "/", description: "Noch nicht gebunden" },
-  { keys: "g c", description: "Zu Kundenliste" },
-  { keys: "g s", description: "Zu Systemliste des aktuellen Kunden" },
-  { keys: "g j", description: "Zum Journal" },
-  { keys: "j / k", description: "Liste abwärts / aufwärts" },
-  { keys: "Enter", description: "Auswählen/öffnen — wirkt je nach Ansicht unterschiedlich (siehe SHORTCUTS.md)" },
-  { keys: "e", description: "Ausgewählten Eintrag/Kunde/System bearbeiten" },
-  { keys: "Strg+V", description: "Screenshot aus Zwischenablage als Anhang" },
-  { keys: "Esc", description: "Abbrechen, Ebene zurück" },
-  { keys: "?", description: "Diese Shortcut-Übersicht" },
-];
+// Kept in sync with the real per-view bindings (see SHORTCUTS.md at the repo
+// root for the fully detailed, view-by-view reference; this is the compact
+// in-app version). A function rather than a module-level constant so the
+// Cmd/Strg labels reflect the platform this window is actually running on.
+function shortcuts(): ShortcutRow[] {
+  return [
+    { keys: formatShortcut("K"), description: "Command Palette öffnen" },
+    {
+      keys: formatShortcut("N"),
+      description: `Schnellerfassungsfenster öffnen — für einen Eintrag im Hauptfenster: ${formatShortcut("K")} → „Neuer Eintrag“`,
+    },
+    { keys: formatShortcut("S"), description: "Speichern (im geöffneten Editor)" },
+    { keys: "/", description: "Noch nicht gebunden" },
+    { keys: "g c", description: "Zu Kundenliste" },
+    { keys: "g s", description: "Zu Systemliste des aktuellen Kunden" },
+    { keys: "g j", description: "Zum Journal" },
+    { keys: "j / k", description: "Liste abwärts / aufwärts" },
+    { keys: "Enter", description: "Auswählen/öffnen — wirkt je nach Ansicht unterschiedlich (siehe SHORTCUTS.md)" },
+    { keys: "e", description: "Ausgewählten Eintrag/Kunde/System bearbeiten" },
+    { keys: formatShortcut("V"), description: "Screenshot aus Zwischenablage als Anhang" },
+    { keys: "Esc", description: "Abbrechen, Ebene zurück" },
+    { keys: "?", description: "Diese Shortcut-Übersicht" },
+  ];
+}
 
 export default function ShortcutOverview() {
   const open = useAppStore((s) => s.shortcutOverviewOpen);
@@ -63,7 +70,7 @@ export default function ShortcutOverview() {
       <h2 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>Tastaturbelegung</h2>
       <table style={{ borderCollapse: "collapse" }}>
         <tbody>
-          {SHORTCUTS.map((row) => (
+          {shortcuts().map((row) => (
             <tr key={row.keys}>
               <td
                 style={{

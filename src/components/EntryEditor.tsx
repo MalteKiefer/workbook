@@ -615,7 +615,7 @@ export default function EntryEditor() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (editorTarget === null) return;
-      if (e.ctrlKey && e.key.toLowerCase() === "s") {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         void save();
       }
