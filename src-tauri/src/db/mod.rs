@@ -1,4 +1,5 @@
 pub mod attachments;
+pub mod audit_log;
 pub mod customers;
 pub mod entries;
 pub mod external_refs;
