@@ -51,6 +51,20 @@ pub enum AutoBackupFrequency {
     Monthly,
 }
 
+/// Frequency of automatic update checks (Settings → Aktualisierung). Pure
+/// TOML/serde enum, same convention as `AutoBackupFrequency` -- a
+/// deliberately separate type rather than reusing `AutoBackupFrequency`,
+/// since backups and update checks are independent features that happen to
+/// share the same three intervals.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoUpdateCheckFrequency {
+    #[default]
+    Daily,
+    Weekly,
+    Monthly,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HotkeyConfig {
@@ -415,6 +429,26 @@ pub struct Config {
     /// The password itself is never stored here in `config.toml`, only this
     /// flag.
     pub backup_encryption_enabled: bool,
+    /// Whether the background scheduler (see
+    /// `spawn_auto_update_check_scheduler` in `lib.rs`) should periodically
+    /// check GitHub Releases for a newer app version. Opt-in, defaults to
+    /// `false` -- same "no surprise background network access" convention
+    /// as `auto_backup_enabled`. Never installs anything by itself; only
+    /// records that a newer version exists (`auto_update_check_available_version`)
+    /// so the user can install it manually from Settings → Aktualisierung.
+    pub auto_update_check_enabled: bool,
+    pub auto_update_check_frequency: AutoUpdateCheckFrequency,
+    /// RFC3339 timestamp (UTC) of the last update check, automatic OR
+    /// manual (see `commands::updater::record_update_check_result`) -- a
+    /// manual check also counts, so it isn't immediately followed by a
+    /// redundant automatic one. `None` means "never" -- the scheduler
+    /// treats that like an immediately due first run.
+    pub auto_update_check_last_run_utc: Option<String>,
+    /// Version string of the newest update found by the most recent check,
+    /// if any (`None` if the last check found nothing newer, or none has
+    /// run yet). Drives the tray tooltip and the Settings-nav badge; never
+    /// used to auto-install.
+    pub auto_update_check_available_version: Option<String>,
 }
 
 impl Default for Config {
@@ -461,6 +495,10 @@ impl Default for Config {
             auto_backup_frequency: AutoBackupFrequency::default(),
             auto_backup_last_run_utc: None,
             backup_encryption_enabled: false,
+            auto_update_check_enabled: false,
+            auto_update_check_frequency: AutoUpdateCheckFrequency::default(),
+            auto_update_check_last_run_utc: None,
+            auto_update_check_available_version: None,
         }
     }
 }
@@ -1673,6 +1711,42 @@ mod tests {
         assert_eq!(loaded.auto_backup_frequency, AutoBackupFrequency::Daily);
         assert_eq!(loaded.auto_backup_last_run_utc, None);
         assert!(!loaded.backup_encryption_enabled);
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_auto_update_check_settings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.auto_update_check_enabled = true;
+        config.auto_update_check_frequency = AutoUpdateCheckFrequency::Weekly;
+        config.auto_update_check_last_run_utc = Some("2026-09-01T10:00:00Z".to_string());
+        config.auto_update_check_available_version = Some("0.8.0".to_string());
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_auto_update_check_fields_defaults_to_disabled() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before automatic update checks were
+        // introduced -- must fall back gracefully to "disabled" thanks to
+        // `#[serde(default)]`.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(!loaded.auto_update_check_enabled);
+        assert_eq!(
+            loaded.auto_update_check_frequency,
+            AutoUpdateCheckFrequency::Daily
+        );
+        assert_eq!(loaded.auto_update_check_last_run_utc, None);
+        assert_eq!(loaded.auto_update_check_available_version, None);
     }
 
     #[test]

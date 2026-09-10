@@ -24,6 +24,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 export default function SettingsView() {
   const settingsTab = useAppStore((s) => s.settingsTab);
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
+  const updateAvailableVersion = useAppStore((s) => s.updateAvailableVersion);
 
   return (
     <div>
@@ -51,6 +52,20 @@ export default function SettingsView() {
         </TabButton>
         <TabButton active={settingsTab === "update"} onClick={() => setSettingsTab("update")}>
           Aktualisierung
+          {updateAvailableVersion !== null && (
+            <span
+              title={`Update ${updateAvailableVersion} verfügbar`}
+              style={{
+                display: "inline-block",
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                background: "var(--accent)",
+                marginLeft: "0.4rem",
+                verticalAlign: "middle",
+              }}
+            />
+          )}
         </TabButton>
       </div>
       {settingsTab === "general" && <GeneralSettingsView />}

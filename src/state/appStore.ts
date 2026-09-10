@@ -16,6 +16,7 @@ interface AppState {
   systemEditorTarget: "new" | number | null;
   systemEditorCustomerId: number | null;
   shortcutOverviewOpen: boolean;
+  updateAvailableVersion: string | null;
   goToCustomers: () => void;
   goToSystems: (customerId?: number) => void;
   goToJournal: () => void;
@@ -37,6 +38,7 @@ interface AppState {
   closeSystemEditor: () => void;
   openShortcutOverview: () => void;
   closeShortcutOverview: () => void;
+  setUpdateAvailableVersion: (version: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -52,6 +54,7 @@ export const useAppStore = create<AppState>((set) => ({
   systemEditorTarget: null,
   systemEditorCustomerId: null,
   shortcutOverviewOpen: false,
+  updateAvailableVersion: null,
   goToCustomers: () => set({ view: "customers" }),
   goToSystems: (customerId) =>
     set((state) => ({
@@ -77,4 +80,5 @@ export const useAppStore = create<AppState>((set) => ({
   closeSystemEditor: () => set({ systemEditorTarget: null, systemEditorCustomerId: null }),
   openShortcutOverview: () => set({ shortcutOverviewOpen: true }),
   closeShortcutOverview: () => set({ shortcutOverviewOpen: false }),
+  setUpdateAvailableVersion: (version) => set({ updateAvailableVersion: version }),
 }));

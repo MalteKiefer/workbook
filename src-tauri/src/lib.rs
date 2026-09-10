@@ -13,6 +13,7 @@ pub mod plugin;
 pub mod quickcapture;
 pub mod time;
 pub mod tray;
+pub mod updater;
 pub mod window;
 
 pub use error::AppError;
@@ -121,6 +122,7 @@ pub fn run() {
             cli::dispatch(app.handle(), cli::parse_args(&first_launch_args));
 
             spawn_auto_backup_scheduler(app.handle().clone());
+            spawn_auto_update_check_scheduler(app.handle().clone());
 
             Ok(())
         })
@@ -352,6 +354,9 @@ pub fn run() {
             commands::vultr::unlink_system_from_vultr,
             commands::vultr::get_vultr_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
+            commands::updater::get_update_check_settings,
+            commands::updater::set_auto_update_check_settings,
+            commands::updater::record_update_check_result,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -450,5 +455,62 @@ fn run_auto_backup_if_due(app: &tauri::AppHandle) {
             }
         }
         Err(e) => eprintln!("Automatisches Backup fehlgeschlagen: {e}"),
+    }
+}
+
+/// Interval between checks for a due automatic update check. Same
+/// reasoning as `AUTO_BACKUP_CHECK_INTERVAL`: coarse-grained is fine, this
+/// just needs to notice "due" reasonably soon, not immediately.
+const AUTO_UPDATE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+/// Starts a background thread that periodically checks whether an
+/// automatic update check is due (per `updater::is_auto_update_check_due`)
+/// and, if so, asks the updater plugin whether a newer version exists.
+/// Same plain-`std::thread` sleep-poll design as
+/// `spawn_auto_backup_scheduler`, for the same reason.
+fn spawn_auto_update_check_scheduler(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        run_auto_update_check_if_due(&app);
+        std::thread::sleep(AUTO_UPDATE_CHECK_INTERVAL);
+    });
+}
+
+fn run_auto_update_check_if_due(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+
+    let (frequency, last_run_utc) = {
+        let config = state.config.lock().expect("Config-Mutex vergiftet");
+        if !config.auto_update_check_enabled {
+            return;
+        }
+        (
+            config.auto_update_check_frequency,
+            config.auto_update_check_last_run_utc.clone(),
+        )
+    };
+
+    let now = chrono::Utc::now();
+    if !updater::is_auto_update_check_due(frequency, last_run_utc.as_deref(), now) {
+        return;
+    }
+
+    use tauri_plugin_updater::UpdaterExt;
+    let plugin_updater = match app.updater() {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("Automatische Update-Suche: Updater konnte nicht initialisiert werden: {e}");
+            return;
+        }
+    };
+
+    // `check()` is async (it makes an HTTP request); this scheduler is a
+    // plain `std::thread` loop with no async runtime of its own, so it
+    // blocks on Tauri's own async runtime the same way the plugin's own
+    // doc examples do (`tauri::async_runtime::spawn` there, `block_on`
+    // here since this call site isn't already inside an async task).
+    match tauri::async_runtime::block_on(plugin_updater.check()) {
+        Ok(Some(update)) => updater::apply_update_check_result(app, Some(update.version)),
+        Ok(None) => updater::apply_update_check_result(app, None),
+        Err(e) => eprintln!("Automatische Update-Suche fehlgeschlagen: {e}"),
     }
 }

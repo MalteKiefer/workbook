@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
 import { useAppStore } from "./state/appStore";
+import { getUpdateCheckSettings, listenForOpenUpdateSettings, listenForUpdateCheckCompleted } from "./lib/updateCheck";
 import CustomerListView from "./components/CustomerListView";
 import SystemListView from "./components/SystemListView";
 import JournalView from "./components/JournalView";
@@ -42,6 +44,19 @@ export default function App() {
   const goToCustomers = useAppStore((s) => s.goToCustomers);
   const goToJournal = useAppStore((s) => s.goToJournal);
   const goToSettings = useAppStore((s) => s.goToSettings);
+  const updateAvailableVersion = useAppStore((s) => s.updateAvailableVersion);
+  const setUpdateAvailableVersion = useAppStore((s) => s.setUpdateAvailableVersion);
+
+  useEffect(() => {
+    void getUpdateCheckSettings()
+      .then((settings) => setUpdateAvailableVersion(settings.available_version))
+      .catch(() => {
+        // No crash on startup because of a failed settings lookup -- the
+        // badge just stays hidden until the next successful check.
+      });
+    listenForUpdateCheckCompleted(setUpdateAvailableVersion);
+    listenForOpenUpdateSettings(() => goToSettings("update"));
+  }, [setUpdateAvailableVersion, goToSettings]);
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
@@ -76,6 +91,20 @@ export default function App() {
         </NavLink>
         <NavLink active={view === "settings"} onClick={() => goToSettings()}>
           Einstellungen
+          {updateAvailableVersion !== null && (
+            <span
+              title={`Update ${updateAvailableVersion} verfügbar`}
+              style={{
+                display: "inline-block",
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                background: "var(--accent)",
+                marginLeft: "0.4rem",
+                verticalAlign: "middle",
+              }}
+            />
+          )}
         </NavLink>
         <div
           style={{
