@@ -51,6 +51,50 @@ pub fn archive_system(state: State<AppState>, id: i64) -> Result<(), AppError> {
     systems::archive(&conn, id, &tz)
 }
 
+/// A `System` plus its computed maintenance status -- whether it's overdue
+/// per `maintenance::is_overdue` and the timestamp that status was
+/// computed from (`None` if it has never had an entry). An ADDITIONAL
+/// command alongside `list_systems` -- it doesn't replace it, other code
+/// still uses the plain list.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SystemWithMaintenanceStatus {
+    #[serde(flatten)]
+    pub system: System,
+    pub overdue: bool,
+    pub last_performed_at_utc: Option<String>,
+}
+
+#[tauri::command]
+pub fn list_systems_with_maintenance_status(
+    state: State<AppState>,
+    customer_id: i64,
+    include_archived: bool,
+) -> Result<Vec<SystemWithMaintenanceStatus>, AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let systems = systems::list_by_customer(&conn, customer_id, include_archived)?;
+    let now = chrono::Utc::now();
+    systems
+        .into_iter()
+        .map(|system| {
+            let last_performed_at_utc = systems::latest_performed_at(&conn, system.id)?;
+            let overdue = crate::maintenance::is_overdue(
+                system.maintenance_interval_days,
+                last_performed_at_utc.as_deref(),
+                &system.created_at_utc,
+                now,
+            );
+            Ok(SystemWithMaintenanceStatus {
+                system,
+                overdue,
+                last_performed_at_utc,
+            })
+        })
+        .collect()
+}
+
 /// Bulk-creates systems from a CSV file at `csv_path`, all under the same
 /// `customer_id` -- picked via the frontend's native file dialog while
 /// looking at one customer's system list, see `SystemListView.tsx`. A bad

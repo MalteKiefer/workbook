@@ -138,6 +138,7 @@ pub fn run() {
             commands::systems::create_system,
             commands::systems::update_system,
             commands::systems::archive_system,
+            commands::systems::list_systems_with_maintenance_status,
             commands::systems::import_systems_from_csv,
             commands::tags::list_tags,
             commands::tags::list_tags_with_counts,
