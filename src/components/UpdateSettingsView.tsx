@@ -20,9 +20,13 @@ export default function UpdateSettingsView() {
 
   useEffect(() => {
     let cancelled = false;
-    void getVersion().then((v) => {
-      if (!cancelled) setCurrentVersion(v);
-    });
+    void getVersion()
+      .then((v) => {
+        if (!cancelled) setCurrentVersion(v);
+      })
+      .catch((e) => {
+        if (!cancelled) setCheckState({ kind: "error", message: formatInvokeError(e) });
+      });
     return () => {
       cancelled = true;
     };
