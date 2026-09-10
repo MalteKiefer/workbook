@@ -520,7 +520,11 @@ fn fetch_access_token(
 
 /// Issues an authenticated `GET {url}` (Bearer token) and returns the parsed
 /// JSON body.
-fn fetch_json(agent: &Agent, url: &str, bearer_token: &str) -> Result<serde_json::Value, PluginError> {
+fn fetch_json(
+    agent: &Agent,
+    url: &str,
+    bearer_token: &str,
+) -> Result<serde_json::Value, PluginError> {
     let mut response = agent
         .get(url)
         .header("Authorization", format!("Bearer {bearer_token}"))
@@ -701,7 +705,10 @@ mod tests {
             client_secret: "xyz",
         };
         let json = serde_json::to_value(&body).unwrap();
-        assert_eq!(json, serde_json::json!({"client_id": "abc", "client_secret": "xyz"}));
+        assert_eq!(
+            json,
+            serde_json::json!({"client_id": "abc", "client_secret": "xyz"})
+        );
         // Explicitly pin: exactly these two fields, no `grant_type` -- both
         // of Action1's own conflicting sources agree it's absent.
         assert_eq!(json.as_object().unwrap().len(), 2);
@@ -759,7 +766,10 @@ mod tests {
 
     #[test]
     fn origin_of_falls_back_to_trimmed_input_without_a_path() {
-        assert_eq!(origin_of("https://app.action1.com"), "https://app.action1.com");
+        assert_eq!(
+            origin_of("https://app.action1.com"),
+            "https://app.action1.com"
+        );
     }
 
     #[test]
@@ -833,7 +843,10 @@ mod tests {
             endpoints[0].organization_id,
             "11111111-1111-1111-1111-111111111111"
         );
-        assert_eq!(endpoints[0].organization_name.as_deref(), Some("ACME Hauptsitz"));
+        assert_eq!(
+            endpoints[0].organization_name.as_deref(),
+            Some("ACME Hauptsitz")
+        );
 
         // No device_name here -> falls back to the endpoint's own `id`
         // (no `name` field present either in this fixture).

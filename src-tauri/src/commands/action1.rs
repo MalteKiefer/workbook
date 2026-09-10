@@ -44,8 +44,8 @@ use tauri::State;
 
 use crate::config::Config;
 use crate::plugin::action1::{
-    test_credentials, Action1ConnectionMeta, Action1Endpoint, Action1Organization,
-    Action1OrgMapping, Action1Plugin,
+    test_credentials, Action1ConnectionMeta, Action1Endpoint, Action1OrgMapping,
+    Action1Organization, Action1Plugin,
 };
 use crate::plugin::{self, Plugin, PluginCredentials};
 use crate::{db, time, AppError, AppState};
@@ -155,7 +155,10 @@ fn slugify(label: &str) -> String {
     slug
 }
 
-fn find_connection(config: &Config, connection_id: &str) -> Result<Action1ConnectionMeta, AppError> {
+fn find_connection(
+    config: &Config,
+    connection_id: &str,
+) -> Result<Action1ConnectionMeta, AppError> {
     config
         .action1_connections
         .iter()
@@ -171,7 +174,9 @@ fn find_connection(config: &Config, connection_id: &str) -> Result<Action1Connec
 /// the keyring -- the same two-value pattern as `plugin::ninja::
 /// NinjaCredentials` (see `add_action1_connection` below for the encoding
 /// side).
-fn build_plugin(meta: &Action1ConnectionMeta) -> Result<(Action1Plugin, PluginCredentials), AppError> {
+fn build_plugin(
+    meta: &Action1ConnectionMeta,
+) -> Result<(Action1Plugin, PluginCredentials), AppError> {
     let plugin_id = plugin_id_for(&meta.id);
     let secret = plugin::secrets::load_secret(&plugin_id)?.ok_or_else(|| {
         AppError::Plugin(format!(
@@ -346,7 +351,9 @@ pub fn test_action1_connection(
 }
 
 #[tauri::command]
-pub fn list_action1_connections(state: State<AppState>) -> Result<Vec<Action1ConnectionDto>, AppError> {
+pub fn list_action1_connections(
+    state: State<AppState>,
+) -> Result<Vec<Action1ConnectionDto>, AppError> {
     let config = state.config.lock().expect("Config-Mutex vergiftet");
     Ok(config.action1_connections.iter().map(to_dto).collect())
 }
@@ -369,7 +376,11 @@ pub fn add_action1_connection(
         "client_id": client_id,
         "client_secret": client_secret,
     }))
-    .map_err(|e| AppError::Plugin(format!("Action1-Zugangsdaten konnten nicht kodiert werden: {e}")))?;
+    .map_err(|e| {
+        AppError::Plugin(format!(
+            "Action1-Zugangsdaten konnten nicht kodiert werden: {e}"
+        ))
+    })?;
     plugin::secrets::store_secret(&plugin_id, &secret)?;
 
     let meta = Action1ConnectionMeta {
@@ -392,12 +403,16 @@ pub fn remove_action1_connection(state: State<AppState>, id: String) -> Result<(
     let before = config.action1_connections.len();
     config.action1_connections.retain(|c| c.id != id);
     if config.action1_connections.len() == before {
-        return Err(AppError::NotFound(format!("Action1-Verbindung {id} nicht gefunden")));
+        return Err(AppError::NotFound(format!(
+            "Action1-Verbindung {id} nicht gefunden"
+        )));
     }
     // Cleanup: organization mappings for this connection are meaningless
     // without the connection and would otherwise be left behind as orphaned
     // data.
-    config.action1_org_mappings.retain(|m| m.connection_id != id);
+    config
+        .action1_org_mappings
+        .retain(|m| m.connection_id != id);
     let data_dir = config.data_dir.clone();
     let config_path = config.data_dir.join("config.toml");
     config.save(&config_path)?;
@@ -525,7 +540,8 @@ pub fn sync_action1_connection(
     // every organization's endpoint list -- see module docs on why this
     // matters for Action1's tighter rate limit specifically.
     let (organizations, endpoints) = plugin.list_organizations_with_endpoints(&credentials)?;
-    let groups = group_endpoints_by_organization(&organizations, &endpoints, &mappings, &connection_id);
+    let groups =
+        group_endpoints_by_organization(&organizations, &endpoints, &mappings, &connection_id);
 
     let conn = state
         .pool
@@ -561,8 +577,11 @@ pub fn sync_action1_connection(
                 // Action1's tighter rate limit (see `plugin::action1` module
                 // docs): each of these is its own OAuth2 token fetch plus
                 // detail call.
-                let payload =
-                    plugin.get_endpoint_details(&credentials, &device.organization_id, &device.external_id)?;
+                let payload = plugin.get_endpoint_details(
+                    &credentials,
+                    &device.organization_id,
+                    &device.external_id,
+                )?;
                 db::external_refs::upsert(
                     &conn,
                     system_id,
