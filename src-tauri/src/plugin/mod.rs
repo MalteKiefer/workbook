@@ -87,6 +87,7 @@ pub mod iru;
 pub mod jamf;
 pub mod kaseya;
 pub mod level;
+pub mod netcup;
 pub mod ninja;
 pub mod pulseway;
 pub mod secrets;

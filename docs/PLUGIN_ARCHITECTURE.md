@@ -1,6 +1,6 @@
 # Plugin-Architektur
 
-Status: Sechzehn echte Integrationen umgesetzt: NinjaOne (`plugin::ninja`,
+Status: Siebzehn echte Integrationen umgesetzt: NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
@@ -12,18 +12,19 @@ Kaseya VSA (`plugin::kaseya`, `commands::kaseya`), Action1
 (`plugin::action1`, `commands::action1`), Datto RMM
 (`plugin::dattormm`, `commands::dattormm`), Acronis Cyber Protect Cloud
 (`plugin::acronis`, `commands::acronis`), Hetzner Cloud
-(`plugin::hetzner`, `commands::hetzner`) und Vultr (`plugin::vultr`,
-`commands::vultr`), alle mit Mehrfach-Verbindungs-Unterstützung. Acronis
-ist dabei anders als die übrigen: kein RMM/MDM-Gerätebestand, sondern
-Sicherungsstatus pro Gerät (siehe eigener Abschnitt unten). Hetzner Cloud
-und Vultr sind ebenfalls anders: kein RMM/MDM-Gerätebestand und kein
-Sicherungsstatus, sondern reiner Server-Bestand (Cloud-VPS-Instanzen,
-siehe jeweils eigener Abschnitt unten), die einfachste Plugin-Art in
-dieser Codebasis. `DummyPlugin` bleibt als Attrappen-Referenzimplementierung
-bestehen. Noch kein UI-Aufruf im Sinne einer Command Palette, die
-Kommandos sind aber vollständig Ende-zu-Ende von einem Frontend aus
-nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AteraPluginSection.tsx`/`PulsewayPluginSection.tsx`/`KaseyaPluginSection.tsx`/`Action1PluginSection.tsx`/`DattoRmmPluginSection.tsx`/`AcronisPluginSection.tsx`/`HetznerPluginSection.tsx`/`VultrPluginSection.tsx`).
+(`plugin::hetzner`, `commands::hetzner`), netcup (`plugin::netcup`,
+`commands::netcup`) und Vultr (`plugin::vultr`, `commands::vultr`), alle
+mit Mehrfach-Verbindungs-Unterstützung. Acronis ist dabei anders als die
+übrigen: kein RMM/MDM-Gerätebestand, sondern Sicherungsstatus pro Gerät
+(siehe eigener Abschnitt unten). Hetzner Cloud, netcup und Vultr sind
+ebenfalls anders: kein RMM/MDM-Gerätebestand und kein Sicherungsstatus,
+sondern reiner Server-Bestand (Cloud-VPS-Instanzen, siehe jeweils eigener
+Abschnitt unten), die einfachste Plugin-Art in dieser Codebasis.
+`DummyPlugin` bleibt als Attrappen-Referenzimplementierung bestehen. Noch
+kein UI-Aufruf im Sinne einer Command Palette, die Kommandos sind aber
+vollständig Ende-zu-Ende von einem Frontend aus nutzbar (`PluginsView.tsx`
+als dünne Hülle um
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AteraPluginSection.tsx`/`PulsewayPluginSection.tsx`/`KaseyaPluginSection.tsx`/`Action1PluginSection.tsx`/`DattoRmmPluginSection.tsx`/`AcronisPluginSection.tsx`/`HetznerPluginSection.tsx`/`NetcupPluginSection.tsx`/`VultrPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -3130,7 +3131,177 @@ bindet die Sektion alphabetisch zwischen `DattoRmmPluginSection.tsx` und
 `IntunePluginSection.tsx` ein ("Hetzner-Verbindungen" sortiert zwischen
 "Datto-RMM-Verbindungen" und "Intune-Verbindungen").
 
-## Vultr-Plugin (`plugin::vultr`): sechzehnte echte Integration
+## netcup-Plugin (`plugin::netcup`): sechzehnte echte Integration
+
+`plugin/netcup.rs` implementiert `Plugin` für netcups "Server Control
+Panel" (SCP) REST/JSON-API. netcup ist ein deutscher Hosting-Anbieter für
+vServer-/Root-Server-VPS-Produkte; die einzige Aufgabe dieses Plugins ist
+Server-Inventar, kein Geräteverwaltungs-Agent-Konzept, kein
+Sicherungsstatus wie bei Acronis, die einfachste Art Plugin in dieser
+Codebasis. Strukturell am nächsten an `plugin::level`: netcups API kennt
+gar kein Organisations- oder Unterkonten-Konzept, also entspricht eine
+netcup-"Verbindung" (ein API-Token) direkt genau einem lokalen Kunden,
+ohne Zuordnungstabelle wie bei Tactical RMM.
+
+Jede Angabe unten ist gegen netcups eigene, live abgerufene
+OpenAPI-Spezifikation und unauthentifizierte Live-Probe-Anfragen gegen den
+echten API-Host verifiziert, nicht aus Dokumentationsprosa geraten:
+
+- **Authentifizierung**: statischer Bearer-Token, Header `Authorization:
+  Bearer <token>`. Live bestätigt: eine unauthentifizierte Anfrage liefert
+  `401` mit `{"message":"Authorization header missing."}`, ein
+  fehlerhafter Header nennt das exakt erwartete Format, und ein
+  wohlgeformter, aber falscher Token liefert `{"message":"Invalid
+  token."}` (eindeutig JSON/Bearer, nicht die SOAP-Form, die manche
+  netcup-Dokumentation an anderer Stelle noch beschreibt). Der Token wird
+  vom Nutzer selbst in einer eingeloggten netcup-SCP-Sitzung erzeugt (ein
+  "API"-Menüpunkt), ein einmaliger, außerhalb dieser Anwendung liegender
+  Einrichtungsschritt, genau wie bei jedem anderen Plugin hier.
+- **Basis-URL**: eine feste Konstante (`plugin::netcup::BASE_URL`), live
+  bestätigt (`GET /scp-core/api/ping` liefert `200 OK` mit Body `"OK"`,
+  ein öffentlicher, unauthentifizierter Health-Check). Wie bei
+  `plugin::level::BASE_URL` gibt es kein nutzerseitiges `base_url`-Feld.
+- **Mandantschaft**: bestätigt 1:1. Es existiert kein Reseller- oder
+  Unterkonten-Wechsel in dieser API, kein "Nutzer auflisten"-Endpunkt,
+  kein Konto-Scoping-Parameter auf `/servers`.
+- **Serverliste (minimal, kein Status, keine IP)**: `GET
+  {BASE_URL}/servers`, Query-Parameter `limit`/`offset`. Die Antwort ist
+  ein **nackter JSON-Array** (verifiziert, NICHT in einen Umschlag wie
+  Hetzners `{"servers": [...]}` verpackt), Elemente geformt wie `{"id":
+  <int32>, "name": "...", "hostname": "... oder null", "nickname": "...
+  oder null", "disabled": <bool>, "template": {...} oder null}`. `id`
+  (als String) wird `external_id`; der Anzeigename bevorzugt `nickname`,
+  dann `hostname`, dann als letzten Ausweg das rohe netcup-`name`-Feld
+  (ein `vXXXXX`-artiger Bezeichner), dieselbe Konvention "menschliche
+  Bezeichnung bevorzugen, auf den rohen Identifikator zurückfallen", die
+  `plugin::tacticalrmm` bereits mit seinem hostname-dann-agent_id-Fallback
+  etabliert hat. **Dieser Listen-Endpunkt liefert tatsächlich weder ein
+  Status- noch ein IP-Adress-Feld.**
+- **Paginierung**: `limit`/`offset` existieren, aber die Antwort trägt
+  weder ein Gesamtanzahl-Feld noch eine dokumentierte
+  Standard-/Maximal-Seitengröße. `fetch_all_servers` nutzt deshalb die
+  übliche defensive Heuristik: `offset` in festen `PAGE_LIMIT`-Schritten
+  erhöhen, solange die zuletzt geladene Seite genau `PAGE_LIMIT` Elemente
+  zurückliefert; sobald eine Seite kürzer ist, ist Schluss. `MAX_PAGES`
+  deckelt den gesamten Durchlauf zusätzlich, derselbe defensive Schutz wie
+  `plugin::level::MAX_PAGES`.
+- **Einzelserver-Detail (reich, echter Status plus IP)**: `GET
+  {BASE_URL}/servers/{serverId}`. Die Antwort trägt `serverLiveInfo.state`
+  (ein freiform libvirt-Domain-Status-String wie `RUNNING`/`SHUTOFF`, kein
+  Rust-Enum), `ipv4Addresses` (ein Array aus `{id, ip, netmask, gateway,
+  broadcast}`, der erste Eintrag liefert die Anzeige-IP), `ipv6Addresses`
+  (Prefix-/Gateway-Paare statt Host-Adressen, deshalb bewusst nie für eine
+  Anzeige-IP verwendet), sowie `site.city`/`architecture` als rein
+  informative Anzeigefelder. `Plugin::get_system_details` reicht diese
+  Antwort unverändert als `serde_json::Value` durch, genau der
+  "Aufrufer/UI interpretiert es selbst"-Vertrag, den jedes andere Plugin
+  hier für `get_system_details` nutzt, und ist der EINZIGE Ort, an dem
+  dieses Modul den Detail-Endpunkt aufruft: `list_servers`/
+  `list_systems`/`sync_netcup_connection` rufen ihn niemals einmal pro
+  Server während eines Sync-Laufs auf, was ein N+1-Muster gegen ein
+  undokumentiertes Rate-Limit wäre.
+- **Rate-Limits**: nur für einen unabhängigen
+  Failover-IP-Routing-Endpunkt dokumentiert (10 Anfragen pro 5 Minuten, 20
+  Anfragen pro 60 Minuten). Für `/servers` oder den hier genutzten
+  Detail-Endpunkt ist nichts dokumentiert, deshalb gibt es keine spezielle
+  Retry-/Backoff-Logik.
+- **Web-Dashboard-Link**: nicht verifizierbar. Eine vermutete SCP-Route
+  lieferte einen echten `404` gegen den realen Host, deshalb bewusst
+  weggelassen, dasselbe ehrliche Auslassungsprinzip wie bei Tactical RMMs
+  fehlendem Dashboard-Link.
+
+### Die Liste ist minimal, das Detail ist reich
+
+Anders als bei jedem bisherigen RMM-/MDM-Plugin hier liefert netcups
+Server-Listen-Endpunkt weder Status noch IP-Adresse; beide Felder
+existieren nur in der Detail-Antwort eines einzelnen Servers.
+`plugin::netcup::NetcupServer` (die Rückgabe von `list_servers`) trägt
+deshalb bewusst nur `external_id` und `name`, ohne erfundene,
+immer-`None`-Felder, dieselbe "verifizierte Lücke"-Ehrlichkeit, die
+`plugin::pulseway::PulsewayDevice` für seine eigenen, dauerhaft
+fehlenden Felder bereits etabliert hat. `commands::netcup::ExternalSystemDto`
+(die Form, die tatsächlich im Cache und im Frontend landet) trägt zwar
+`status`/`ip_address`-Felder wie jede andere Plugin-DTO hier, dokumentiert
+aber klar in ihrem eigenen Doc-Kommentar, dass diese beiden Felder aus
+einem Sync-Lauf IMMER `None` bleiben. `sync_netcup_connection` ruft
+absichtlich NIE den Detail-Endpunkt pro Server auf (das wäre ein
+N+1-Muster gegen ein undokumentiertes Rate-Limit); echte Status-/
+IP-Werte erscheinen ausschließlich, wenn ein Server einzeln über
+`get_netcup_system_details` geöffnet wird, exakt wie im Rust-Modul
+dokumentiert. `NetcupPluginSection.tsx` spiegelt das im UI: die
+Geräteliste zeigt keine Status-/IP-Spalte, ein Hinweistext im
+Verbindungs-Kartenkopf erklärt, dass diese Information erst beim Öffnen
+der Details erscheint.
+
+### netcup-Verbindungen sind 1:1 an einen Kunden gebunden
+
+- Nicht-geheime Metadaten (`id`, `customer_id`, `label`) liegen als
+  `NetcupConnectionMeta` in `Config::netcup_connections` (`config.toml`,
+  `#[serde(default)]`-kompatibel mit älteren Konfigurationen ohne dieses
+  Feld).
+- Verbindungs-`id`-Erzeugung (`slugify` plus Millisekunden-Zeitstempel)
+  und der vollqualifizierte `"netcup:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei Level.io
+  (`commands::netcup::generate_connection_id`/`plugin_id_for`).
+- Weil jede Verbindung genau eine `customer_id` trägt, braucht
+  `sync_netcup_connection` keine Fallunterscheidung "zugeordnet/
+  unzugeordnet" wie `sync_ninja_connection`; jeder synchronisierte Server
+  gehört automatisch zum Kunden der Verbindung, `linked_system_id` wird
+  für jeden Server direkt gegen die `external_refs`-Zeilen dieses Kunden
+  geprüft.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie Level.io, nur ohne Gruppierung:
+`sync_netcup_connection` schreibt das Ergebnis jedes Laufs zusätzlich als
+JSON nach `data_dir/plugin-cache/netcup-<connection_id>.json`
+(`{"synced_at_utc": "...", "devices": [...]}`). `get_cached_netcup_sync`
+liest ausschließlich diese Datei (kein Netzwerkzugriff) und liefert
+`None`, wenn für eine Verbindung noch nie synchronisiert wurde.
+`remove_netcup_connection` löscht diese Cache-Datei (bestes Bemühen).
+
+### Tauri-Kommandos (`commands::netcup`)
+
+`test_netcup_connection`, `list_netcup_connections`,
+`add_netcup_connection`, `remove_netcup_connection`,
+`sync_netcup_connection`, `get_cached_netcup_sync`,
+`link_system_to_netcup`, `unlink_system_from_netcup`,
+`get_netcup_system_details`: dünne Wrapper nach demselben Muster wie
+`commands::level`, ohne Organisations-Zuordnungskommandos (kein
+netcup-Äquivalent zu `map_ninja_organization`/`unmap_ninja_organization`
+nötig, siehe oben).
+
+`test_netcup_connection` prüft einen API-Token per leichtgewichtigem,
+echtem Aufruf (`GET /servers?limit=1`), ohne irgendetwas zu
+persistieren. Das Übernehmen eines extern gelieferten Werts in ein
+selbst gepflegtes Feld (`name`, `hostname`, `ip_address`, `notes` in
+`systems`) bleibt dabei, wie bei jedem anderen Plugin hier,
+ausschließlich eine bewusste, manuelle Aktion über
+`get_netcup_system_details` plus eine spätere UI-Aktion; kein Kommando
+hier schreibt automatisch in diese vier Felder.
+
+### Frontend (`NetcupPluginSection.tsx`)
+
+Strukturell an `IruPluginSection.tsx` angelehnt: eine flache, nicht
+gruppierte Geräteliste je Verbindung (kein Level-artiges
+Gruppen-Konzept), ein Kunde-Auswahlfeld im Anlage-Formular (Label plus
+Kunde plus API-Token, kein Basis-URL-Feld, da netcup einen festen
+API-Host hat), Filterung und 10-pro-Seite-Paginierung,
+`j`/`k`/`Enter`/`l`/`u`-Tastaturnavigation, sowie der "Alle anlegen
+(N)"-Sammel-Button neben der "Nicht verknüpft"-Überschrift, hier
+verbindung-`id`-geschlüsselt (keine Gruppen-Ebene, siehe
+`IruPluginSection.tsx`s `bulkCreateBusy` für dasselbe Muster). Das
+Detail-Panel eines verknüpften Servers liest `get_netcup_system_details`s
+Roh-JSON serverseitig aus: `serverLiveInfo.state` für eine
+Status-Anzeige, `ipv4Addresses[0].ip` für die
+Vergleichen/Übernehmen-Tabellenzeile "IP-Adresse", `nickname`/`hostname`/
+`name` für "Name". `PluginsView.tsx` bindet die Sektion zwischen
+`LevelPluginSection.tsx` und `NinjaPluginSection.tsx` ein: die
+gerenderte Überschrift "netcup-Verbindungen" sortiert alphabetisch vor
+"Ninja-Verbindungen" (der Buchstabe "e" steht vor "i"), nicht danach.
+
+## Vultr-Plugin (`plugin::vultr`): siebzehnte echte Integration
 
 `plugin/vultr.rs` implementiert `Plugin` für Vultrs öffentliche REST-API v2
 über HTTPS (`https://api.vultr.com/v2`, feste Konstante, kein

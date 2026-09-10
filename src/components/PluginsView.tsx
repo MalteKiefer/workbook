@@ -9,6 +9,7 @@ import IruPluginSection from "./IruPluginSection";
 import JamfPluginSection from "./JamfPluginSection";
 import KaseyaPluginSection from "./KaseyaPluginSection";
 import LevelPluginSection from "./LevelPluginSection";
+import NetcupPluginSection from "./NetcupPluginSection";
 import NinjaPluginSection from "./NinjaPluginSection";
 import PulsewayPluginSection from "./PulsewayPluginSection";
 import SnipeitPluginSection from "./SnipeitPluginSection";
@@ -21,29 +22,34 @@ import VultrPluginSection from "./VultrPluginSection";
 // section heading each one renders (Acronis-Verbindungen,
 // Action1-Verbindungen, Apple-Business-Manager-Verbindungen,
 // Atera-Verbindungen, Datto-RMM-Verbindungen, Hetzner-Verbindungen,
-// Intune-Verbindungen, Iru-Verbindungen, ..., Vultr-Verbindungen) so the
-// list stays predictable as more plugins are added, independent of
-// integration order. See NinjaPluginSection.tsx (extracted, unchanged
-// behavior), LevelPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
-// "Level.io-Plugin"), SnipeitPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
-// "Snipe-IT-Plugin"), IntunePluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
-// "Microsoft-Intune-Plugin"), IruPluginSection.tsx
-// (docs/PLUGIN_ARCHITECTURE.md "Iru-Plugin"), JamfPluginSection.tsx
-// (docs/PLUGIN_ARCHITECTURE.md "Jamf-Pro-Plugin"), AbmPluginSection.tsx
-// (Apple Business Manager, see docs/PLUGIN_ARCHITECTURE.md
-// "Apple-Business-Manager-Plugin"), TacticalRmmPluginSection.tsx
-// (docs/PLUGIN_ARCHITECTURE.md "Tactical-RMM-Plugin"),
-// AteraPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Atera-Plugin"),
-// PulsewayPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
-// "Pulseway-Plugin"), KaseyaPluginSection.tsx (Kaseya VSA, see
-// docs/PLUGIN_ARCHITECTURE.md "Kaseya-VSA-Plugin"), Action1PluginSection.tsx
-// (docs/PLUGIN_ARCHITECTURE.md "Action1-Plugin"), DattoRmmPluginSection.tsx
-// (docs/PLUGIN_ARCHITECTURE.md "Datto-RMM-Plugin"),
-// AcronisPluginSection.tsx (backup-status, NOT device management; see
-// docs/PLUGIN_ARCHITECTURE.md "Acronis-Plugin"), HetznerPluginSection.tsx
-// (server inventory, see docs/PLUGIN_ARCHITECTURE.md
-// "Hetzner-Cloud-Plugin"), and VultrPluginSection.tsx (server inventory,
-// NOT device management; see docs/PLUGIN_ARCHITECTURE.md "Vultr-Plugin").
+// Intune-Verbindungen, Iru-Verbindungen, ..., netcup-Verbindungen,
+// Vultr-Verbindungen) so the list stays predictable as more plugins are
+// added, independent of integration order. See NinjaPluginSection.tsx
+// (extracted, unchanged behavior), LevelPluginSection.tsx
+// (docs/PLUGIN_ARCHITECTURE.md "Level.io-Plugin"), SnipeitPluginSection.tsx
+// (docs/PLUGIN_ARCHITECTURE.md "Snipe-IT-Plugin"), IntunePluginSection.tsx
+// (docs/PLUGIN_ARCHITECTURE.md "Microsoft-Intune-Plugin"),
+// IruPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Iru-Plugin"),
+// JamfPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Jamf-Pro-Plugin"),
+// AbmPluginSection.tsx (Apple Business Manager, see
+// docs/PLUGIN_ARCHITECTURE.md "Apple-Business-Manager-Plugin"),
+// TacticalRmmPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
+// "Tactical-RMM-Plugin"), AteraPluginSection.tsx
+// (docs/PLUGIN_ARCHITECTURE.md "Atera-Plugin"), PulsewayPluginSection.tsx
+// (docs/PLUGIN_ARCHITECTURE.md "Pulseway-Plugin"), KaseyaPluginSection.tsx
+// (Kaseya VSA, see docs/PLUGIN_ARCHITECTURE.md "Kaseya-VSA-Plugin"),
+// Action1PluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Action1-Plugin"),
+// DattoRmmPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
+// "Datto-RMM-Plugin"), AcronisPluginSection.tsx (backup-status, NOT
+// device management; see docs/PLUGIN_ARCHITECTURE.md "Acronis-Plugin"),
+// HetznerPluginSection.tsx (server inventory, see
+// docs/PLUGIN_ARCHITECTURE.md "Hetzner-Cloud-Plugin"),
+// NetcupPluginSection.tsx (server inventory, see
+// docs/PLUGIN_ARCHITECTURE.md "netcup-Plugin") -- its heading
+// "netcup-Verbindungen" sorts between "Level-Verbindungen" and
+// "Ninja-Verbindungen" (the letter "e" precedes "i"), NOT after Ninja --
+// and VultrPluginSection.tsx (server inventory, NOT device management;
+// see docs/PLUGIN_ARCHITECTURE.md "Vultr-Plugin").
 export default function PluginsView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
@@ -59,6 +65,7 @@ export default function PluginsView() {
       <JamfPluginSection />
       <KaseyaPluginSection />
       <LevelPluginSection />
+      <NetcupPluginSection />
       <NinjaPluginSection />
       <PulsewayPluginSection />
       <SnipeitPluginSection />
