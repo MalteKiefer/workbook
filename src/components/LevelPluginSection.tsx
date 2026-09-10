@@ -427,6 +427,16 @@ export default function LevelPluginSection() {
   const [createLinkBusy, setCreateLinkBusy] = useState<Record<string, boolean>>({});
   const [unlinkBusy, setUnlinkBusy] = useState<Record<string, boolean>>({});
   const [deviceError, setDeviceError] = useState<Record<string, string | null>>({});
+  // Keyed by `fullGroupKey(connectionId, group.groupKey)` — unlike the other
+  // no-mapping plugin sections, Level still groups its devices into
+  // collapsible sections by their own `group_id` (a display-only grouping,
+  // unrelated to customer mapping, since a connection here maps 1:1 to one
+  // customer), and each group renders its own "Nicht verknüpft" header — so
+  // the bulk button is scoped per group, not per connection, mirroring
+  // TacticalRmmPluginSection.tsx's group-scoped busy key. Independent of the
+  // per-device `createLinkBusy` map (both are set during a bulk run, so a
+  // device's own row also shows busy).
+  const [bulkCreateBusy, setBulkCreateBusy] = useState<Record<string, boolean>>({});
 
   const [detailsOpenKey, setDetailsOpenKey] = useState<string | null>(null);
   const [detailsBusy, setDetailsBusy] = useState<Record<string, boolean>>({});
@@ -902,6 +912,54 @@ export default function LevelPluginSection() {
     }
   }
 
+  // Bulk version of `createAndLink`: works through every unlinked device in
+  // one display group sequentially (`groupKey` here is the full
+  // `fullGroupKey(connectionId, group.groupKey)`, not a customer-mapping
+  // key — see the `bulkCreateBusy` declaration above). A failure on one
+  // device does not abort the rest — it is recorded in the same
+  // `deviceError` map that already surfaces per-device errors, so a partial
+  // run still leaves the row's own "Neu anlegen" button as the retry path.
+  // `refreshLocalSystems`/`loadCachedSync` run once at the end, not per
+  // device, so a group with many devices doesn't refetch the whole
+  // customer's system list N times.
+  async function createAndLinkAll(connection: LevelConnectionDto, groupKey: string, devices: ExternalSystemDto[]) {
+    if (devices.length === 0) return;
+    const customerId = connection.customer_id;
+    setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: true }));
+    try {
+      for (const device of devices) {
+        const key = `${connection.id}:${device.external_id}`;
+        setCreateLinkBusy((prev) => ({ ...prev, [key]: true }));
+        setDeviceError((prev) => ({ ...prev, [key]: null }));
+        try {
+          const created = await invoke<System>("create_system", {
+            input: {
+              customer_id: customerId,
+              name: device.name,
+              system_type: "",
+              hostname: device.hostname ?? "",
+              ip_address: device.ip_address ?? "",
+              notes: "",
+            },
+          });
+          await invoke("link_system_to_level", {
+            systemId: created.id,
+            connectionId: connection.id,
+            externalId: device.external_id,
+          });
+        } catch (err) {
+          setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
+        } finally {
+          setCreateLinkBusy((prev) => ({ ...prev, [key]: false }));
+        }
+      }
+      await refreshLocalSystems(customerId);
+      await loadCachedSync(connection);
+    } finally {
+      setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: false }));
+    }
+  }
+
   async function handleUnlink(connection: LevelConnectionDto, device: ExternalSystemDto) {
     if (device.linked_system_id === null) return;
     const key = `${connection.id}:${device.external_id}`;
@@ -1221,7 +1279,18 @@ export default function LevelPluginSection() {
           <div style={{ padding: "0.6rem 0.7rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {(unlinked.length === 0 || unlinkedOnPage.length > 0) && (
               <div>
-                <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                  <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
+                  {unlinked.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={bulkCreateBusy[key] ?? false}
+                      onClick={() => void createAndLinkAll(connection, key, unlinked)}
+                    >
+                      {bulkCreateBusy[key] ? "Lege an…" : `Alle anlegen (${unlinked.length})`}
+                    </button>
+                  )}
+                </div>
                 {unlinked.length === 0 && <p style={mutedStyle}>Keine offenen Geräte.</p>}
                 {unlinkedOnPage.map((device, i) => {
                   const rowKey = `${connection.id}:${device.external_id}`;

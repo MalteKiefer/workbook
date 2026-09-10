@@ -372,6 +372,12 @@ export default function AcronisPluginSection() {
   const [createLinkBusy, setCreateLinkBusy] = useState<Record<string, boolean>>({});
   const [unlinkBusy, setUnlinkBusy] = useState<Record<string, boolean>>({});
   const [deviceError, setDeviceError] = useState<Record<string, string | null>>({});
+  // Group-scoped, keyed by `${connectionId}:${tenantId}` — disables the
+  // "Alle anlegen" bulk button for one tenant while it works through that
+  // tenant's unlinked resources, independent of the per-device
+  // `createLinkBusy` map (both are set during a bulk run, so a resource's
+  // own row also shows busy).
+  const [bulkCreateBusy, setBulkCreateBusy] = useState<Record<string, boolean>>({});
 
   const [detailsOpenKey, setDetailsOpenKey] = useState<string | null>(null);
   const [detailsBusy, setDetailsBusy] = useState<Record<string, boolean>>({});
@@ -713,6 +719,57 @@ export default function AcronisPluginSection() {
       setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
     } finally {
       setCreateLinkBusy((prev) => ({ ...prev, [key]: false }));
+    }
+  }
+
+  // Bulk version of `createAndLink`: works through every unlinked resource
+  // in one tenant sequentially. A failure on one resource does not abort
+  // the rest — it is recorded in the same `deviceError` map that already
+  // surfaces per-resource errors, so a partial run still leaves the row's
+  // own "Neu anlegen" button as the retry path. `refreshLocalSystems`/
+  // `loadCachedSync` run once at the end, not per resource, so a tenant
+  // with many resources doesn't refetch the whole customer's system list N
+  // times.
+  async function createAndLinkAll(connection: AcronisConnectionDto, tenant: AcronisTenantDto, devices: AcronisResourceDto[]) {
+    if (tenant.mapped_customer_id === null || devices.length === 0) return;
+    const customerId = tenant.mapped_customer_id;
+    const groupKey = `${connection.id}:${tenant.id}`;
+    setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: true }));
+    try {
+      for (const device of devices) {
+        const key = `${connection.id}:${device.external_id}`;
+        setCreateLinkBusy((prev) => ({ ...prev, [key]: true }));
+        setDeviceError((prev) => ({ ...prev, [key]: null }));
+        try {
+          const statusLabel = device.backup_status
+            ? (BACKUP_STATUS_LABELS[device.backup_status] ?? device.backup_status)
+            : NO_STATUS_LABEL;
+          const created = await invoke<System>("create_system", {
+            input: {
+              customer_id: customerId,
+              name: device.name,
+              system_type: "",
+              hostname: "",
+              ip_address: "",
+              notes: `Acronis-Sicherungsstatus bei Anlage: ${statusLabel}`,
+            },
+          });
+          await invoke("link_system_to_acronis", {
+            systemId: created.id,
+            connectionId: connection.id,
+            tenantId: tenant.id,
+            externalId: device.external_id,
+          });
+        } catch (err) {
+          setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
+        } finally {
+          setCreateLinkBusy((prev) => ({ ...prev, [key]: false }));
+        }
+      }
+      await refreshLocalSystems(customerId);
+      await loadCachedSync(connection);
+    } finally {
+      setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: false }));
     }
   }
 
@@ -1094,7 +1151,18 @@ export default function AcronisPluginSection() {
             {isMapped && hasSyncedThisTenant && (
               <>
                 <div>
-                  <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                    <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
+                    {unlinked.length > 0 && (
+                      <button
+                        type="button"
+                        disabled={bulkCreateBusy[groupKey] ?? false}
+                        onClick={() => void createAndLinkAll(connection, tenant, unlinked)}
+                      >
+                        {bulkCreateBusy[groupKey] ? "Lege an…" : `Alle anlegen (${unlinked.length})`}
+                      </button>
+                    )}
+                  </div>
                   {filteredDevices.length === 0 && totalDeviceCount > 0 && (
                     <p style={mutedStyle}>Keine Ressourcen entsprechen dem Filter.</p>
                   )}

@@ -372,6 +372,13 @@ export default function AbmPluginSection() {
   const [createLinkBusy, setCreateLinkBusy] = useState<Record<string, boolean>>({});
   const [unlinkBusy, setUnlinkBusy] = useState<Record<string, boolean>>({});
   const [deviceError, setDeviceError] = useState<Record<string, string | null>>({});
+  // Keyed by connection id directly (a connection maps 1:1 to one customer,
+  // so there's no group/tenant-scoped key here) — disables the "Alle
+  // anlegen" bulk button for one connection while it works through that
+  // connection's unlinked devices, independent of the per-device
+  // `createLinkBusy` map (both are set during a bulk run, so a device's own
+  // row also shows busy).
+  const [bulkCreateBusy, setBulkCreateBusy] = useState<Record<string, boolean>>({});
 
   const [detailsOpenKey, setDetailsOpenKey] = useState<string | null>(null);
   const [detailsBusy, setDetailsBusy] = useState<Record<string, boolean>>({});
@@ -812,6 +819,56 @@ export default function AbmPluginSection() {
     }
   }
 
+  // Bulk version of `createAndLink`: works through every unlinked device on
+  // this connection sequentially. A failure on one device does not abort
+  // the rest — it is recorded in the same `deviceError` map that already
+  // surfaces per-device errors, so a partial run still leaves the row's own
+  // "Neu anlegen" button as the retry path. `refreshLocalSystems`/
+  // `loadCachedSync` run once at the end, not per device, so a connection
+  // with many devices doesn't refetch the whole customer's system list N
+  // times.
+  async function createAndLinkAll(connection: AbmConnectionDto, devices: ExternalSystemDto[]) {
+    if (devices.length === 0) return;
+    const customerId = connection.customer_id;
+    setBulkCreateBusy((prev) => ({ ...prev, [connection.id]: true }));
+    try {
+      for (const device of devices) {
+        const key = `${connection.id}:${device.external_id}`;
+        setCreateLinkBusy((prev) => ({ ...prev, [key]: true }));
+        setDeviceError((prev) => ({ ...prev, [key]: null }));
+        try {
+          const noteLines = [
+            device.serial_number ? `ABM Seriennummer: ${device.serial_number}` : null,
+            device.device_model ? `Gerätemodell (ABM): ${device.device_model}` : null,
+          ].filter((line): line is string => line !== null);
+          const created = await invoke<System>("create_system", {
+            input: {
+              customer_id: customerId,
+              name: device.name,
+              system_type: "",
+              hostname: device.hostname ?? "",
+              ip_address: device.ip_address ?? "",
+              notes: noteLines.join("\n"),
+            },
+          });
+          await invoke("link_system_to_abm", {
+            systemId: created.id,
+            connectionId: connection.id,
+            externalId: device.external_id,
+          });
+        } catch (err) {
+          setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
+        } finally {
+          setCreateLinkBusy((prev) => ({ ...prev, [key]: false }));
+        }
+      }
+      await refreshLocalSystems(customerId);
+      await loadCachedSync(connection);
+    } finally {
+      setBulkCreateBusy((prev) => ({ ...prev, [connection.id]: false }));
+    }
+  }
+
   async function handleUnlink(connection: AbmConnectionDto, device: ExternalSystemDto) {
     if (device.linked_system_id === null) return;
     const key = `${connection.id}:${device.external_id}`;
@@ -1084,7 +1141,18 @@ export default function AbmPluginSection() {
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               {(unlinked.length === 0 || unlinkedOnPage.length > 0) && (
                 <div>
-                  <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                    <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
+                    {unlinked.length > 0 && (
+                      <button
+                        type="button"
+                        disabled={bulkCreateBusy[connection.id] ?? false}
+                        onClick={() => void createAndLinkAll(connection, unlinked)}
+                      >
+                        {bulkCreateBusy[connection.id] ? "Lege an…" : `Alle anlegen (${unlinked.length})`}
+                      </button>
+                    )}
+                  </div>
                   {unlinked.length === 0 && <p style={mutedStyle}>Keine offenen Geräte.</p>}
                   {unlinkedOnPage.map((device, i) => {
                     const rowKey = `${connection.id}:${device.external_id}`;

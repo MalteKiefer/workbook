@@ -476,6 +476,12 @@ export default function Action1PluginSection() {
   const [createLinkBusy, setCreateLinkBusy] = useState<Record<string, boolean>>({});
   const [unlinkBusy, setUnlinkBusy] = useState<Record<string, boolean>>({});
   const [deviceError, setDeviceError] = useState<Record<string, string | null>>({});
+  // Group-scoped, keyed by `${connectionId}:${organizationId}` — disables the
+  // "Alle anlegen" bulk button for one group while it works through that
+  // group's unlinked devices, independent of the per-device `createLinkBusy`
+  // map (both are set during a bulk run, so a device's own row also shows
+  // busy).
+  const [bulkCreateBusy, setBulkCreateBusy] = useState<Record<string, boolean>>({});
 
   const [detailsOpenKey, setDetailsOpenKey] = useState<string | null>(null);
   const [detailsBusy, setDetailsBusy] = useState<Record<string, boolean>>({});
@@ -826,6 +832,56 @@ export default function Action1PluginSection() {
       setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
     } finally {
       setCreateLinkBusy((prev) => ({ ...prev, [key]: false }));
+    }
+  }
+
+  // Bulk version of `createAndLink`: works through every unlinked device in
+  // one group sequentially. A failure on one device does not abort the
+  // rest — it is recorded in the same `deviceError` map that already
+  // surfaces per-device errors, so a partial run still leaves the row's own
+  // "Neu anlegen" button as the retry path. `refreshLocalSystems`/
+  // `loadCachedSync` run once at the end, not per device, so a group with
+  // many devices doesn't refetch the whole customer's system list N times.
+  async function createAndLinkAll(connection: Action1ConnectionDto, group: Action1OrgDeviceGroupDto, devices: ExternalSystemDto[]) {
+    if (group.customer_id === null || devices.length === 0) return;
+    const customerId = group.customer_id;
+    const groupKey = `${connection.id}:${group.organization_id}`;
+    setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: true }));
+    try {
+      for (const device of devices) {
+        const key = `${connection.id}:${device.external_id}`;
+        setCreateLinkBusy((prev) => ({ ...prev, [key]: true }));
+        setDeviceError((prev) => ({ ...prev, [key]: null }));
+        try {
+          const noteLines = [device.platform ? `Plattform: ${device.platform}` : null].filter(
+            (line): line is string => line !== null,
+          );
+          const created = await invoke<System>("create_system", {
+            input: {
+              customer_id: customerId,
+              name: device.name,
+              system_type: "",
+              hostname: device.name,
+              ip_address: device.ip_address ?? "",
+              notes: noteLines.join("\n"),
+            },
+          });
+          await invoke("link_system_to_action1", {
+            systemId: created.id,
+            connectionId: connection.id,
+            organizationId: group.organization_id,
+            externalId: device.external_id,
+          });
+        } catch (err) {
+          setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
+        } finally {
+          setCreateLinkBusy((prev) => ({ ...prev, [key]: false }));
+        }
+      }
+      await refreshLocalSystems(customerId);
+      await loadCachedSync(connection);
+    } finally {
+      setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: false }));
     }
   }
 
@@ -1357,7 +1413,18 @@ export default function Action1PluginSection() {
             {isMapped && (
               <>
                 <div>
-                  <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                    <div style={sectionLabelStyle}>Nicht verknüpft ({unlinked.length})</div>
+                    {unlinked.length > 0 && (
+                      <button
+                        type="button"
+                        disabled={bulkCreateBusy[groupKey] ?? false}
+                        onClick={() => void createAndLinkAll(connection, group, unlinked)}
+                      >
+                        {bulkCreateBusy[groupKey] ? "Lege an…" : `Alle anlegen (${unlinked.length})`}
+                      </button>
+                    )}
+                  </div>
                   {unlinked.length === 0 && <p style={mutedStyle}>Keine offenen Geräte.</p>}
                   {unlinked.length > 0 && pageUnlinked.length === 0 && (
                     <p style={mutedStyle}>Keine offenen Geräte auf dieser Seite.</p>
