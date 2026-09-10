@@ -300,6 +300,18 @@ pub fn run() {
             commands::action1::link_system_to_action1,
             commands::action1::unlink_system_from_action1,
             commands::action1::get_action1_system_details,
+            commands::dattormm::test_dattormm_connection,
+            commands::dattormm::list_dattormm_connections,
+            commands::dattormm::add_dattormm_connection,
+            commands::dattormm::remove_dattormm_connection,
+            commands::dattormm::list_dattormm_sites,
+            commands::dattormm::map_dattormm_site,
+            commands::dattormm::unmap_dattormm_site,
+            commands::dattormm::sync_dattormm_connection,
+            commands::dattormm::get_cached_dattormm_sync,
+            commands::dattormm::link_system_to_dattormm,
+            commands::dattormm::unlink_system_from_dattormm,
+            commands::dattormm::get_dattormm_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())

@@ -1,6 +1,7 @@
 import AbmPluginSection from "./AbmPluginSection";
 import Action1PluginSection from "./Action1PluginSection";
 import AteraPluginSection from "./AteraPluginSection";
+import DattoRmmPluginSection from "./DattoRmmPluginSection";
 import IntunePluginSection from "./IntunePluginSection";
 import IruPluginSection from "./IruPluginSection";
 import JamfPluginSection from "./JamfPluginSection";
@@ -16,11 +17,11 @@ import TacticalRmmPluginSection from "./TacticalRmmPluginSection";
 // more plugins are added. Sections are mounted alphabetically by the
 // section heading each one renders (Action1-Verbindungen,
 // Apple-Business-Manager-Verbindungen, Atera-Verbindungen,
-// Intune-Verbindungen, Iru-Verbindungen, ...) so the list stays
-// predictable as more plugins are added, independent of integration
-// order. See NinjaPluginSection.tsx (extracted, unchanged behavior),
-// LevelPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Level.io-Plugin"),
-// SnipeitPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
+// Datto-RMM-Verbindungen, Intune-Verbindungen, Iru-Verbindungen, ...) so
+// the list stays predictable as more plugins are added, independent of
+// integration order. See NinjaPluginSection.tsx (extracted, unchanged
+// behavior), LevelPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
+// "Level.io-Plugin"), SnipeitPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
 // "Snipe-IT-Plugin"), IntunePluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
 // "Microsoft-Intune-Plugin"), IruPluginSection.tsx
 // (docs/PLUGIN_ARCHITECTURE.md "Iru-Plugin"), JamfPluginSection.tsx
@@ -31,8 +32,10 @@ import TacticalRmmPluginSection from "./TacticalRmmPluginSection";
 // AteraPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Atera-Plugin"),
 // PulsewayPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
 // "Pulseway-Plugin"), KaseyaPluginSection.tsx (Kaseya VSA, see
-// docs/PLUGIN_ARCHITECTURE.md "Kaseya-VSA-Plugin"), and
-// Action1PluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Action1-Plugin").
+// docs/PLUGIN_ARCHITECTURE.md "Kaseya-VSA-Plugin"),
+// Action1PluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Action1-Plugin"),
+// and DattoRmmPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
+// "Datto-RMM-Plugin").
 export default function PluginsView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
@@ -40,6 +43,7 @@ export default function PluginsView() {
       <Action1PluginSection />
       <AbmPluginSection />
       <AteraPluginSection />
+      <DattoRmmPluginSection />
       <IntunePluginSection />
       <IruPluginSection />
       <JamfPluginSection />

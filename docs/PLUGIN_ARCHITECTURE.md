@@ -1,6 +1,6 @@
 # Plugin-Architektur
 
-Status: Zwölf echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Dreizehn echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
@@ -8,13 +8,14 @@ Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 Business Manager (`plugin::abm`, `commands::abm`), Tactical RMM
 (`plugin::tacticalrmm`, `commands::tacticalrmm`), Atera (`plugin::atera`,
 `commands::atera`), Pulseway (`plugin::pulseway`, `commands::pulseway`),
-Kaseya VSA (`plugin::kaseya`, `commands::kaseya`) und Action1
-(`plugin::action1`, `commands::action1`) --, alle mit
+Kaseya VSA (`plugin::kaseya`, `commands::kaseya`), Action1
+(`plugin::action1`, `commands::action1`) und Datto RMM
+(`plugin::dattormm`, `commands::dattormm`) --, alle mit
 Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
 Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
 einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
 von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AteraPluginSection.tsx`/`PulsewayPluginSection.tsx`/`KaseyaPluginSection.tsx`/`Action1PluginSection.tsx`).
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AteraPluginSection.tsx`/`PulsewayPluginSection.tsx`/`KaseyaPluginSection.tsx`/`Action1PluginSection.tsx`/`DattoRmmPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -2369,3 +2370,250 @@ Tactical RMM, keine Unterebene zwischen Organisation und Endpunkt). Wie bei
 Weboberflächen-Link). `PluginsView.tsx` bindet die Sektion alphabetisch vor
 `AbmPluginSection.tsx` ein ("Action1" kommt vor "Apple"), als erste Karte
 insgesamt.
+
+## Datto-RMM-Plugin (`plugin::dattormm`) -- dreizehnte echte Integration
+
+`plugin/dattormm.rs` implementiert `Plugin` für Datto RMMs REST-API über
+HTTPS. Datto RMM (<https://www.datto.com/product/rmm/>, Teil von Kaseya) ist
+ein cloud gehostetes, auf sechs Regionen ("Pods") verteiltes RMM-Tool
+(Remote Monitoring & Management) -- strukturell am nächsten an Jamf Pro:
+eine echte "Site"-Zuordnungsebene mit einem echten String-Fremdschlüssel
+direkt am Gerät (`siteUid`, passend zu `Site.uid`), anders als Tactical RMM,
+das Agenten mangels Client-ID am Agenten über den NAMEN einem Client
+zuordnen muss (siehe `plugin::tacticalrmm`-Moduldokumentation). Datto RMMs
+Hierarchie ist dabei flacher als Tactical RMMs Client -> Site -> Agent: nur
+Site -> Device, keine übergeordnete Client-Ebene -- die Zuordnung erfolgt
+deshalb direkt auf Site-Ebene, analog zu Jamf Pros eigener Site-Ebene.
+Konfigurierbare `base_url` wie NinjaOne/Snipe-IT/Tactical RMM/Jamf Pro, weil
+Datto RMM auf sechs unabhängige regionale API-Hosts verteilt ist, ohne
+Möglichkeit, einen davon aus den anderen abzuleiten.
+
+Jede Angabe unten stammt aus Datto RMMs eigener offizieller
+Hilfe-Dokumentation und einer live abgerufenen OpenAPI-3.1-Spezifikation für
+dessen öffentliche REST-API -- nicht aus Drittanbieter-Prosa geraten:
+
+- **Authentifizierung**: ein OAuth2-ARTIGER Token-Austausch, aber KEIN
+  generischer OAuth2-Client-Credentials-Grant wie bei
+  `plugin::ninja`/`plugin::jamf`, und auch KEIN reiner
+  Mandant-plus-Geheimnis-Austausch wie bei `plugin::intune` --
+  `POST {base_url}/auth/oauth/token`, HTTP-Basic-Auth mit Dattos eigenem
+  FESTEN, öffentlich dokumentierten OAuth-Client (`OAUTH_CLIENT_ID` =
+  `"public-client"`, `OAUTH_CLIENT_SECRET` = `"public"` -- NICHT etwas, das
+  ein Nutzer selbst erzeugt, dasselbe Konstanten-Paar für jeden
+  Datto-RMM-Kunden) als Basic-Auth-Benutzername/-Passwort, Body
+  `application/x-www-form-urlencoded` mit
+  `grant_type=password&username=<API Key>&password=<API Secret Key>` -- das
+  eigene API-Key/API-Secret-Key-Paar des Nutzers (erzeugt in Datto RMMs
+  eigener Weboberfläche: Setup -> Users -> eigenen Nutzer wählen -> Generate
+  API Keys) geht als `username`/`password` ein, bewusst NICHT als
+  `client_id`/`client_secret` -- ein leicht zu machender Fehler, wenn man
+  `plugin::intune`s OAuth2-Client-Credentials-Grant zu wörtlich als Vorlage
+  nimmt (siehe `oauth_token_form`, das genau deshalb einen eigenen Unit-Test
+  hat). Antwort 200 + JSON `{"access_token": "<JWT>", ...}` bei Erfolg, 400
+  bei einem falschen Schlüsselpaar. Verwendet als
+  `Authorization: Bearer <access_token>` bei jedem folgenden Aufruf. Tokens
+  laufen nach 100 Stunden ab -- wie bei jedem anderen Plugin hier (siehe
+  `plugin::intune`-Moduldokumentation) keine Refresh-Token-Behandlung: ein
+  frischer Token wird pro Synchronisierung geholt.
+- **Basis-URL -- mehrere Pods**: Datto RMM läuft über sechs regionale Pods
+  (Pinotage, Merlot, Concord, Vidal, Zinfandel, Syrah), jeder mit eigenem
+  API-Hostnamen (z. B. `https://merlot-api.centrastage.net`). Ein Nutzer
+  findet die eigene, genaue Pod-API-URL auf der eigenen Datto-RMM-Nutzerseite
+  (befüllt, nachdem API-Keys erzeugt wurden) -- es gibt keine Möglichkeit,
+  sie automatisch abzuleiten, daher ist `DattoRmmConnectionMeta.base_url`
+  ein einfacher, nutzerseitig angegebener `String`, wie bei
+  `TacticalRmmConnectionMeta`/`JamfConnectionMeta`, NICHT eine feste
+  Konstante wie bei `plugin::intune`s `GRAPH_BASE_URL`/`plugin::level`s
+  `BASE_URL`. Die API-Version `v2` sitzt im Pfad (`{base_url}/api/v2/...`).
+- **Mandantenfähigkeits-Einheit -- "Site"**:
+  `GET {base_url}/api/v2/account/sites` (Query-Parameter `page`, `max`,
+  `siteName`). Die Antwort ist ein umschlossenes Envelope
+  `{"pageDetails": {...}, "sites": [...]}` (anders als Tactical RMMs
+  nackter, unpaginierter Array). `uid` (ein String) ist der überall sonst
+  verwendete echte Bezeichner -- hier als Zuordnungsschlüssel verwendet,
+  NICHT die numerische `id`. Die Zuordnung erfolgt genau auf dieser Ebene --
+  Datto RMMs flache Zuordnungsebene, einfacher als Tactical RMMs
+  Client -> Site-Hierarchie, es gibt keine höhere Ebene zu beachten.
+- **Geräte**: `GET {base_url}/api/v2/account/devices` (alle Geräte,
+  kontoweit -- hier gegenüber dem Site-beschränkten
+  `GET {base_url}/api/v2/site/{siteUid}/devices` für einen einzigen
+  Synchronisierungslauf bevorzugt, mit clientseitiger Gruppierung über die
+  direkt am Gerät vorhandenen Felder `siteUid`/`siteName`). Antwort:
+  `{"pageDetails": {...}, "devices": [...]}`. `uid` (String) ist der echte
+  Bezeichner, verwendet als `external_id`/`DattoRmmDevice::external_id`; die
+  numerische `id` wird nicht verwendet, dieselbe Konvention wie bei `Site`.
+  `intIpAddress`/`extIpAddress` sind beide reine Strings --
+  `extract_ip_address` bevorzugt `intIpAddress`, weicht auf `extIpAddress`
+  aus, dasselbe "primär + Rückfallebene"-Prinzip wie bei
+  `plugin::tacticalrmm::extract_ip_address`/`plugin::ninja`, nur an Datto
+  RMMs Feldnamen angepasst. `online` ist ein echter JSON-Boolean (kein
+  String-Enum wie Tactical RMMs `status`) -- hier zu `"online"`/`"offline"`-
+  Strings konvertiert, für Anzeige-Konsistenz mit jedem anderen Plugin
+  dieser Codebasis (eine bewusste Wahl, keine feste API-Vorgabe -- Dattos
+  eigenes Feld ist wirklich ein Boolean). `deviceClass`
+  (`"device"`/`"printer"`/`"esxihost"`/`"rmmnetworkdevice"`/`"unknown"`)
+  wird unverändert durchgereicht, ein freier String wie Tactical RMMs
+  `plat` -- kein Rust-Enum, damit ein künftiger zusätzlicher Wert das Parsen
+  nicht bricht. `siteUid` (String) ist ein ECHTER Fremdschlüssel direkt am
+  Gerät, passend zu `Site.uid` 1:1 -- anders als bei Tactical RMM ist hier
+  kein Namens-basierter Behelf nötig (siehe
+  `commands::dattormm::group_devices_by_site`, das deshalb ID-basiert ist,
+  analog zu `commands::plugins::group_devices_by_organization`/
+  `commands::jamf::group_devices_by_site`, NICHT wie
+  `commands::tacticalrmm::group_agents_by_client`s Namens-basierte
+  Zuordnung). `portalUrl` ist ein echter, bestätigter
+  Web-Dashboard-Tiefenlink, vorhanden sowohl bei `Site` als auch bei
+  `Device` -- anders als Tactical RMMs verifiziertes FEHLEN eines solchen
+  (siehe `plugin::tacticalrmm`-Moduldokumentation) liefert Datto RMM
+  tatsächlich einen pro Site/Gerät, hier als `Option<String>` sowohl an
+  `DattoRmmSite` als auch `DattoRmmDevice` bereitgestellt und in
+  `DattoRmmPluginSection.tsx` dargestellt.
+- **Zusätzliches Feld über die im Ausgangsauftrag wörtlich genannte
+  `DattoRmmDevice`-Form hinaus**: `hostname: Option<String>` wird getrennt
+  von `name` gehalten (das auf `external_id` zurückfällt, wenn `hostname`
+  fehlt), analog zu `plugin::tacticalrmm::TacticalRmmAgent`s
+  `hostname`/`name`-Trennung -- ohne dieses Feld würde
+  `DattoRmmPluginSection.tsx`s Hostname-Abgleichs-Heuristik für "Mit
+  bestehendem System verknüpfen" riskieren, den Hostnamen eines lokalen
+  Systems gegen eine Datto-RMM-Geräte-UID zu vergleichen, sobald ein Gerät
+  einmal keinen eigenen `hostname` hat.
+- **Paginierung**: Query-Parameter `page` (0-indiziert) und `max` (gedeckelt
+  bei 250/Seite -- `PAGE_SIZE` nutzt das Maximum). Jede Listen-Antwort trägt
+  `pageDetails: {count, totalCount, prevPageUrl, nextPageUrl}`;
+  `nextPageUrl` ist `null` auf der letzten Seite -- `fetch_all_pages`
+  läuft, solange es nicht null ist, wobei GENAU diese URL für die nächste
+  Anfrage verwendet wird (statt `page`/`max` selbst neu abzuleiten),
+  dasselbe "der vom Server gelieferten Fortsetzungs-URL folgen"-Prinzip wie
+  bei `plugin::intune`s `@odata.nextLink`-Durchlauf, nur unter einem anderen
+  JSON-Schlüssel. Gedeckelt bei `MAX_PAGES` Seiten, Schutz gegen ein
+  fehlerhaftes Gegenüber, dieselbe defensive Konvention wie bei
+  `plugin::intune::MAX_PAGES`/`plugin::level::MAX_PAGES`.
+- **Einzelgeräte-Detail**: `GET {base_url}/api/v2/device/{deviceUid}` (über
+  den String `uid`) -- verwendet für `Plugin::get_system_details`, rohes
+  JSON unverändert durchgereicht, dieselbe Konvention wie bei jedem anderen
+  Plugin hier.
+- **Rate-Limits**: 600 Lese-Anfragen/60s, 100 Schreib-Anfragen/60s
+  (kontoweit, gleitendes Fenster); 429 nahe am Limit, 403 + eine temporäre
+  IP-Sperre bei anhaltendem Verstoß. Keine Retry-/Backoff-Logik hier --
+  entspricht jedem anderen Plugin dieser Codebasis.
+- **HTTP-Client**: `ureq` 3.4.1, synchron, dieselbe Abhängigkeit wie jedes
+  andere Plugin hier.
+- **Zugangsdaten-Kodierung**: Datto RMM braucht zwei Geheimwerte (API Key,
+  API Secret Key) -- `PluginCredentials.secret` ist, laut Trait-Vertrag,
+  ein einzelner opaker String, den das Plugin selbst interpretiert -- hier
+  als JSON kodiert (`serde_json::to_string`/`from_str`), genau wie
+  `plugin::ninja::NinjaCredentials`, nur mit anderen Feldnamen
+  (`api_key`/`api_secret_key` statt `client_id`/`client_secret`, weil das
+  tatsächlich das ist, was sie sind -- sie werden im OAuth-Anfragekörper als
+  `username`/`password` verwendet, NICHT als `client_id`/`client_secret`,
+  siehe den Authentifizierungs-Punkt oben).
+
+### Datto-RMM-Verbindungen, jede mit mehreren Sites
+
+Strukturell am nächsten an Jamf Pros Verbindungs-/Site-Modell, nicht an
+Tactical RMMs zweistufigem Client -> Site-Modell:
+
+- Nicht-geheime Metadaten (`id`, `label`, `base_url`, bewusst OHNE
+  `customer_id`) liegen als `DattoRmmConnectionMeta` in
+  `Config::dattormm_connections` (`#[serde(default)]`-kompatibel).
+  Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"dattormm:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei jedem anderen Plugin hier.
+- Welche Site innerhalb einer Verbindung welchem lokalen Kunden entspricht
+  (falls überhaupt), steht granular in `Config::dattormm_site_mappings`
+  (`DattoRmmSiteMapping { connection_id, site_uid, site_name,
+  customer_id }`). Eine nicht zugeordnete Site liefert bei jeder
+  Synchronisierung ihre Geräte weiterhin (zur Ansicht), aber immer mit
+  `linked_system_id: None`.
+- `commands::dattormm::group_devices_by_site` gruppiert Geräte nach Site --
+  strukturell analog zu `commands::plugins::group_devices_by_organization`/
+  `commands::jamf::group_devices_by_site`, über den ECHTEN `site_uid`-
+  Fremdschlüssel (siehe oben), NICHT über einen Namens-Abgleich wie bei
+  `commands::tacticalrmm::group_agents_by_client`. Eine Site ohne Geräte
+  erscheint trotzdem als Gruppe (leere `devices`-Liste), damit eine
+  künftige UI sie zur Zuordnung anzeigen kann. Geräte, deren `site_uid` zu
+  keiner bekannten Site passt (sollte normalerweise nicht vorkommen, ist
+  aber nicht ausgeschlossen -- z. B. eine zwischen Site- und Geräte-Abruf im
+  selben Sync-Lauf gelöschte Site), werden nicht stillschweigend
+  verworfen, sondern als eigene Restgruppe angehängt, mit der rohen
+  `site_uid` als synthetischer ID UND (mangels echter Site-Daten)
+  Anzeigename, sowie `portal_url: None` -- es gibt für diese Gruppe keine
+  ehrlich verlinkbare Site.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie bei jedem anderen Plugin hier:
+`sync_dattormm_connection` schreibt das Ergebnis jedes Laufs zusätzlich als
+JSON nach `data_dir/plugin-cache/dattormm-<connection_id>.json`
+(`{"synced_at_utc": "...", "groups": [...]}`). `get_cached_dattormm_sync`
+liest ausschließlich diese Datei (kein Netzwerkzugriff), rejoint dabei aber
+`customer_id` je Gruppe live gegen die AKTUELLEN
+`Config::dattormm_site_mappings` (nicht den beim letzten Sync eingefrorenen
+Wert) -- exakt wie `commands::plugins::get_cached_ninja_sync` --, und
+liefert `None`, wenn für eine Verbindung noch nie synchronisiert wurde.
+`remove_dattormm_connection` löscht diese Cache-Datei (bestes Bemühen) und
+alle `dattormm_site_mappings`-Zeilen der entfernten Verbindung gleich mit.
+
+### Tauri-Kommandos (`commands::dattormm`)
+
+`test_dattormm_connection`, `list_dattormm_connections`,
+`add_dattormm_connection`, `remove_dattormm_connection`,
+`list_dattormm_sites`, `map_dattormm_site`, `unmap_dattormm_site`,
+`sync_dattormm_connection`, `get_cached_dattormm_sync`,
+`link_system_to_dattormm`, `unlink_system_from_dattormm`,
+`get_dattormm_system_details` -- dünne Wrapper nach dem Muster von
+`commands::jamf`. `list_dattormm_sites` liefert die Live-Site-Liste einer
+Verbindung (analog zu `list_jamf_sites`/`list_tacticalrmm_clients`), wird
+aber vom Frontend nicht aufgerufen -- `DattoRmmPluginSection.tsx` ist wie
+jede andere Plugin-Sektion hier konsequent Cache-first
+(`get_cached_dattormm_sync` beim Öffnen, `sync_dattormm_connection` nur auf
+"Aktualisieren"); der Befehl bleibt für Symmetrie und einen möglichen
+künftigen Ersteinrichtungs-Anwendungsfall erhalten. Das Übernehmen eines
+extern gelieferten Werts in ein selbst gepflegtes Feld (`name`, `hostname`,
+`ip_address`, `notes` in `systems`) bleibt -- wie bei jedem anderen Plugin
+hier -- ausschließlich eine bewusste, manuelle Aktion über
+`get_dattormm_system_details` plus eine spätere UI-Aktion; kein Kommando
+hier schreibt automatisch in diese vier Felder.
+
+### Verknüpfungs-Vorschlag: welches Feld als Abgleichsschlüssel
+
+Wie Tactical RMM (und anders als Snipe-IT, das mangels Hostname-Feld auf
+`asset_tag`/`serial` ausweichen muss) hat ein Datto-RMM-Gerät ein echtes
+`hostname`-Feld -- Datto RMM ist RMM-Überwachungssoftware, keine
+Asset-/Inventarverwaltung. `DattoRmmPluginSection.tsx`s
+`matchKeyForDevice` verwendet deshalb direkt `device.hostname` als
+Abgleichsschlüssel für den "Mit bestehendem System verknüpfen"-Vorschlag,
+verglichen gegen das einzige freie Textfeld, das ein lokales System dafür
+hat -- `System.hostname`.
+
+### Frontend (`DattoRmmPluginSection.tsx`)
+
+Mechanisch an `TacticalRmmPluginSection.tsx`s Stand angelehnt (Sites
+eingeklappt mit Geräte-Anzahl-Zusammenfassung, Kunde-Zuordnungs-`<select>`
+inklusive "+ Neuen Kunden anlegen…", aufklappbare, filterbare,
+10-pro-Seite-paginierte Geräteliste mit `j`/`k`/`Enter`/`l`/`u`-
+Tastaturnavigation, Vergleichs-/Übernahme-Panel für verknüpfte Geräte),
+aber mit EINER Zuordnungsebene (Site) statt Tactical RMMs zwei (Client,
+mit Site nur als Anzeige-Kontext) -- jedes "Client"-Konzept aus der
+Tactical-RMM-Vorlage wird hier zu einem "Site"-Konzept. Der
+Verbindungs-Anlage-Dialog hat VIER Felder (Label, Base-URL, API-Key UND
+API-Secret-Key, beide als `type="password"`) -- ein Feld mehr als bei
+Tactical RMM, weil Datto RMMs Token-Austausch zwei Geheimwerte statt einem
+braucht (siehe oben). Der Base-URL-Hinweistext erklärt ausdrücklich, dass
+es sich um die Pod-spezifische URL handelt, die auf der eigenen
+Datto-RMM-Nutzerseite zu finden ist. `DeviceSummaryLine` zeigt zusätzlich
+einen Online/Offline-Statuspunkt und die Plattform (`deviceClass`,
+z. B. "Gerät"/"Drucker"/"ESXi-Host") -- KEIN "Überfällig"-Status, anders
+als Tactical RMM (siehe oben, Datto RMM kennt nur zwei Statuswerte). Anders
+als `TacticalRmmPluginSection.tsx` (das mangels verifiziertem
+Weboberflächen-Link bewusst KEINEN "In X öffnen"-Link zeigt) gibt es hier
+`DattoRmmLink`, gerendert sowohl auf jeder Geräte-Zeile als auch im
+Site-Kopfbereich, weil Datto RMM tatsächlich einen `portal_url` pro
+Gerät/Site liefert -- allerdings als optionaler Link (`url: string | null`),
+der bei fehlendem `portal_url` nichts rendert, statt eines toten Links.
+
+`PluginsView.tsx` bindet die Sektion neben jeder anderen Plugin-Sektion
+hier ein, alphabetisch zwischen `AteraPluginSection.tsx` und
+`IntunePluginSection.tsx` einsortiert (nach der Überschrift
+"Datto-RMM-Verbindungen").

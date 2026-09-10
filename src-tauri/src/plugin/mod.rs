@@ -78,6 +78,7 @@ pub trait Plugin {
 pub mod abm;
 pub mod action1;
 pub mod atera;
+pub mod dattormm;
 pub mod dummy;
 pub mod intune;
 pub mod iru;

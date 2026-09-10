@@ -5,6 +5,7 @@ use crate::error::AppError;
 use crate::plugin::abm::AbmConnectionMeta;
 use crate::plugin::action1::{Action1ConnectionMeta, Action1OrgMapping};
 use crate::plugin::atera::{AteraConnectionMeta, AteraCustomerMapping};
+use crate::plugin::dattormm::{DattoRmmConnectionMeta, DattoRmmSiteMapping};
 use crate::plugin::intune::IntuneConnectionMeta;
 use crate::plugin::iru::IruConnectionMeta;
 use crate::plugin::jamf::{JamfConnectionMeta, JamfSiteMapping};
@@ -314,6 +315,24 @@ pub struct Config {
     /// `tacticalrmm_client_mappings`. `#[serde(default)]`-compatible with
     /// configs from before this change.
     pub action1_org_mappings: Vec<Action1OrgMapping>,
+    /// Non-secret metadata per configured Datto RMM connection (a
+    /// pod-specific Datto RMM account; a user can create as many connections
+    /// as they like). Like a Ninja/Snipe-IT/Tactical-RMM/Jamf connection, a
+    /// Datto RMM connection is NOT bound to exactly one local customer --
+    /// see `dattormm_site_mappings`. The associated API Key/API Secret Key
+    /// pair lives exclusively in the OS keyring, see `plugin::secrets`.
+    /// `#[serde(default)]`-compatible with configs from before this change,
+    /// analogous to `tacticalrmm_connections` above.
+    pub dattormm_connections: Vec<DattoRmmConnectionMeta>,
+    /// Mapping of individual Datto RMM "Sites" (within a connection) to
+    /// local customers. A single Datto RMM account (one connection) can see
+    /// multiple sites -- e.g. because the user is themselves an MSP who runs
+    /// several of their own customers as separate sites in a shared Datto
+    /// RMM account -- hence this separate, granular mapping table instead of
+    /// a `customer_id` field directly on the connection -- exactly the same
+    /// principle as `tacticalrmm_client_mappings`/`jamf_site_mappings`.
+    /// `#[serde(default)]`-compatible with configs from before this change.
+    pub dattormm_site_mappings: Vec<DattoRmmSiteMapping>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -373,6 +392,8 @@ impl Default for Config {
             kaseya_org_mappings: Vec::new(),
             action1_connections: Vec::new(),
             action1_org_mappings: Vec::new(),
+            dattormm_connections: Vec::new(),
+            dattormm_site_mappings: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -1249,6 +1270,84 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.action1_org_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_dattormm_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.dattormm_connections.push(DattoRmmConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Datto RMM".to_string(),
+            base_url: "https://merlot-api.centrastage.net".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.dattormm_connections.len(), 1);
+        assert_eq!(
+            loaded.dattormm_connections[0].base_url,
+            "https://merlot-api.centrastage.net"
+        );
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_dattormm_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the Datto RMM integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.dattormm_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_dattormm_site_mappings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.dattormm_connections.push(DattoRmmConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Datto RMM".to_string(),
+            base_url: "https://merlot-api.centrastage.net".to_string(),
+        });
+        config.dattormm_site_mappings.push(DattoRmmSiteMapping {
+            connection_id: "acme-1700000000000".to_string(),
+            site_uid: "site-uid-1".to_string(),
+            site_name: "ACME Hauptsitz".to_string(),
+            customer_id: 7,
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.dattormm_site_mappings.len(), 1);
+        assert_eq!(loaded.dattormm_site_mappings[0].site_uid, "site-uid-1");
+        assert_eq!(loaded.dattormm_site_mappings[0].customer_id, 7);
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_dattormm_site_mappings_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the site mapping was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.dattormm_site_mappings.is_empty());
     }
 
     #[test]
