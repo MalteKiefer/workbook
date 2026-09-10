@@ -1,10 +1,10 @@
 //! Tauri commands for the netcup plugin integration (see `plugin::netcup`
 //! and `docs/PLUGIN_ARCHITECTURE.md`). Thin wrappers following exactly the
-//! same pattern as `commands::level` -- netcup has no organization/tenant
+//! same pattern as `commands::level`: netcup has no organization/tenant
 //! concept (see the `plugin::netcup` module documentation), so a netcup
 //! "connection" here corresponds directly to exactly one local customer
 //! (`NetcupConnectionMeta.customer_id`). No granular organization mapping
-//! layer like `NinjaOrgMapping`/`map_ninja_organization` is needed -- every
+//! layer like `NinjaOrgMapping`/`map_ninja_organization` is needed: every
 //! synced server automatically belongs to the connection's customer.
 
 use std::collections::HashMap;
@@ -28,20 +28,20 @@ pub struct NetcupConnectionDto {
 pub struct ExternalSystemDto {
     pub external_id: String,
     pub name: String,
-    /// ALWAYS `None` -- netcup's list endpoint (`GET /servers`) has no
+    /// ALWAYS `None`: netcup's list endpoint (`GET /servers`) has no
     /// status field at all (verified live, see `plugin::netcup` module
     /// docs, "Servers list"). Real server state (`serverLiveInfo.state`,
     /// e.g. `"RUNNING"`/`"SHUTOFF"`) is only available via
     /// `get_netcup_system_details` (the per-server detail call), fetched on
-    /// demand by the frontend -- `sync_netcup_connection` never calls it
+    /// demand by the frontend: `sync_netcup_connection` never calls it
     /// once per server (that would be an N+1 pattern against an
     /// undocumented rate limit, see module docs). This field still exists
     /// on the DTO so the frontend's shape stays structurally uniform with
-    /// other plugins' device lists -- never because the list call itself
+    /// other plugins' device lists, never because the list call itself
     /// ever actually populates it (see `plugin::netcup::NetcupServer`'s own
     /// doc comment on why THAT type has no such field at all).
     pub status: Option<String>,
-    /// ALWAYS `None`, for exactly the same reason as `status` above --
+    /// ALWAYS `None`, for exactly the same reason as `status` above:
     /// netcup's list endpoint has no IP address field either. Real IPs
     /// (`ipv4Addresses[].ip`) are only available via
     /// `get_netcup_system_details`.
@@ -55,7 +55,7 @@ pub struct ExternalSystemDto {
 /// Snapshot of the last `sync_netcup_connection` run, cached under
 /// `data_dir/plugin-cache/netcup-<connection_id>.json` (see
 /// `write_netcup_cache`/`read_netcup_cache`), so `get_cached_netcup_sync`
-/// works without network access. Simpler than `CachedNinjaSyncDto` -- no
+/// works without network access. Simpler than `CachedNinjaSyncDto`: no
 /// organization grouping, since netcup has no concept of organizations.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CachedNetcupSyncDto {
@@ -71,7 +71,7 @@ fn to_dto(meta: &NetcupConnectionMeta) -> NetcupConnectionDto {
     }
 }
 
-/// The fully-qualified `plugin_id` value for a netcup connection -- both the
+/// The fully-qualified `plugin_id` value for a netcup connection: both the
 /// key store account and `external_refs.plugin_id`, analogous to
 /// `commands::level::plugin_id_for`.
 fn plugin_id_for(connection_id: &str) -> String {
@@ -124,7 +124,7 @@ fn find_connection(config: &Config, connection_id: &str) -> Result<NetcupConnect
 
 /// Builds the runnable plugin object plus its associated credentials (the
 /// API token) from the key store, based on a connection metadata row.
-/// Unlike Ninja, the netcup API token is already the full secret string --
+/// Unlike Ninja, the netcup API token is already the full secret string:
 /// no JSON encoding needed, since netcup only needs a single secret value.
 fn build_plugin(
     meta: &NetcupConnectionMeta,
@@ -151,7 +151,7 @@ fn delete_keyring_secret_best_effort(plugin_id: &str) -> Result<(), keyring::Err
 }
 
 /// The same `data_dir/plugin-cache/` directory as `commands::level` (and
-/// every other plugin module) -- a shared folder for all plugin cache
+/// every other plugin module): a shared folder for all plugin cache
 /// files, just with a different file name prefix per plugin.
 fn plugin_cache_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("plugin-cache")
@@ -182,7 +182,7 @@ fn write_netcup_cache(
 }
 
 /// Reads back a snapshot previously written via `write_netcup_cache`.
-/// `Ok(None)` if this connection was never synced -- not an error case,
+/// `Ok(None)` if this connection was never synced: not an error case,
 /// analogous to `commands::level::read_level_cache`.
 fn read_netcup_cache(
     data_dir: &Path,
@@ -198,7 +198,7 @@ fn read_netcup_cache(
     Ok(Some(cached))
 }
 
-/// Builds the DTO for one server -- `status`/`ip_address` are always `None`
+/// Builds the DTO for one server. `status`/`ip_address` are always `None`
 /// here (see `ExternalSystemDto`'s own doc comment on why), exactly what
 /// `NetcupServer` itself provides: the list call never carries either
 /// field.
@@ -304,7 +304,7 @@ pub fn sync_netcup_connection(
         )
     };
 
-    // Deliberately the minimal `list_servers` call only -- NO per-server
+    // Deliberately the minimal `list_servers` call only, NO per-server
     // detail call here (would be N+1 against an undocumented rate limit,
     // see `plugin::netcup` module docs). `status`/`ip_address` stay `None`
     // in every resulting DTO; a per-server detail fetch only ever happens
@@ -319,7 +319,7 @@ pub fn sync_netcup_connection(
     let plugin_id = plugin.id().to_string();
 
     // Reverse index external-id -> local system_id, across ALL systems of
-    // this connection's customer -- unlike Ninja, no "mapped/unmapped" case
+    // this connection's customer. Unlike Ninja, no "mapped/unmapped" case
     // distinction is needed, every netcup connection always has exactly one
     // `customer_id`.
     let mut linked_by_external_id: HashMap<String, i64> = HashMap::new();

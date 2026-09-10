@@ -360,7 +360,7 @@ pub struct Config {
     /// for exactly one netcup customer account; a user can create as many
     /// connections as they like). Like a Level connection, a netcup
     /// connection is bound directly to exactly one local customer
-    /// (`NetcupConnectionMeta.customer_id`) -- netcup's Server Control Panel
+    /// (`NetcupConnectionMeta.customer_id`): netcup's Server Control Panel
     /// API has no reseller/sub-account concept at all, see `plugin::netcup`.
     /// The associated API token lives exclusively in the OS keyring, see
     /// `plugin::secrets`. `#[serde(default)]`-compatible with configs from

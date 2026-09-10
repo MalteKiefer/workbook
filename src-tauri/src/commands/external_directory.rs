@@ -395,14 +395,14 @@ fn collect_level(
     Ok(())
 }
 
-/// netcup: no separate organization/mapping layer -- exactly the same
+/// netcup: no separate organization/mapping layer, exactly the same
 /// direct-`customer_id`-on-the-connection shape as Level
 /// (`collect_level`/`LevelConnectionMeta.customer_id`), see the
 /// `plugin::netcup` module documentation. `hostname` is ALWAYS `None` for
 /// netcup servers (netcup's list endpoint has no distinct hostname field to
-/// surface separately -- the nickname/hostname/name fallback already
+/// surface separately, the nickname/hostname/name fallback already
 /// happened server-side into `name`, see `plugin::netcup::map_server`).
-/// `ip_address` is ALWAYS `None` too -- netcup's list endpoint genuinely has
+/// `ip_address` is ALWAYS `None` too: netcup's list endpoint genuinely has
 /// no IP address field at all, real IPs are only available via
 /// `get_netcup_system_details` (the per-server detail call), never fetched
 /// during a sync (see `commands::netcup`/`plugin::netcup` module

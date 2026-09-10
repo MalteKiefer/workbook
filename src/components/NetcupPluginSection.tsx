@@ -12,28 +12,28 @@ import Modal from "./Modal";
 // manual-adopt rule as every other plugin section: external data is always
 // shown as supplementary, read-only information next to a System's own
 // maintained fields (name/hostname/ip_address/notes), and copying a value
-// across is always a deliberate, manual, per-field action — never an
-// automatic sync step. This plugin's purpose is server inventory only — no
+// across is always a deliberate, manual, per-field action, never an
+// automatic sync step. This plugin's purpose is server inventory only: no
 // device-management-agent concept, no backup-status concept, the simplest
 // kind of plugin in this codebase.
 //
 // Structurally closest to Level.io/Iru: netcup's API has no organization/
 // reseller/sub-account concept at all (verified against netcup's own live
-// OpenAPI spec — no "list users" endpoint, no account-scoping parameter on
+// OpenAPI spec: no "list users" endpoint, no account-scoping parameter on
 // /servers), so a connection maps 1:1 to exactly one local customer
-// (customer_id lives directly on the connection) — no org-mapping UI. Like
+// (customer_id lives directly on the connection), no org-mapping UI. Like
 // Level (fixed API host) and unlike Iru/Snipe-IT/Tactical RMM, netcup has a
 // single fixed API host too, so the add-connection form only asks for
 // Label + Customer + API-Token, no Base-URL field.
 //
 // IMPORTANT, verified split (see plugin::netcup/commands::netcup module
 // docs): netcup's server LIST endpoint (GET /servers) genuinely has no
-// status field and no IP address field at all — ExternalSystemDto.status/
+// status field and no IP address field at all: ExternalSystemDto.status/
 // ip_address below are therefore ALWAYS `null` for every server that came
 // from sync_netcup_connection/get_cached_netcup_sync. Real status
 // (serverLiveInfo.state) and real IPs (ipv4Addresses[].ip) only ever appear
 // once a server's own details are opened (get_netcup_system_details, the
-// per-server detail call) — never fetched for every server up front, which
+// per-server detail call), never fetched for every server up front, which
 // would be an N+1 pattern against an undocumented rate limit. The device
 // list below reflects this honestly: no status/IP column, just a note
 // pointing at "Details" for that information.
@@ -52,7 +52,7 @@ interface NetcupConnectionDto {
 interface ExternalSystemDto {
   external_id: string;
   name: string;
-  // ALWAYS `null` here — netcup's list endpoint has no status/IP fields at
+  // ALWAYS `null` here: netcup's list endpoint has no status/IP fields at
   // all (see module docs above). Real values only ever come from
   // get_netcup_system_details's raw JSON, scanned by findExternalStatus/
   // findExternalIp below, never from this DTO.
@@ -72,7 +72,7 @@ interface Customer {
   short_code: string;
 }
 
-// Mirrors SystemForm.tsx's local System shape exactly — needed here both to
+// Mirrors SystemForm.tsx's local System shape exactly, needed here both to
 // render the "existing system" picker and to build the update_system/
 // create_system input objects the same way SystemForm.tsx does.
 interface System {
@@ -97,7 +97,7 @@ const NAME_KEYS = ["nickname", "hostname", "name"];
 const HOSTNAME_KEYS = ["hostname"];
 
 // Sentinel option value for the customer <select>'s "create a new customer"
-// convenience entry — never a real customer id, so it can't collide.
+// convenience entry, never a real customer id, so it can't collide.
 const CREATE_NEW_CUSTOMER = "__create_new__";
 
 // Heuristic scan of a get_netcup_system_details() payload, analogous to
@@ -115,11 +115,11 @@ function findExternalValue(details: Record<string, unknown>, candidateKeys: stri
   return null;
 }
 
-// netcup's detail response has no flat top-level IP field — real IPv4
+// netcup's detail response has no flat top-level IP field: real IPv4
 // addresses live under `ipv4Addresses[].ip` (verified, see
 // plugin::netcup module docs). The first entry's `ip` is the natural
 // display value; ipv6Addresses is deliberately never used here (those are
-// prefix/gateway pairs, not host addresses — same reasoning as the Rust
+// prefix/gateway pairs, not host addresses, same reasoning as the Rust
 // side, see plugin::netcup module docs).
 function findExternalIp(details: Record<string, unknown>): string | null {
   const addresses = details["ipv4Addresses"];
@@ -135,7 +135,7 @@ function findExternalIp(details: Record<string, unknown>): string | null {
 
 // netcup's real server state lives nested under `serverLiveInfo.state`
 // (verified, a free-form libvirt-domain-state string like "RUNNING"/
-// "SHUTOFF" — no fixed enum on either side). Informational only — a local
+// "SHUTOFF"; no fixed enum on either side). Informational only: a local
 // System has no "status" field of its own to adopt this into, exactly like
 // TacticalRmmPluginSection.tsx's own status display.
 function findExternalStatus(details: Record<string, unknown>): string | null {
@@ -159,7 +159,7 @@ function localTimeZone(): string {
 }
 
 // Servers come back from netcup's API in whatever order the API returns
-// them in — sort alphabetically by name (German collation) for display,
+// them in. Sort alphabetically by name (German collation) for display,
 // independent of the free-text filter below.
 function sortDevicesByName(devices: ExternalSystemDto[]): ExternalSystemDto[] {
   return devices.slice().sort((a, b) => a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
@@ -167,7 +167,7 @@ function sortDevicesByName(devices: ExternalSystemDto[]): ExternalSystemDto[] {
 
 // netcup's list-derived `name` already folds nickname->hostname->raw-name
 // (see plugin::netcup::map_server), so it's the best identifying string
-// available for suggesting a "link to existing system" match — compared
+// available for suggesting a "link to existing system" match, compared
 // against the only free-text field a local system has for it,
 // System.hostname (same convention as LevelPluginSection.tsx, just without
 // a separate raw hostname field to prefer over the display name).
@@ -179,7 +179,7 @@ function matchKeyForDevice(device: ExternalSystemDto): string {
 const DEVICE_PAGE_SIZE = 10;
 
 // Slices `items` (already filtered/sorted) to one page of DEVICE_PAGE_SIZE,
-// clamping a possibly-stale stored page number into range — same helper
+// clamping a possibly-stale stored page number into range, same helper
 // shape as IruPluginSection.tsx's own paginateDevices.
 function paginateDevices<T>(items: T[], page: number): { pageItems: T[]; totalPages: number; clampedPage: number } {
   const totalPages = Math.max(1, Math.ceil(items.length / DEVICE_PAGE_SIZE));
@@ -237,8 +237,8 @@ function SuccessText({ children }: { children: React.ReactNode }) {
   return <p style={{ color: "var(--success)", fontSize: "0.85rem", margin: 0 }}>{children}</p>;
 }
 
-// Small inline keybinding hint, mirroring CommandPalette.tsx's Row hint span
-// — makes the row-level keyboard shortcuts (Enter/l/u) discoverable next to
+// Small inline keybinding hint, mirroring CommandPalette.tsx's Row hint span.
+// Makes the row-level keyboard shortcuts (Enter/l/u) discoverable next to
 // the mouse-clickable buttons they duplicate, rather than hidden knowledge.
 function HintBadge({ label }: { label: string }) {
   return (
@@ -259,7 +259,7 @@ function HintBadge({ label }: { label: string }) {
 }
 
 function DeviceSummaryLine({ device }: { device: ExternalSystemDto }) {
-  // No status/IP column here on purpose — the list this component renders
+  // No status/IP column here on purpose. The list this component renders
   // from is always the minimal, list-derived one (status/ip_address are
   // always `null`, see module docs above). "Details" is where that
   // information actually appears, fetched on demand.
@@ -287,7 +287,7 @@ export default function NetcupPluginSection() {
   const [customersRefreshBusy, setCustomersRefreshBusy] = useState(false);
   const kundeSelectRef = useRef<HTMLSelectElement>(null);
   // Set when the user picks "+ Neuen Kunden anlegen…" in the add-connection
-  // form's customer select — mirrors LevelPluginSection.tsx's own
+  // form's customer select, mirrors LevelPluginSection.tsx's own
   // awaitingNewCustomer flag exactly.
   const [awaitingNewCustomer, setAwaitingNewCustomer] = useState(false);
 
@@ -308,7 +308,7 @@ export default function NetcupPluginSection() {
 
   const [removeBusy, setRemoveBusy] = useState<Record<string, boolean>>({});
 
-  // Device text filter and pagination, both keyed by connection id — netcup
+  // Device text filter and pagination, both keyed by connection id: netcup
   // has no group/organization concept, so there is exactly one flat device
   // list per connection, not one per group.
   const [deviceFilter, setDeviceFilter] = useState<Record<string, string>>({});
@@ -316,7 +316,7 @@ export default function NetcupPluginSection() {
   const [pageByConnection, setPageByConnection] = useState<Record<string, number>>({});
   const [selectedIndexByConnection, setSelectedIndexByConnection] = useState<Record<string, number>>({});
 
-  // Local systems cache, keyed by customer id — used both for the "link to
+  // Local systems cache, keyed by customer id, used both for the "link to
   // existing system" picker and for the compare/adopt panel.
   const [localSystemsByCustomer, setLocalSystemsByCustomer] = useState<Record<number, System[]>>({});
 
@@ -328,7 +328,7 @@ export default function NetcupPluginSection() {
   const [unlinkBusy, setUnlinkBusy] = useState<Record<string, boolean>>({});
   const [deviceError, setDeviceError] = useState<Record<string, string | null>>({});
   // Keyed by connection id directly (a connection maps 1:1 to one customer,
-  // so there's no group/tenant-scoped key here) — disables the "Alle
+  // so there's no group/tenant-scoped key here), disables the "Alle
   // anlegen" bulk button for one connection while it works through that
   // connection's unlinked servers, independent of the per-device
   // `createLinkBusy` map (both are set during a bulk run, so a device's own
@@ -362,8 +362,8 @@ export default function NetcupPluginSection() {
     void reloadCustomers();
   }, [reloadConnections, reloadCustomers]);
 
-  // CustomerForm is globally mounted and driven by the store, so — exactly
-  // like LevelPluginSection.tsx/IruPluginSection.tsx/CustomerListView.tsx —
+  // CustomerForm is globally mounted and driven by the store, so, exactly
+  // like LevelPluginSection.tsx/IruPluginSection.tsx/CustomerListView.tsx,
   // this component learns the editor closed by watching
   // customerEditorTarget transition from non-null back to null, rather than
   // via an onDone callback.
@@ -461,7 +461,7 @@ export default function NetcupPluginSection() {
 
   // The filtered+sorted+unlinked/linked-split device list for one
   // connection, plus the flat keyboard-navigable order (unlinked first, then
-  // linked) — the single source of truth both renderDeviceModal and the
+  // linked), the single source of truth both renderDeviceModal and the
   // keyboard-navigation effect below walk, so they can never disagree about
   // which devices/rows are currently visible. Analogous to
   // IruPluginSection.tsx's computeConnectionDevices, just without any
@@ -482,7 +482,7 @@ export default function NetcupPluginSection() {
     return { allDevices, filterText, filteredDevices, unlinked, linked, navItems };
   }
 
-  // Resets one connection's device list back to page 1 — used whenever the
+  // Resets one connection's device list back to page 1, used whenever the
   // filter text changes (a new filter invalidates whatever page was showing)
   // and after a resync (device set may have changed entirely).
   function resetPage(connectionId: string) {
@@ -595,7 +595,7 @@ export default function NetcupPluginSection() {
       setAwaitingNewCustomer(true);
       openCustomerEditor("new");
       // The <select> is controlled by newCustomerId, which we deliberately
-      // don't change here — but the browser has already visually flipped
+      // don't change here, but the browser has already visually flipped
       // the displayed option to the sentinel one, and no state change means
       // no re-render to snap it back. Reset the DOM value imperatively so
       // it doesn't visually stick on "+ Neuen Kunden anlegen…".
@@ -673,7 +673,7 @@ export default function NetcupPluginSection() {
       const count = Array.isArray(devices) ? devices.length : 0;
       setSyncStatus((prev) => ({ ...prev, [id]: `${count} Server gefunden.` }));
       // The device set (and therefore the page count) may have changed
-      // entirely — reset back to page 1 rather than risk showing a stale,
+      // entirely, reset back to page 1 rather than risk showing a stale,
       // now out-of-range page.
       resetPage(id);
       // Prefer re-reading the cache afterward (authoritative, server-written
@@ -752,7 +752,7 @@ export default function NetcupPluginSection() {
 
   // Bulk version of `createAndLink`: works through every unlinked server on
   // this connection sequentially. A failure on one server does not abort
-  // the rest — it is recorded in the same `deviceError` map that already
+  // the rest; it is recorded in the same `deviceError` map that already
   // surfaces per-device errors, so a partial run still leaves the row's own
   // "Neu anlegen" button as the retry path. `refreshLocalSystems`/
   // `loadCachedSync` run once at the end, not per device, so a connection
@@ -1163,7 +1163,7 @@ export default function NetcupPluginSection() {
                               {localSystems.map((s) => (
                                 <option key={s.id} value={s.id}>
                                   {s.name}
-                                  {s.hostname ? ` — ${s.hostname}` : ""}
+                                  {s.hostname ? ` (${s.hostname})` : ""}
                                 </option>
                               ))}
                             </select>
@@ -1292,9 +1292,9 @@ export default function NetcupPluginSection() {
           </button>
         </div>
         <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: "0.85rem" }}>
-          Liest ausschließlich Server aus netcups Server Control Panel — es werden nie Daten dorthin
+          Liest ausschließlich Server aus netcups Server Control Panel. Es werden nie Daten dorthin
           zurückgeschrieben. netcup kennt keine Unterkonten: jede Verbindung gehört direkt zu genau einem Kunden. Die
-          Serverliste selbst liefert weder Status noch IP-Adresse — beides erscheint erst, wenn die Details eines
+          Serverliste selbst liefert weder Status noch IP-Adresse. Beides erscheint erst, wenn die Details eines
           Servers geöffnet werden.
         </p>
         {connectionsError && <ErrorText>{connectionsError}</ErrorText>}
