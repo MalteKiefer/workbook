@@ -324,6 +324,15 @@ pub fn run() {
             commands::acronis::link_system_to_acronis,
             commands::acronis::unlink_system_from_acronis,
             commands::acronis::get_acronis_system_details,
+            commands::hetzner::test_hetzner_connection,
+            commands::hetzner::list_hetzner_connections,
+            commands::hetzner::add_hetzner_connection,
+            commands::hetzner::remove_hetzner_connection,
+            commands::hetzner::sync_hetzner_connection,
+            commands::hetzner::get_cached_hetzner_sync,
+            commands::hetzner::link_system_to_hetzner,
+            commands::hetzner::unlink_system_from_hetzner,
+            commands::hetzner::get_hetzner_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())

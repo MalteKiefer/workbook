@@ -9,6 +9,7 @@ pub mod dattormm;
 pub mod entries;
 pub mod export;
 pub mod external_directory;
+pub mod hetzner;
 pub mod intune;
 pub mod iru;
 pub mod jamf;
