@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { formatInvokeError } from "../lib/errors";
-import { formatShortcut } from "../lib/platform";
+import { getKeymap, matchesBinding, formatBindingForDisplay, useKeymap } from "../lib/keymap";
 
 interface DirectoryHit {
   kind: "customer" | "system";
@@ -74,6 +74,7 @@ export default function CommandPalette() {
   const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
   const openSystemEditor = useAppStore((s) => s.openSystemEditor);
   const openShortcutOverview = useAppStore((s) => s.openShortcutOverview);
+  const keymap = useKeymap();
 
   const close = useCallback(() => {
     setOpen(false);
@@ -109,7 +110,7 @@ export default function CommandPalette() {
       {
         id: "quick-capture",
         label: "Schnellerfassung öffnen",
-        shortcut: formatShortcut("N"),
+        shortcut: formatBindingForDisplay(keymap.quick_capture),
         run: () => {
           void invoke("open_quick_capture_with_context", {
             customerId: selectedCustomerId,
@@ -119,7 +120,7 @@ export default function CommandPalette() {
       },
       { id: "new-entry", label: "Neuer Eintrag (im Hauptfenster)", shortcut: "", run: () => openEntryEditor("new") },
       { id: "new-customer", label: "Neuer Kunde", shortcut: "", run: () => openCustomerEditor("new") },
-      { id: "goto-customers", label: "Zu Kundenliste", shortcut: "g c", run: goToCustomers },
+      { id: "goto-customers", label: "Zu Kundenliste", shortcut: keymap.goto_customers, run: goToCustomers },
       {
         id: "new-system",
         label: "Neues System",
@@ -138,7 +139,7 @@ export default function CommandPalette() {
       },
     ];
     if (selectedCustomerId !== null) {
-      cmds.push({ id: "goto-systems", label: "Zu Systemliste", shortcut: "g s", run: () => goToSystems() });
+      cmds.push({ id: "goto-systems", label: "Zu Systemliste", shortcut: keymap.goto_systems, run: () => goToSystems() });
       cmds.push({
         id: "export-customer",
         label: "Kunde exportieren",
@@ -157,7 +158,7 @@ export default function CommandPalette() {
         },
       });
     }
-    cmds.push({ id: "goto-journal", label: "Zum Journal", shortcut: "g j", run: goToJournal });
+    cmds.push({ id: "goto-journal", label: "Zum Journal", shortcut: keymap.goto_journal, run: goToJournal });
     cmds.push({ id: "goto-backup", label: "Zu Einstellungen → Backup", shortcut: "", run: () => goToSettings("backup") });
     cmds.push({ id: "goto-plugins", label: "Zu Einstellungen → Plugins", shortcut: "", run: () => goToSettings("plugins") });
     cmds.push({ id: "shortcuts", label: "Tastaturkürzel anzeigen", shortcut: "?", run: openShortcutOverview });
@@ -190,6 +191,7 @@ export default function CommandPalette() {
     openSystemEditor,
     openShortcutOverview,
     selectSystem,
+    keymap,
   ]);
 
   const filteredCommands = useMemo(() => {
@@ -320,7 +322,7 @@ export default function CommandPalette() {
   // own Escape behavior) without depending on component mount/registration order.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      const isModK = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k";
+      const isModK = matchesBinding(e, getKeymap().command_palette);
       if (isModK) {
         e.preventDefault();
         e.stopPropagation();

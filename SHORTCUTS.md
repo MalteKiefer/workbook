@@ -7,13 +7,26 @@ spec, see `docs/superpowers/specs/2026-09-07-wartungsdoku-design.md`).
 Where the implementation and the spec draft diverge, that is called out
 explicitly below.
 
+As of the "Tastaturbelegung" Settings tab, every binding in the "Main
+window", "Command Palette", and the `j`/`k`/`e` rows in the per-view
+tables below is user-customizable (Settings → Tastaturbelegung); the 3
+global hotkeys are too, though a change there needs an app restart to
+take effect (`src-tauri/src/commands/keymap.rs::set_hotkeys`). What
+follows documents the **defaults** each ships with, not a fixed contract —
+check Settings → Tastaturbelegung for what's actually bound on a given
+installation. `Ctrl+V`/`Cmd+V`, `Enter`, and `Esc` are the three
+exceptions: they stay fixed (see the design spec's Scope section,
+`docs/superpowers/specs/2026-09-10-keyboard-shortcut-settings-design.md`,
+for why).
+
 ## Global hotkeys (system wide)
 
 Active across the whole system, even while Wartungsdoku has no focus or
 sits only in the tray. Registered via `tauri-plugin-global-shortcut` in
 `src-tauri/src/hotkeys.rs`, defaults from `HotkeyConfig` in
-`src-tauri/src/config.rs`. **All three can be freely changed in
-`config.toml`** (the `[hotkeys]` section).
+`src-tauri/src/config.rs`. **All three can be freely changed under
+Settings → Tastaturbelegung** (which under the hood writes to the
+`[hotkeys]` section of `config.toml`).
 
 | Key (default) | Effect |
 |---|---|
@@ -52,7 +65,9 @@ for the second, separate way to create a new entry.
 `Ctrl+K` opens or closes the Command Palette
 (`src/components/CommandPalette.tsx`) and is **always active**, even while
 a text field is focused (its own capture phase listener with
-`stopPropagation`, runs before every other keyboard handler).
+`stopPropagation`, runs before every other keyboard handler). Only
+`Ctrl+K` itself is customizable here; the Arrow Down/Arrow Up/Enter/Esc
+rows below are fixed navigation keys within the palette, not configurable.
 
 | Key | Effect |
 |---|---|
@@ -179,13 +194,14 @@ opens.
   never compiled there; the file `src-tauri/src/context_capture/x11.rs`
   says so itself (`NOT COMPILED OR TESTED ON THIS HOST`). It should be
   verified for real before production use on Linux.
-- **macOS:** every `Ctrl+<letter>` binding in this document (`Ctrl+K`,
-  `Ctrl+N`, `Ctrl+S`, `Ctrl+V`) also responds to `Cmd+<letter>` — the
-  in-app UI (sidebar footer, Command Palette, quick capture's Save button,
-  the `?` shortcut overview) displays `⌘` there instead of `Strg+`
-  (`src/lib/platform.ts`). The three *global* hotkeys in the table above
-  stay literally `Ctrl+Alt+...` on macOS too, since they are user-editable
-  strings in `config.toml` rather than a fixed binding — set them to
-  `Cmd+Alt+...` there if you want the Mac-native combination. Window
-  context capture is unimplemented on macOS (falls back to
+- **macOS:** `Ctrl+K`/`Ctrl+N`/`Ctrl+S` default to `Cmd+K`/`Cmd+N`/`Cmd+S`
+  there instead (`KeymapConfig::default()` picks the platform-appropriate
+  literal; matching is exact, not "Ctrl also matches Cmd" — see the design
+  spec's self-review note). `Ctrl+V` stays a fixed platform convention and
+  responds to `Cmd+V` natively (it's the browser's own paste event, not a
+  binding this app checks). The three *global* hotkeys stay literally
+  `Ctrl+Alt+...` by default on macOS too — rebind them to `Cmd+Alt+...` in
+  Settings → Tastaturbelegung (or `config.toml` directly) if you want the
+  Mac-native combination; either way a global hotkey change needs an app
+  restart. Window context capture is unimplemented on macOS (falls back to
   `context_capture::unsupported`); quick capture itself is unaffected.

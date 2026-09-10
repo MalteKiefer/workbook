@@ -60,6 +60,57 @@ impl Default for HotkeyConfig {
     }
 }
 
+/// In-app keyboard shortcuts (Settings -> Tastaturbelegung), as opposed to
+/// `HotkeyConfig`'s 3 OS-registered global hotkeys. Checked by JS keydown
+/// handlers (see `src/lib/keymap.ts::matchesBinding`), not the OS, so a
+/// change here takes effect immediately -- no restart, unlike `HotkeyConfig`.
+///
+/// `goto_customers`/`goto_systems`/`goto_journal` are two-key sequences
+/// ("prefix key" then "follow-up key", space-separated, e.g. `"g c"`) since
+/// that is the actual mechanism (`useGlobalHotkeys.ts`'s 800ms
+/// pending-prefix state machine), not three independent key combinations --
+/// `commands::keymap::set_keymap` validates all three share the same
+/// prefix word.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct KeymapConfig {
+    pub command_palette: String,
+    pub quick_capture: String,
+    pub save: String,
+    pub goto_customers: String,
+    pub goto_systems: String,
+    pub goto_journal: String,
+    pub list_next: String,
+    pub list_prev: String,
+    pub edit_selected: String,
+}
+
+impl Default for KeymapConfig {
+    fn default() -> Self {
+        // macOS's shipped default is the literal "Cmd+..." string, not
+        // "Ctrl+..." matched loosely against both Ctrl and Cmd at runtime --
+        // matching is exact (see src/lib/keymap.ts::matchesBinding), so the
+        // platform-correct literal here is what makes Cmd+K work out of the
+        // box on a Mac.
+        let primary = if cfg!(target_os = "macos") {
+            "Cmd"
+        } else {
+            "Ctrl"
+        };
+        Self {
+            command_palette: format!("{primary}+K"),
+            quick_capture: format!("{primary}+N"),
+            save: format!("{primary}+S"),
+            goto_customers: "g c".to_string(),
+            goto_systems: "g s".to_string(),
+            goto_journal: "g j".to_string(),
+            list_next: "j".to_string(),
+            list_prev: "k".to_string(),
+            edit_selected: "e".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -68,6 +119,7 @@ pub struct Config {
     pub context_capture_enabled: bool,
     pub late_entry_threshold_hours: i64,
     pub hotkeys: HotkeyConfig,
+    pub keymap: KeymapConfig,
     pub last_customer_id: Option<i64>,
     pub last_system_id: Option<i64>,
     /// Non-secret metadata per configured Ninja connection (one set of
@@ -214,6 +266,7 @@ impl Default for Config {
             context_capture_enabled: false,
             late_entry_threshold_hours: 24,
             hotkeys: HotkeyConfig::default(),
+            keymap: KeymapConfig::default(),
             last_customer_id: None,
             last_system_id: None,
             ninja_connections: Vec::new(),
@@ -884,5 +937,58 @@ mod tests {
         let resolved = resolve_data_dir();
         std::env::remove_var("WARTUNGSDOKU_DATA_DIR");
         assert_eq!(resolved, PathBuf::from("/tmp/wartungsdoku-test-override"));
+    }
+
+    #[test]
+    fn keymap_defaults_use_platform_appropriate_primary_modifier() {
+        let config = Config::default();
+        let expected_primary = if cfg!(target_os = "macos") {
+            "Cmd"
+        } else {
+            "Ctrl"
+        };
+        assert_eq!(
+            config.keymap.command_palette,
+            format!("{expected_primary}+K")
+        );
+        assert_eq!(config.keymap.quick_capture, format!("{expected_primary}+N"));
+        assert_eq!(config.keymap.save, format!("{expected_primary}+S"));
+        assert_eq!(config.keymap.goto_customers, "g c");
+        assert_eq!(config.keymap.goto_systems, "g s");
+        assert_eq!(config.keymap.goto_journal, "g j");
+        assert_eq!(config.keymap.list_next, "j");
+        assert_eq!(config.keymap.list_prev, "k");
+        assert_eq!(config.keymap.edit_selected, "e");
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_keymap() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.keymap.command_palette = "Ctrl+Shift+K".to_string();
+        config.keymap.list_next = "n".to_string();
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.keymap.command_palette, "Ctrl+Shift+K");
+        assert_eq!(loaded.keymap.list_next, "n");
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_keymap_field_defaults_to_platform_defaults() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before this feature existed -- the
+        // field is entirely missing and must fall back gracefully to
+        // KeymapConfig::default() thanks to `#[serde(default)]` instead of
+        // making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.keymap, KeymapConfig::default());
     }
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
+import { getKeymap, matchesBinding } from "../lib/keymap";
 
 export function isTypingTarget(el: Element | null): boolean {
   if (!el) return false;
@@ -42,7 +43,7 @@ export function useGlobalHotkeys() {
         return;
       }
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
+      if (matchesBinding(e, getKeymap().quick_capture)) {
         e.preventDefault();
         void invoke("open_quick_capture_with_context", {
           customerId: selectedCustomerId,
@@ -55,23 +56,28 @@ export function useGlobalHotkeys() {
         return;
       }
 
-      if (pendingPrefixRef.current === "g") {
+      const keymap = getKeymap();
+      const [prefix, customersFollow] = keymap.goto_customers.split(" ");
+      const systemsFollow = keymap.goto_systems.split(" ")[1];
+      const journalFollow = keymap.goto_journal.split(" ")[1];
+
+      if (pendingPrefixRef.current === prefix) {
         clearPrefix();
-        if (e.key === "c") {
+        if (e.key === customersFollow) {
           e.preventDefault();
           goToCustomers();
-        } else if (e.key === "s" && selectedCustomerId !== null) {
+        } else if (e.key === systemsFollow && selectedCustomerId !== null) {
           e.preventDefault();
           goToSystems();
-        } else if (e.key === "j") {
+        } else if (e.key === journalFollow) {
           e.preventDefault();
           goToJournal();
         }
         return;
       }
 
-      if (e.key === "g") {
-        pendingPrefixRef.current = "g";
+      if (e.key === prefix) {
+        pendingPrefixRef.current = prefix;
         pendingTimeoutRef.current = window.setTimeout(clearPrefix, 800);
       }
     }
