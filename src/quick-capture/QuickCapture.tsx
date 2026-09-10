@@ -18,6 +18,11 @@ interface System {
   customer_id: number;
   name: string;
   hostname: string;
+  // Present on every `list_systems` response (see `db::systems::System`)
+  // but not previously typed/searched here -- see the matching comment
+  // in EntryEditor.tsx's own copy of this type.
+  ip_address: string;
+  notes: string;
 }
 
 interface PendingAttachment {
@@ -47,19 +52,77 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 // System linked to it yet. Backend reads already-cached plugin data (no
 // network call), so it's cheap to fetch alongside the local systems list.
 interface UnlinkedExternalSystemDto {
-  plugin: "ninja" | "level" | "snipeit";
+  // A plain `String` on the Rust side (`commands::external_directory::
+  // UnlinkedExternalSystemDto.plugin`) -- deliberately NOT a literal union
+  // here anymore. It used to list only the three plugins that existed when
+  // this typeahead was first built ("ninja" | "level" | "snipeit"), which
+  // silently went stale as eleven more plugins were added: `PLUGIN_LABEL`
+  // below rendered a literal "undefined" next to every one of those
+  // plugins' devices (e.g. Acronis's), and this field was never even
+  // searched (typing a plugin's own name, e.g. "acronis", found nothing) --
+  // both are real, user-reported bugs, not just type-safety gaps.
+  plugin: string;
   connection_id: string;
   external_id: string;
   name: string;
   hostname: string | null;
   ip_address: string | null;
+  // `Some(tenant_id)` ONLY for Acronis (`link_system_to_acronis` needs a
+  // `tenantId` argument no other plugin's link command has); `null` for
+  // every other plugin's devices. See `LINK_COMMAND`/`selectExternalSystemRow`
+  // below for how this is used.
+  tenant_id: string | null;
 }
 
-const PLUGIN_LABEL: Record<UnlinkedExternalSystemDto["plugin"], string> = {
+// Maps a plugin id to its `link_system_to_<plugin>` Tauri command name.
+// A real, previously-broken assumption this replaces: `selectExternalSystemRow`
+// used to hardcode a 3-way ninja/level/snipeit ternary that silently fell
+// through to `link_system_to_snipeit` for every one of the eleven OTHER
+// plugins added since -- picking an Acronis (or Kaseya, or any other newer
+// plugin's) suggestion here would have called the wrong Tauri command
+// entirely. Keep this in sync with `src-tauri/src/lib.rs`'s registered
+// `link_system_to_*` commands whenever a new plugin is added.
+const LINK_COMMAND: Record<string, string> = {
+  ninja: "link_system_to_ninja",
+  level: "link_system_to_level",
+  snipeit: "link_system_to_snipeit",
+  intune: "link_system_to_intune",
+  iru: "link_system_to_iru",
+  jamf: "link_system_to_jamf",
+  abm: "link_system_to_abm",
+  tacticalrmm: "link_system_to_tacticalrmm",
+  atera: "link_system_to_atera",
+  pulseway: "link_system_to_pulseway",
+  kaseya: "link_system_to_kaseya",
+  action1: "link_system_to_action1",
+  dattormm: "link_system_to_dattormm",
+  acronis: "link_system_to_acronis",
+};
+
+// Falls back to the raw plugin id (still readable, e.g. "kaseya") for any
+// plugin not in this map, rather than rendering "undefined" -- see the
+// comment on `UnlinkedExternalSystemDto.plugin` above for why a literal,
+// closed label map silently went stale here once before.
+const PLUGIN_LABEL: Record<string, string> = {
   ninja: "Ninja",
   level: "Level",
   snipeit: "Snipe-IT",
+  intune: "Intune",
+  iru: "Iru",
+  jamf: "Jamf",
+  abm: "ABM",
+  tacticalrmm: "Tactical RMM",
+  atera: "Atera",
+  pulseway: "Pulseway",
+  kaseya: "Kaseya",
+  action1: "Action1",
+  dattormm: "Datto RMM",
+  acronis: "Acronis",
 };
+
+function pluginLabel(plugin: string): string {
+  return PLUGIN_LABEL[plugin] ?? plugin;
+}
 
 // System typeahead: a filterable dropdown over the already-fetched systems
 // list (filtering by name AND hostname, case-insensitive) instead of a plain
@@ -187,12 +250,25 @@ export default function QuickCapture() {
     const matches =
       q === ""
         ? systems
-        : systems.filter((s) => s.name.toLowerCase().includes(q) || s.hostname.toLowerCase().includes(q));
+        : systems.filter(
+            (s) =>
+              s.name.toLowerCase().includes(q) ||
+              s.hostname.toLowerCase().includes(q) ||
+              s.ip_address.toLowerCase().includes(q) ||
+              s.notes.toLowerCase().includes(q),
+          );
     const externalMatches =
       q === ""
         ? unlinkedExternalSystems
         : unlinkedExternalSystems.filter(
-            (d) => d.name.toLowerCase().includes(q) || (d.hostname ?? "").toLowerCase().includes(q),
+            (d) =>
+              d.name.toLowerCase().includes(q) ||
+              (d.hostname ?? "").toLowerCase().includes(q) ||
+              (d.ip_address ?? "").toLowerCase().includes(q) ||
+              // Also match on the SOURCE plugin's own name (e.g. typing
+              // "acronis" finds every unlinked Acronis resource) -- see
+              // the comment on UnlinkedExternalSystemDto.plugin above.
+              d.plugin.toLowerCase().includes(q),
           );
     return [
       { kind: "clear" },
@@ -245,12 +321,15 @@ export default function QuickCapture() {
           notes: "",
         },
       });
-      const linkCommand =
-        device.plugin === "ninja" ? "link_system_to_ninja" : device.plugin === "level" ? "link_system_to_level" : "link_system_to_snipeit";
+      const linkCommand = LINK_COMMAND[device.plugin];
+      if (linkCommand === undefined) {
+        throw new Error(`Unbekanntes Plugin: ${device.plugin}`);
+      }
       await invoke(linkCommand, {
         systemId: created.id,
         connectionId: device.connection_id,
         externalId: device.external_id,
+        ...(device.tenant_id !== null ? { tenantId: device.tenant_id } : {}),
       });
       // Reflect the new System locally right away so the query-sync effect
       // below can show it immediately, without depending on the best-effort
@@ -648,7 +727,7 @@ export default function QuickCapture() {
                           </span>
                         )}
                         <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", fontSize: "0.75em", marginLeft: "0.4rem" }}>
-                          · {PLUGIN_LABEL[row.device.plugin]}
+                          · {pluginLabel(row.device.plugin)}
                         </span>
                       </>
                     )}

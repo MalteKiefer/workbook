@@ -90,6 +90,14 @@ pub struct UnlinkedExternalSystemDto {
     pub name: String,
     pub hostname: Option<String>,
     pub ip_address: Option<String>,
+    /// `Some(tenant_id)` ONLY for Acronis (`commands::acronis::
+    /// link_system_to_acronis` needs a `tenant_id` argument no other
+    /// plugin's link command has -- a real, genuine deviation, not an
+    /// oversight); `None` for every other plugin's devices. The frontend
+    /// (`EntryEditor.tsx`/`QuickCapture.tsx`) uses this to decide whether
+    /// to pass `tenantId` when calling the right `link_system_to_<plugin>`
+    /// command for a picked suggestion.
+    pub tenant_id: Option<String>,
 }
 
 /// The same `data_dir/plugin-cache/` directory that `commands::plugins`/
@@ -336,6 +344,7 @@ fn collect_ninja(
                     name: device.name.clone(),
                     hostname: device.hostname.clone(),
                     ip_address: device.ip_address.clone(),
+                    tenant_id: None,
                 });
             }
         }
@@ -371,6 +380,7 @@ fn collect_level(
                 external_id: device.external_id.clone(),
                 name: device.name.clone(),
                 hostname: device.hostname.clone(),
+                tenant_id: None,
                 ip_address: device.ip_address.clone(),
             });
         }
@@ -410,6 +420,7 @@ fn collect_iru(
                 external_id: device.external_id.clone(),
                 name: device.name.clone(),
                 hostname: device.hostname.clone(),
+                tenant_id: None,
                 ip_address: device.ip_address.clone(),
             });
         }
@@ -456,6 +467,7 @@ fn collect_snipeit(
                     name: device.name.clone(),
                     hostname: device.hostname.clone(),
                     ip_address: device.ip_address.clone(),
+                    tenant_id: None,
                 });
             }
         }
@@ -493,6 +505,7 @@ fn collect_intune(
                 connection_id: connection.id.clone(),
                 external_id: device.external_id.clone(),
                 name: device.name.clone(),
+                tenant_id: None,
                 hostname: device.hostname.clone(),
                 ip_address: device.ip_address.clone(),
             });
@@ -536,6 +549,7 @@ fn collect_jamf(
                     name: device.name.clone(),
                     hostname: device.hostname.clone(),
                     ip_address: device.ip_address.clone(),
+                    tenant_id: None,
                 });
             }
         }
@@ -573,6 +587,7 @@ fn collect_abm(
                 plugin: "abm".to_string(),
                 connection_id: connection.id.clone(),
                 external_id: device.external_id.clone(),
+                tenant_id: None,
                 name: device.name.clone(),
                 hostname: device.hostname.clone(),
                 ip_address: device.ip_address.clone(),
@@ -618,6 +633,7 @@ fn collect_tacticalrmm(
                     name: device.name.clone(),
                     hostname: device.hostname.clone(),
                     ip_address: device.ip_address.clone(),
+                    tenant_id: None,
                 });
             }
         }
@@ -666,6 +682,7 @@ fn collect_atera(
                     name: device.name.clone(),
                     hostname: device.hostname.clone(),
                     ip_address: device.ip_address.clone(),
+                    tenant_id: None,
                 });
             }
         }
@@ -710,6 +727,7 @@ fn collect_pulseway(
                     name: device.name.clone(),
                     hostname: device.hostname.clone(),
                     ip_address: None,
+                    tenant_id: None,
                 });
             }
         }
@@ -754,6 +772,7 @@ fn collect_kaseya(
                     name: device.name.clone(),
                     hostname: None,
                     ip_address: None,
+                    tenant_id: None,
                 });
             }
         }
@@ -799,6 +818,7 @@ fn collect_action1(
                     name: device.name.clone(),
                     hostname: None,
                     ip_address: device.ip_address.clone(),
+                    tenant_id: None,
                 });
             }
         }
@@ -841,6 +861,7 @@ fn collect_dattormm(
                     name: device.name.clone(),
                     hostname: device.hostname.clone(),
                     ip_address: device.ip_address.clone(),
+                    tenant_id: None,
                 });
             }
         }
@@ -891,6 +912,7 @@ fn collect_acronis(
                     name: device.name.clone(),
                     hostname: None,
                     ip_address: None,
+                    tenant_id: Some(group.tenant_id.clone()),
                 });
             }
         }
