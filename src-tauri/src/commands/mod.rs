@@ -15,6 +15,7 @@ pub mod jamf;
 pub mod kaseya;
 pub mod keymap;
 pub mod level;
+pub mod netcup;
 pub mod plugins;
 pub mod pulseway;
 pub mod quickcapture;

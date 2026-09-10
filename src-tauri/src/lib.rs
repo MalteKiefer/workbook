@@ -324,6 +324,15 @@ pub fn run() {
             commands::acronis::link_system_to_acronis,
             commands::acronis::unlink_system_from_acronis,
             commands::acronis::get_acronis_system_details,
+            commands::netcup::test_netcup_connection,
+            commands::netcup::list_netcup_connections,
+            commands::netcup::add_netcup_connection,
+            commands::netcup::remove_netcup_connection,
+            commands::netcup::sync_netcup_connection,
+            commands::netcup::get_cached_netcup_sync,
+            commands::netcup::link_system_to_netcup,
+            commands::netcup::unlink_system_from_netcup,
+            commands::netcup::get_netcup_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())

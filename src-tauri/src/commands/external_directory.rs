@@ -1,7 +1,8 @@
 //! Pure read-access aggregation across all configured RMM/asset management
 //! plugin connections (Ninja, Level, Snipe-IT, Intune, Iru, Jamf, ABM,
-//! Tactical RMM, Atera, Pulseway, Kaseya, Action1, Datto RMM, Acronis) for a
-//! given local customer: returns all devices/assets/resources that (a)
+//! Tactical RMM, Atera, Pulseway, Kaseya, Action1, Datto RMM, Acronis,
+//! netcup) for a given local customer: returns all devices/assets/resources
+//! that (a)
 //! belong to this customer according to the most recently synced plugin
 //! caches, and (b) are not yet linked to any local system.
 //!
@@ -35,7 +36,8 @@
 //! `commands::kaseya::CachedKaseyaSyncDto`,
 //! `commands::action1::CachedAction1SyncDto`,
 //! `commands::dattormm::CachedDattoRmmSyncDto`,
-//! `commands::acronis::CachedAcronisSyncDto`), instead of defining the JSON
+//! `commands::acronis::CachedAcronisSyncDto`,
+//! `commands::netcup::CachedNetcupSyncDto`), instead of defining the JSON
 //! shape here a second time -- that way this module stays automatically in
 //! sync if one of those shapes ever changes.
 //!
@@ -75,6 +77,7 @@ use crate::commands::iru::CachedIruSyncDto;
 use crate::commands::jamf::CachedJamfSyncDto;
 use crate::commands::kaseya::CachedKaseyaSyncDto;
 use crate::commands::level::CachedLevelSyncDto;
+use crate::commands::netcup::CachedNetcupSyncDto;
 use crate::commands::plugins::CachedNinjaSyncDto;
 use crate::commands::pulseway::CachedPulsewaySyncDto;
 use crate::commands::snipeit::CachedSnipeitSyncDto;
@@ -123,6 +126,20 @@ fn read_level_cache_file(
     let text = std::fs::read_to_string(&path)?;
     let cached: CachedLevelSyncDto = serde_json::from_str(&text)
         .map_err(|e| AppError::Plugin(format!("Level-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_netcup_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedNetcupSyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("netcup-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedNetcupSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("netcup-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
@@ -371,6 +388,48 @@ fn collect_level(
                 external_id: device.external_id.clone(),
                 name: device.name.clone(),
                 hostname: device.hostname.clone(),
+                ip_address: device.ip_address.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// netcup: no separate organization/mapping layer -- exactly the same
+/// direct-`customer_id`-on-the-connection shape as Level
+/// (`collect_level`/`LevelConnectionMeta.customer_id`), see the
+/// `plugin::netcup` module documentation. `hostname` is ALWAYS `None` for
+/// netcup servers (netcup's list endpoint has no distinct hostname field to
+/// surface separately -- the nickname/hostname/name fallback already
+/// happened server-side into `name`, see `plugin::netcup::map_server`).
+/// `ip_address` is ALWAYS `None` too -- netcup's list endpoint genuinely has
+/// no IP address field at all, real IPs are only available via
+/// `get_netcup_system_details` (the per-server detail call), never fetched
+/// during a sync (see `commands::netcup`/`plugin::netcup` module
+/// documentation on the verified "list is minimal, detail is rich" split).
+fn collect_netcup(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.netcup_connections {
+        if connection.customer_id != customer_id {
+            continue;
+        }
+        let Some(cache) = read_netcup_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for device in &cache.devices {
+            if device.linked_system_id.is_some() {
+                continue;
+            }
+            out.push(UnlinkedExternalSystemDto {
+                plugin: "netcup".to_string(),
+                connection_id: connection.id.clone(),
+                external_id: device.external_id.clone(),
+                name: device.name.clone(),
+                hostname: None,
                 ip_address: device.ip_address.clone(),
             });
         }
@@ -927,6 +986,7 @@ pub fn list_unlinked_external_systems_for_customer_pure(
     collect_action1(config, data_dir, customer_id, &mut result)?;
     collect_dattormm(config, data_dir, customer_id, &mut result)?;
     collect_acronis(config, data_dir, customer_id, &mut result)?;
+    collect_netcup(config, data_dir, customer_id, &mut result)?;
     Ok(result)
 }
 
@@ -964,6 +1024,7 @@ mod tests {
         ExternalSystemDto as KaseyaExternalSystemDto, KaseyaOrgDeviceGroupDto,
     };
     use crate::commands::level::ExternalSystemDto as LevelExternalSystemDto;
+    use crate::commands::netcup::ExternalSystemDto as NetcupExternalSystemDto;
     use crate::commands::plugins::{
         ExternalSystemDto as NinjaExternalSystemDto, NinjaOrgDeviceGroupDto,
     };
@@ -986,6 +1047,7 @@ mod tests {
     use crate::plugin::jamf::{JamfConnectionMeta, JamfSiteMapping};
     use crate::plugin::kaseya::{KaseyaConnectionMeta, KaseyaOrgMapping};
     use crate::plugin::level::LevelConnectionMeta;
+    use crate::plugin::netcup::NetcupConnectionMeta;
     use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
     use crate::plugin::pulseway::{PulsewayConnectionMeta, PulsewayOrgMapping};
     use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
@@ -1002,6 +1064,10 @@ mod tests {
 
     fn level_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
         plugin_cache_dir(data_dir).join(format!("level-{connection_id}.json"))
+    }
+
+    fn netcup_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("netcup-{connection_id}.json"))
     }
 
     fn snipeit_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
@@ -1265,6 +1331,107 @@ mod tests {
             id: "level-conn-1".to_string(),
             customer_id: 7,
             label: "ACME Level".to_string(),
+        });
+
+        let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn netcup_device_appears_when_its_connection_is_bound_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.netcup_connections.push(NetcupConnectionMeta {
+            id: "netcup-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME netcup".to_string(),
+        });
+        let cache = CachedNetcupSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            devices: vec![NetcupExternalSystemDto {
+                external_id: "111".to_string(),
+                name: "Server 01".to_string(),
+                status: None,
+                ip_address: None,
+                linked_system_id: None,
+            }],
+        };
+        write_json(&netcup_cache_path(dir.path(), "netcup-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "netcup");
+        assert_eq!(result[0].connection_id, "netcup-conn-1");
+        assert_eq!(result[0].external_id, "111");
+        assert_eq!(result[0].hostname, None);
+    }
+
+    #[test]
+    fn already_linked_netcup_device_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.netcup_connections.push(NetcupConnectionMeta {
+            id: "netcup-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME netcup".to_string(),
+        });
+        let cache = CachedNetcupSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            devices: vec![NetcupExternalSystemDto {
+                external_id: "111".to_string(),
+                name: "Server 01".to_string(),
+                status: None,
+                ip_address: None,
+                linked_system_id: Some(3),
+            }],
+        };
+        write_json(&netcup_cache_path(dir.path(), "netcup-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn netcup_connection_bound_to_a_different_customer_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.netcup_connections.push(NetcupConnectionMeta {
+            id: "netcup-conn-1".to_string(),
+            customer_id: 99,
+            label: "ACME netcup".to_string(),
+        });
+        let cache = CachedNetcupSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            devices: vec![NetcupExternalSystemDto {
+                external_id: "111".to_string(),
+                name: "Server 01".to_string(),
+                status: None,
+                ip_address: None,
+                linked_system_id: None,
+            }],
+        };
+        write_json(&netcup_cache_path(dir.path(), "netcup-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn netcup_connection_never_synced_is_skipped_gracefully_not_as_an_error() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.netcup_connections.push(NetcupConnectionMeta {
+            id: "netcup-conn-1".to_string(),
+            customer_id: 7,
+            label: "ACME netcup".to_string(),
         });
 
         let result = list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 7);

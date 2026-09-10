@@ -12,6 +12,7 @@ use crate::plugin::iru::IruConnectionMeta;
 use crate::plugin::jamf::{JamfConnectionMeta, JamfSiteMapping};
 use crate::plugin::kaseya::{KaseyaConnectionMeta, KaseyaOrgMapping};
 use crate::plugin::level::LevelConnectionMeta;
+use crate::plugin::netcup::NetcupConnectionMeta;
 use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
 use crate::plugin::pulseway::{PulsewayConnectionMeta, PulsewayOrgMapping};
 use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
@@ -355,6 +356,16 @@ pub struct Config {
     /// `#[serde(default)]`-compatible with configs from before this
     /// change.
     pub acronis_tenant_mappings: Vec<AcronisTenantMapping>,
+    /// Non-secret metadata per configured netcup connection (one API token
+    /// for exactly one netcup customer account; a user can create as many
+    /// connections as they like). Like a Level connection, a netcup
+    /// connection is bound directly to exactly one local customer
+    /// (`NetcupConnectionMeta.customer_id`) -- netcup's Server Control Panel
+    /// API has no reseller/sub-account concept at all, see `plugin::netcup`.
+    /// The associated API token lives exclusively in the OS keyring, see
+    /// `plugin::secrets`. `#[serde(default)]`-compatible with configs from
+    /// before this change, analogous to `level_connections` above.
+    pub netcup_connections: Vec<NetcupConnectionMeta>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -418,6 +429,7 @@ impl Default for Config {
             dattormm_site_mappings: Vec::new(),
             acronis_connections: Vec::new(),
             acronis_tenant_mappings: Vec::new(),
+            netcup_connections: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -634,6 +646,41 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.level_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_netcup_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.netcup_connections.push(NetcupConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            customer_id: 7,
+            label: "ACME netcup".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.netcup_connections.len(), 1);
+        assert_eq!(loaded.netcup_connections[0].customer_id, 7);
+        assert_eq!(loaded.netcup_connections[0].label, "ACME netcup");
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_netcup_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the netcup integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.netcup_connections.is_empty());
     }
 
     #[test]
