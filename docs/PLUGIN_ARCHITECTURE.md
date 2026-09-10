@@ -1,17 +1,18 @@
 # Plugin-Architektur
 
-Status: Acht echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Neun echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
 `commands::iru`), Jamf Pro (`plugin::jamf`, `commands::jamf`), Apple
-Business Manager (`plugin::abm`, `commands::abm`) und Tactical RMM
-(`plugin::tacticalrmm`, `commands::tacticalrmm`) --, alle mit
+Business Manager (`plugin::abm`, `commands::abm`), Tactical RMM
+(`plugin::tacticalrmm`, `commands::tacticalrmm`) und Kaseya VSA
+(`plugin::kaseya`, `commands::kaseya`) --, alle mit
 Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
 Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
 einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
 von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`).
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`KaseyaPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -1418,3 +1419,285 @@ einer Geräte-Zeile (siehe oben, kein verifizierter Weboberflächen-Link).
 `PluginsView.tsx` bindet die Sektion als achte Karte neben
 `NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`
 ein.
+
+## Kaseya-VSA-Plugin (`plugin::kaseya`) -- neunte echte Integration
+
+`plugin/kaseya.rs` implementiert `Plugin` für Kaseya VSAs REST-API über
+HTTPS. Kaseya VSA (aktuell "VSA X", teils noch "VSA 10" genannt) ist ein
+selbst gehostetes/Single-Tenant-RMM-Tool -- jede Kundin betreibt ihren
+eigenen VSA-Server. Strukturell am nächsten an Tactical RMM: selbst
+gehostet mit einer vom Nutzer angegebenen `base_url`, ein einzelnes
+statisches Geheimnis zur Authentifizierung (kein OAuth2-Grant wie bei
+NinjaOne), Zuordnungs-Granularität auf der obersten Mandanten-Ebene
+("Organization") -- genau wie Tactical RMMs Client-Ebene.
+
+WICHTIG, bevor irgendeine Angabe unten für bare Münze genommen wird: Kaseyas
+öffentliche Dokumentation zu VSA X ist merklich dünner und teils
+widersprüchlich im Vergleich zu jeder anderen Integration in dieser
+Codebase. Jeder Punkt unten ist entweder als BESTÄTIGT markiert (konsistent
+in Kaseyas eigener VSA-X-Admin-Dokumentation gefunden) oder als explizite
+ENTSCHEIDUNG/OFFENES RISIKO, wo sich die Dokumentation selbst widerspricht
+oder schweigt -- nichts hier wird stillschweigend sicherer dargestellt, als
+es tatsächlich ist:
+
+- **Authentifizierung (BESTÄTIGT)**: HTTP Basic Auth, Header
+  `Authorization: Basic <base64("{token_id}:{token_secret}")>`. Verifiziert
+  gegen Kaseyas eigene VSA-X-Admin-Dokumentation (Configuration -> API
+  Access -> Third Party Tokens -> Create Token, dort auch optionales
+  IP-Allowlisting/Ablaufdatum auf dem Token selbst -- beides muss dieses
+  Plugin nicht kennen, wird vollständig Kaseya-seitig konfiguriert). Es
+  werden zwei Geheimwerte benötigt (Token-ID + Token-Secret), daher hält
+  `PluginCredentials.secret` -- genau wie bei `plugin::ninja::
+  NinjaCredentials` -- ein kleines JSON-Objekt (`KaseyaCredentials`), keinen
+  einzelnen opaken String wie Level.io/Snipe-IT/Tactical RMM. Hinweis für
+  eine parallel entstehende Pulseway-Integration: Pulseways Authentifizierung
+  ist mit derselben Form dokumentiert (`base64("{token_id}:{token_secret}")`
+  Basic Auth) -- dieses Modul wurde NICHT in Abhängigkeit von diesem Plugin
+  geschrieben, das Muster wiederholt sich hier nur zufällig.
+- **Base-URL -- DOKUMENTIERTE WIDERSPRÜCHLICHKEIT, Entscheidung unten
+  getroffen (NICHT stillschweigend aufgelöst)**: Kaseyas eigene aktuelle
+  Dokumentation widerspricht sich über zwei Quellen hinweg, was die
+  API-Wurzel tatsächlich ist -- eine Seite sagt `{server_domain}/api`, eine
+  andere `{server_name}/api/v3/`. Das ließ sich aus der abgerufenen
+  Dokumentation allein nicht auflösen (kein Weg, ohne eine echte
+  VSA-X-Instanz zum Testen zu wissen, welche Angabe aktuell/korrekt ist).
+  **Entscheidung**: genau wie `plugin::tacticalrmm`s eigener "kein fester
+  Pfad-Präfix"-Umgang ist `KaseyaConnectionMeta.base_url` ein Freitext-Feld,
+  das der Nutzer als VOLLSTÄNDIGE, bereits funktionierende API-Wurzel-URL
+  seiner VSA-Instanz angibt -- dieses Modul hängt nie einen Pfad-Suffix an
+  oder nimmt einen an (`/api`, `/api/v3` oder sonst etwas). Jede Anfrage
+  unten wird als `{base_url}{path}` gebaut, nach Entfernen eines
+  abschließenden Schrägstrichs, nichts weiter. Das Frontend-Anlage-Formular
+  trägt einen kurzen deutschen Hinweis direkt neben dem Feld, der genau
+  darauf hinweist (siehe `KaseyaPluginSection.tsx`). Wer die erste echte
+  Verbindung gegen einen laufenden VSA-X-Server einrichtet, sollte das als
+  die Nummer-eins-Sache zum erneuten Verifizieren behandeln.
+- **Mandanten-Entitäten (Existenz BESTÄTIGT, Feldnamen jenseits von
+  Id/Name UNBESTÄTIGT)**: "Organizations" (`GET {base_url}/organizations`)
+  und "Groups" (`GET {base_url}/groups`) existieren beide als dokumentierte
+  VSA-X-API-Entitäten. Dieses Plugin ordnet ausschließlich auf
+  ORGANIZATION-Ebene zu (wie Tactical RMM auf Client-Ebene, nicht der
+  feineren Site-Ebene) -- `KaseyaOrgMapping` verknüpft eine Organization mit
+  einem lokalen Kunden; Groups werden von diesem Plugin nie eigenständig
+  zugeordnet oder gelistet, sondern nur (als bloße, unaufgelöste `GroupId`)
+  an einem Gerät zur reinen Anzeige referenziert. Organization-Feldnamen
+  jenseits von `Id`/`Name` sind für VSA X speziell NICHT bestätigt --
+  `map_organization` liest daher ausschließlich `value["Id"]`/
+  `value["Name"]`, genauso tolerant/defensiv wie Tactical RMMs eigenes
+  `map_client`: ein Eintrag ohne verwertbare `Id` wird übersprungen statt als
+  fataler Fehler behandelt, ein fehlender `Name` fällt auf die `Id` selbst
+  zurück.
+- **Geräte (BESTÄTIGTE Felder; IP/Online-Status explizit NICHT bestätigt,
+  siehe unten)**: `GET {base_url}/devices`, dokumentiert als filterbar nach
+  `Identifier`, `Name`, `GroupId`, `SiteId`, `OrganizationId`
+  (Query-Filter, die dieses Plugin aktuell nicht nutzt -- es holt immer die
+  vollständige, paginierte Liste). Bestätigte Felder an einem Geräte-Objekt:
+  `Identifier` (ein Geräte-GUID-String -- verwendet als
+  `ExternalSystem::external_id`/`KaseyaDevice::external_id`), `Name`,
+  `GroupId`, `OrganizationId` (ein echter numerischer/String-Fremdschlüssel,
+  KEIN Namens-Join-Behelf wie Tactical RMMs `client_name` -- Geräte werden
+  daher über die ID einer Organization zugeordnet, genau wie NinjaOnes
+  `organizationId` funktioniert, nicht wie Tactical RMMs Agenten),
+  `IsAgentInstalled` (bool), `IsMdmEnrolled` (bool). `OrganizationId` selbst
+  ist auf `KaseyaDevice` in `Option` gehüllt -- weil dieses Plugin, wegen des
+  Feldnamen-Zweifels unten, selbst DESSEN garantierte Anwesenheit auf jedem
+  Geräte-Objekt nicht blind vertraut; ein Gerät ohne auflösbare
+  Organisationszugehörigkeit wird trotzdem behalten (nie verworfen), sondern
+  von `commands::kaseya` unter einer expliziten "Nicht zugeordnet"-Gruppe
+  angezeigt, statt still zu verschwinden.
+  **IP-Adresse und Online-/Offline-Status-Felder sind für VSA X explizit
+  NICHT bestätigt** und fehlen deshalb bewusst komplett auf `KaseyaDevice`
+  -- nicht geraten, nicht als immer-`None`-Feld verkleidet als echtes
+  Attribut hinzugefügt. Das spiegelt Tactical RMMs eigenes "ehrliche
+  Auslassung"-Prinzip (siehe dessen Moduldokumentation zum fehlenden
+  `tacticalrmm_url`-Feld) und Snipe-ITs verifiziertes, immer-`None`
+  `hostname`/`ip_address`. Reichhaltigere, unbestätigte Pro-Geräte-Daten
+  bleiben vollständig `get_system_details`/`GET {base_url}/devices/{id}`
+  überlassen, das als rohes, unverändertes JSON zurückgegeben wird -- genau
+  wie `plugin::tacticalrmm::get_system_details`.
+- **Ein echtes, ernstzunehmendes Risiko, explizit benannt statt
+  stillschweigend vertraut**: die während der Recherche gefundenen
+  VSA-X-Feldnamen (`Identifier`, `GroupId`, `OrganizationId`,
+  `IsAgentInstalled`, `IsMdmEnrolled`) sind verdächtig identisch zu einem
+  anderen Hersteller-Schema (Pulseway). Das kann tatsächlich korrekt sein
+  (gemeinsames API-Tooling/eine White-Label-Backend-Beziehung zwischen
+  beiden Produkten wäre im RMM-Markt nicht unüblich), oder es kann ein
+  Rechercheartefakt sein (z. B. ein Dokumentations-Aggregator, der zwei
+  Produkte vermischt, oder eine veraltete Kopie in der abgerufenen Quelle).
+  Sowohl `map_organization` als auch `map_device` sind DESHALB bewusst
+  DEFENSIV geschrieben: tolerant gegenüber fehlenden oder umbenannten
+  Feldern, ein fehlerhafter Eintrag wird übersprungen statt den gesamten
+  Aufruf scheitern zu lassen oder zu einem Panic zu führen -- derselbe
+  tolerante Stil wie `plugin::tacticalrmm::map_client`/`map_agent` --, damit
+  ein abweichender realer Feldname zu einer degradiert-aber-funktionierenden
+  Synchronisierung führt (weniger/leerere Felder befüllt) statt zu einem
+  harten Fehlschlag. Wer die erste echte Verbindung gegen einen laufenden
+  VSA-X-Server einrichtet, sollte das erneute Verifizieren dieser genauen
+  Feldnamen als ZWEITE Sache behandeln, direkt nach der Base-URL-
+  Widersprüchlichkeit oben.
+- **Paginierung (Mechanismus BESTÄTIGT, Umschlagform nur teilweise
+  bestätigt)**: OData-artige Query-Parameter (`$top`/`$skip`/`$filter`/
+  `$orderby`/`$count`) sind für VSA Xs Listen-Endpunkte dokumentiert, hier
+  einheitlich auf `/organizations` und `/devices` angewendet.
+  `NextQueryLink` ist dokumentiert, in einer Listen-Antwort zu erscheinen,
+  sobald die Gesamtergebnisse 5000 überschreiten (dieselbe Konvention, die
+  auch die Datto-RMM-/Pulseway-Plugins dieser Codebase verwenden würden,
+  falls/wenn gebaut -- hier nicht vorausgesetzt). Der genaue JSON-Schlüssel,
+  der das Item-Array selbst hält, und der genaue Schlüssel für eine
+  Gesamtanzahl sind in der abgerufenen Dokumentation NIRGENDS benannt --
+  nur `NextQueryLink` selbst ist ein benanntes, bestätigtes Antwortfeld.
+  `parse_page` probiert deshalb defensiv eine kleine Menge plausibler
+  Umschlagformen durch (ein nackter Top-Level-Array ganz ohne Umschlag,
+  oder ein Objekt mit den Items unter einem von `"Result"`/`"value"`/
+  `"Items"`/`"data"`, mit einer Gesamtanzahl unter einem von `"Count"`/
+  `"TotalCount"`/`"@odata.count"`), statt EINE bestimmte Form als DIE
+  richtige anzunehmen. `fetch_all_pages` implementiert eine echte
+  Paginierungs-Schleife: solange `NextQueryLink` in einer Seite vorhanden
+  ist, wird diese URL wörtlich als nächste Anfrage-URL verwendet; sobald es
+  nicht mehr erscheint, läuft die Schleife weiter, indem `$skip` erhöht
+  wird, solange eine erkannte Gesamtanzahl sagt, dass noch weitere Items
+  ausstehen -- deckt damit beide dokumentierten Paginierungssignale exakt
+  wie gefordert ab. Eine harte Iterationsgrenze (`MAX_PAGES`) schützt vor
+  einer Endlosschleife, falls eine künftige/unerwartete Antwortform
+  `parse_page` verwirrt -- eine Implementierungs-Sicherung, kein
+  dokumentierter API-Fakt.
+- **Einzelnes Geräte-Detail (BESTÄTIGT)**: `GET {base_url}/devices/{id}`,
+  liefert ein einzelnes Geräte-Objekt -- von `get_system_details`
+  unverändert als rohes JSON durchgereicht, genau wie
+  `plugin::tacticalrmm::get_system_details`/das Pendant bei
+  `plugin::ninja`.
+- **Rate-Limits (BESTÄTIGT, hier nicht durchgesetzt)**: dokumentiert als
+  etwa 3600 Anfragen/Stunde in der Standard-Stufe (einzelne Endpunkte haben
+  offenbar eigene, niedrigere Limits, und wiederholt fehlgeschlagene
+  Anfragen lösen dokumentiert eine separate, strengere Sperr-Stufe aus).
+  Dafür ist keine Retry-/Backoff-Logik implementiert -- entspricht jedem
+  anderen Plugin in dieser Codebase, keines davon implementiert
+  Rate-Limit-Behandlung; diese App ruft Plugin-Methoden selten/manuell auf,
+  nicht in einer heißen Schleife.
+- **Web-Dashboard-Deep-Link -- bewusst weggelassen**: keine erreichbare
+  VSA-X-Dokumentation beschreibt einen stabilen, aus der Base-URL
+  ableitbaren Web-Dashboard-Link für ein einzelnes Gerät -- daher gibt es,
+  genau wie bei Tactical RMMs fehlendem `tacticalrmm_url`, hier kein
+  `kaseya_url`-Feld/DTO-Attribut. Eine ehrliche Auslassung, keine als
+  Feature verkleidete Vermutung.
+- **HTTP-Client**: `ureq` 3.4.1, synchron, dieselbe Abhängigkeit wie jedes
+  andere echte Plugin in dieser Codebase.
+- **Zugangsdaten-Kodierung**: zwei Geheimwerte (Token-ID + Token-Secret),
+  JSON-kodiert in `PluginCredentials.secret` und hier zurück geparst --
+  siehe `KaseyaCredentials`/`parse_credentials`, strukturell identisch zu
+  `plugin::ninja::NinjaCredentials`/`parse_credentials`.
+
+### Kaseya-VSA-Verbindungen, jede mit mehreren Organisationen
+
+Strukturell identisch zu Tactical RMMs/NinjaOnes Verbindungs-/
+Client- bzw. -Organisations-Modell:
+
+- Nicht-geheime Metadaten (`id`, `label`, `base_url`, bewusst OHNE
+  `customer_id`) liegen als `KaseyaConnectionMeta` in
+  `Config::kaseya_connections` (`#[serde(default)]`-kompatibel).
+  Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"kaseya:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei Tactical RMM/NinjaOne.
+- Welche Organization innerhalb einer Verbindung welchem lokalen Kunden
+  entspricht (falls überhaupt), steht granular in
+  `Config::kaseya_org_mappings` (`KaseyaOrgMapping { connection_id,
+  organization_id, organization_name, customer_id }`). Eine nicht
+  zugeordnete Organization liefert bei jeder Synchronisierung ihre Geräte
+  weiterhin (zur Ansicht), aber immer mit `linked_system_id: None`.
+- `commands::kaseya::group_devices_by_organization` gruppiert Geräte nach
+  Organization über die echte `OrganizationId` -- strukturell analog zu
+  `commands::plugins::group_devices_by_organization` (NinjaOne), NICHT über
+  einen Namens-Join wie bei Tactical RMM (siehe oben, Kaseyas
+  `OrganizationId` ist ein echter Fremdschlüssel). Anders als bei NinjaOne
+  ist `KaseyaDevice.organization_id` aber ein `Option` -- diese Integration
+  vertraut nicht blind darauf, dass jedes Geräte-Objekt sie wirklich trägt
+  (siehe Feldnamen-Zweifel oben). Es gibt deshalb ZWEI unterschiedliche
+  Restfälle: (1) ein Gerät mit `Some(organization_id)`, die zu keiner
+  gemeldeten Organization passt (sollte normalerweise nicht vorkommen, ist
+  aber angesichts des Feldnamen-Zweifels plausibel) -- wird als eigene
+  Restgruppe unter der rohen ID angehängt, genau wie NinjaOnes
+  Restgruppen-Behandlung; (2) ein Gerät ganz OHNE `organization_id`
+  (`None`) -- wird als eigene, feste "Nicht zugeordnet"-Gruppe angehängt,
+  immer als LETZTE Gruppe, unterscheidbar von Fall (1). Eine Organization
+  ohne Geräte erscheint weiterhin als leere Gruppe, damit eine künftige UI
+  sie trotzdem zur Zuordnung anzeigen kann. Nichts hindert daran, auch die
+  "Nicht zugeordnet"-Gruppe wie jede andere einem Kunden zuzuordnen --
+  `KaseyaPluginSection.tsx` braucht dafür keinen Sonderfall, sie verhält
+  sich wie jede normale Gruppe.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie Tactical RMM/NinjaOne/Level.io/Snipe-IT:
+`sync_kaseya_connection` schreibt das Ergebnis jedes Laufs zusätzlich als
+JSON nach `data_dir/plugin-cache/kaseya-<connection_id>.json`
+(`{"synced_at_utc": "...", "groups": [...]}`). `get_cached_kaseya_sync`
+liest ausschließlich diese Datei (kein Netzwerkzugriff), rejoint dabei aber
+`customer_id` je Gruppe live gegen die AKTUELLEN
+`Config::kaseya_org_mappings` (nicht den beim letzten Sync eingefrorenen
+Wert) -- exakt wie `commands::tacticalrmm::get_cached_tacticalrmm_sync` --,
+und liefert `None`, wenn für eine Verbindung noch nie synchronisiert wurde.
+`remove_kaseya_connection` löscht diese Cache-Datei (bestes Bemühen) und
+alle `kaseya_org_mappings`-Zeilen der entfernten Verbindung gleich mit.
+
+### Tauri-Kommandos (`commands::kaseya`)
+
+`test_kaseya_connection`, `list_kaseya_connections`,
+`add_kaseya_connection`, `remove_kaseya_connection`,
+`list_kaseya_organizations`, `map_kaseya_organization`,
+`unmap_kaseya_organization`, `sync_kaseya_connection`,
+`get_cached_kaseya_sync`, `link_system_to_kaseya`,
+`unlink_system_from_kaseya`, `get_kaseya_system_details` -- dünne Wrapper
+nach dem Muster von `commands::tacticalrmm`. `add_kaseya_connection` nimmt
+`base_url` + `token_id` + `token_secret` entgegen und kodiert das
+Credential-Paar als JSON, bevor es via `plugin::secrets::store_secret`
+gespeichert wird -- genau wie `commands::plugins::add_ninja_connection` es
+mit seinem Zwei-Werte-Credential handhabt. `list_kaseya_organizations`
+liefert die Live-Organisationsliste einer Verbindung (analog zu
+`list_tacticalrmm_clients`/`list_ninja_organizations`), wird aber vom
+Frontend nicht aufgerufen -- `KaseyaPluginSection.tsx` ist wie
+`TacticalRmmPluginSection.tsx` konsequent Cache-first
+(`get_cached_kaseya_sync` beim Öffnen, `sync_kaseya_connection` nur auf
+"Aktualisieren"); der Befehl bleibt für Symmetrie und einen möglichen
+künftigen Ersteinrichtungs-Anwendungsfall erhalten. Das Übernehmen eines
+extern gelieferten Werts in ein selbst gepflegtes Feld (`name`, `hostname`,
+`ip_address`, `notes` in `systems`) bleibt -- wie bei jedem anderen Plugin
+-- ausschließlich eine bewusste, manuelle Aktion über
+`get_kaseya_system_details` plus eine spätere UI-Aktion; kein Kommando hier
+schreibt automatisch in diese vier Felder.
+
+### Verknüpfungs-Vorschlag: welches Feld als Abgleichsschlüssel
+
+Kaseyas bestätigtes Geräte-Schema trägt kein hostname-, asset-tag- oder
+serial-artiges Feld -- nur `Name` (siehe oben). `KaseyaPluginSection.tsx`s
+`matchKeyForDevice` verwendet deshalb, wie Snipe-IT es mit seiner eigenen
+asset_tag/serial-Rückfallkette tut, den bestverfügbaren Kandidaten
+(`device.name`) als Abgleichsschlüssel für den "Mit bestehendem System
+verknüpfen"-Vorschlag, verglichen gegen das einzige freie Textfeld, das ein
+lokales System dafür hat -- `System.hostname`. Das ist eine bewusste
+Design-Entscheidung, kein bestätigter Kaseya-API-Fakt: `Name` gleicht in
+der RMM-Praxis oft dem tatsächlichen Hostnamen des Agenten, garantiert ist
+das für VSA X aber nicht.
+
+### Frontend (`KaseyaPluginSection.tsx`)
+
+Mechanisch an `TacticalRmmPluginSection.tsx`s Stand angelehnt
+(Organisationen eingeklappt mit Geräte-Anzahl-Zusammenfassung,
+Kunde-Zuordnungs-`<select>` inklusive "+ Neuen Kunden anlegen…",
+aufklappbare, filterbare, 10-pro-Seite-paginierte Geräteliste mit
+`j`/`k`/`Enter`/`l`/`u`-Tastaturnavigation, Vergleichs-/Übernahme-Panel für
+verknüpfte Geräte). Der Verbindungs-Anlage-Dialog hat vier Felder (Label,
+Base-URL inklusive des oben beschriebenen Ambiguitäts-Hinweistexts,
+Token-ID, Token-Secret als `type="password"`) -- ein Zwei-Werte-Credential
+wie bei NinjaOne, anders als Tactical RMMs einzelnem API-Key. Die "Nicht
+zugeordnet"-Gruppe (siehe oben) braucht keinen eigenen Rendering-Zweig --
+sie kommt vom Backend bereits als ganz normale
+`KaseyaOrgDeviceGroupDto` und durchläuft exakt denselben Gruppen-
+Rendering-Code wie jede echte Organization. `DeviceSummaryLine` zeigt
+anstelle von IP/Status/Plattform (die Kaseya X nicht bestätigt, siehe oben)
+die rohe Gruppen-ID (falls vorhanden) sowie zwei kleine Ja/Nein-Badges für
+`is_agent_installed`/`is_mdm_enrolled`. Wie bei `TacticalRmmPluginSection.tsx`
+gibt es bewusst KEINEN "In X öffnen"-Link auf einer Geräte-Zeile (siehe
+oben, kein verifizierter Weboberflächen-Link). `PluginsView.tsx` bindet die
+Sektion alphabetisch zwischen `JamfPluginSection.tsx` und
+`LevelPluginSection.tsx` ein.
