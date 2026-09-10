@@ -60,6 +60,19 @@ pub struct DirectoryHit {
     pub label: String,
 }
 
+/// A system also matches when the query is found inside a linked plugin's
+/// `external_refs.payload_json` (an `EXISTS`, not a `JOIN`, so a system
+/// with several plugin links never produces duplicate hits). This is a
+/// raw substring scan over the whole JSON blob, not a per-key
+/// `json_extract` -- deliberately, since `payload_json`'s shape differs
+/// per plugin (see `docs/PLUGIN_ARCHITECTURE.md`, one integration per
+/// section) and would need updating every time a new plugin is added.
+/// Finding an RMM-reported hostname/IP this way even though it was never
+/// copied into `systems.hostname` (per the "external data never
+/// overwrites user-maintained fields" principle) still returns the same
+/// local `System` row/hit shape -- only the match path is wider, no new
+/// `DirectoryKind` is introduced, and the payload text itself is never
+/// exposed in the result.
 pub fn search_directory(
     conn: &Connection,
     query: &str,
@@ -74,7 +87,14 @@ pub fn search_directory(
          UNION ALL
          SELECT 'system' AS kind, id, customer_id, name
          FROM systems
-         WHERE archived_at_utc IS NULL AND (name LIKE ?1 COLLATE NOCASE OR hostname LIKE ?1 COLLATE NOCASE)
+         WHERE archived_at_utc IS NULL AND (
+             name LIKE ?1 COLLATE NOCASE
+             OR hostname LIKE ?1 COLLATE NOCASE
+             OR EXISTS (
+                 SELECT 1 FROM external_refs er
+                 WHERE er.system_id = systems.id AND er.payload_json LIKE ?1 COLLATE NOCASE
+             )
+         )
          LIMIT ?2",
     )?;
     let rows = stmt.query_map(params![like, limit], |row| {
@@ -178,5 +198,41 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].kind, DirectoryKind::System);
         assert_eq!(hits[0].customer_id, 1);
+    }
+
+    #[test]
+    fn search_directory_finds_system_via_linked_plugin_data_not_in_local_fields() {
+        let conn = migrated_connection();
+        seed(&conn);
+        // "SRV-DB-02" only appears inside the plugin payload, never in the
+        // local systems.name/hostname columns -- proves the EXISTS branch,
+        // not the name/hostname LIKE branches, is what matches here.
+        conn.execute(
+            "INSERT INTO external_refs (system_id, plugin_id, external_id, payload_json, synced_at_utc, synced_at_tz)
+             VALUES (1, 'ninja:conn-1', 'ext-1', '{\"hostname\":\"SRV-DB-02\",\"ipAddresses\":[\"10.0.0.9\"]}', '2026-09-07T12:00:00.000Z', 'Europe/Berlin')",
+            [],
+        ).unwrap();
+
+        let hits = search_directory(&conn, "SRV-DB-02", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].kind, DirectoryKind::System);
+        assert_eq!(hits[0].id, 1);
+    }
+
+    #[test]
+    fn search_directory_does_not_duplicate_a_system_with_multiple_plugin_links() {
+        let conn = migrated_connection();
+        seed(&conn);
+        conn.execute(
+            "INSERT INTO external_refs (system_id, plugin_id, external_id, payload_json, synced_at_utc, synced_at_tz)
+             VALUES (1, 'ninja:conn-1', 'ext-1', '{\"hostname\":\"shared-tag\"}', '2026-09-07T12:00:00.000Z', 'Europe/Berlin'),
+                    (1, 'snipeit', 'ext-2', '{\"asset_tag\":\"shared-tag\"}', '2026-09-07T12:00:00.000Z', 'Europe/Berlin')",
+            [],
+        ).unwrap();
+
+        let hits = search_directory(&conn, "shared-tag", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].kind, DirectoryKind::System);
+        assert_eq!(hits[0].id, 1);
     }
 }
