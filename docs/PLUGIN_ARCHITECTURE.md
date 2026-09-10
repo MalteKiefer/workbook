@@ -1,17 +1,20 @@
 # Plugin-Architektur
 
-Status: Acht echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Neun echte Integrationen umgesetzt, nämlich NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
 `commands::iru`), Jamf Pro (`plugin::jamf`, `commands::jamf`), Apple
-Business Manager (`plugin::abm`, `commands::abm`) und Tactical RMM
-(`plugin::tacticalrmm`, `commands::tacticalrmm`) --, alle mit
-Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
+Business Manager (`plugin::abm`, `commands::abm`), Tactical RMM
+(`plugin::tacticalrmm`, `commands::tacticalrmm`) und Acronis Cyber Protect
+Cloud (`plugin::acronis`, `commands::acronis`), alle mit
+Mehrfach-Verbindungs-Unterstützung. Acronis ist dabei anders als alle acht
+übrigen: kein RMM/MDM-Gerätebestand, sondern Sicherungsstatus pro Gerät
+(siehe eigener Abschnitt unten). `DummyPlugin` bleibt als
 Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
 einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
 von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`).
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AcronisPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -1418,3 +1421,295 @@ einer Geräte-Zeile (siehe oben, kein verifizierter Weboberflächen-Link).
 `PluginsView.tsx` bindet die Sektion als achte Karte neben
 `NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`
 ein.
+
+## Acronis-Plugin (`plugin::acronis`), neunte echte Integration, anders als alle acht übrigen
+
+`plugin/acronis.rs` implementiert `Plugin` für Acronis Cyber Protect Clouds
+REST-API (`developer.acronis.com`). Acronis ist als einziges Plugin hier
+**kein** RMM-/MDM-Tool: jede der acht vorherigen Integrationen
+(NinjaOne, Level.io, Snipe-IT, Intune, Iru, Jamf Pro, Apple Business
+Manager, Tactical RMM) liefert einen Geräte-/Asset-Bestand. Acronis ist
+eine Backup-/Cyber-Protection-Plattform; die einzige Aufgabe dieses
+Plugins ist es, **Sicherungsstatus pro Kunde/Gerät** sichtbar zu machen
+(läuft die Sicherung gerade sauber, mit Warnung, oder fehlgeschlagen),
+niemals Geräteverwaltung. Konkret: `AcronisResource.backup_status` (ein
+Alert-Manager-`severity`-Wert, siehe unten) ist die gesamte Nutzlast, die
+dieses Plugin über die reine Identität hinaus liefert; "Agent
+installieren"/"Skript ausführen"/Bestandsverwaltung gibt es hier gar
+nicht.
+
+Strukturell fügt es sich trotzdem in genau dasselbe `Plugin`-Trait und
+dasselbe Verbindungs-/Zuordnungs-/Sync-/Verknüpfungs-Muster wie jedes
+andere Plugin hier ein: wie Tactical RMM/NinjaOne/Snipe-IT/Jamf kann eine
+Verbindung (ein Acronis-API-Client) mehrere Mandanten ("Customer"
+innerhalb von Acronis' eigener Mandanten-Hierarchie) sehen, also gilt
+dasselbe Verbindungs-plus-Zuordnungstabellen-Muster
+(`AcronisConnectionMeta`/`AcronisTenantMapping`, Zuordnungs-Granularität
+auf Ebene "Mandant vom Typ customer", siehe unten). Authentifizierung ist
+OAuth2-Client-Credentials wie bei NinjaOne/Intune, plus ein zusätzlicher,
+für dieses Plugin einzigartiger Discovery-Schritt (siehe unten).
+
+Jede Angabe unten stammt unverändert aus der verifizierten Recherche, mit
+der dieses Plugin gebaut wurde (Acronis' eigene Dokumentation auf
+developer.acronis.com plus drei live abgerufene OpenAPI-Spezifikationen),
+nicht geraten:
+
+- **Authentifizierung**: OAuth2-Client-Credentials-Grant, `POST
+  {datacenter_url}/api/2/idp/token`, Header `Authorization: Basic
+  base64(client_id:client_secret)`, Formular-Body
+  `grant_type=client_credentials`. Antwort `{"access_token", "token_type":
+  "bearer", "expires_on", ...}`, als `Authorization: Bearer
+  <access_token>` bei jedem weiteren Aufruf verwendet. Wie bei jedem
+  anderen Plugin hier wird der Token pro echter Operation frisch geholt,
+  nie über Aufrufe hinweg zwischengespeichert/erneuert (diese Anwendung
+  ruft Plugin-Methoden selten/manuell auf, nicht in einer heißen Schleife,
+  dieselbe Begründung wie bei `plugin::ninja`/`plugin::intune`).
+- **`datacenter_url` ist vollständig nutzerseitig angegeben**: Beim
+  Anlegen eines API-Clients in der Acronis-Verwaltungskonsole (einmalig,
+  außerhalb dieser Anwendung, vom Nutzer selbst erledigt, bevor dieses
+  Plugin konfiguriert wird) erhält der Nutzer DREI Werte auf einmal:
+  `client_id`, `client_secret` UND eine `datacenter_url` (z. B.
+  `https://eu2-cloud.acronis.com`). Es existiert keine feste/aufzählbare
+  Liste von Rechenzentren in der Dokumentation, also muss der Nutzer sie,
+  wie Tactical RMMs `base_url`, selbst eintragen. Das macht dies zu einem
+  echten DREI-Werte-Zugangsdatensatz, anders als jedes bisherige Plugin
+  hier, aber `datacenter_url` ist selbst kein Geheimnis (sie wird in
+  Acronis' eigener Oberfläche offen angezeigt, genau wie eine Basis-URL),
+  also liegt sie nach dem Credential-Prinzip (siehe oben,
+  "Credential-Prinzip") in `AcronisConnectionMeta.datacenter_url`
+  (`config.toml`), NICHT im Schlüsselspeicher-Geheimnis, exakt dasselbe
+  Prinzip "nicht-geheime Metadaten gehören in die Konfiguration", das
+  schon für `base_url` bei Tactical RMM/NinjaOne/Snipe-IT/Iru/Jamf gilt.
+  `AcronisCredentials` bleibt dadurch ein sauberer Zwei-Werte-JSON
+  (`client_id`, `client_secret`), genau wie
+  `plugin::ninja::NinjaCredentials`.
+- **Basis-URL**: `{datacenter_url}/api/2` für jeden Endpunkt unten.
+- **Zusätzlicher Discovery-Schritt, einzigartig für dieses Plugin**: nach
+  Erhalt eines Bearer-Tokens liefert `GET
+  {datacenter_url}/api/2/clients/{client_id}` (Bearer-Auth) `{"tenant_id":
+  "<uuid>", "type": "api_client", ...}`, den eigenen Wurzel-Mandanten
+  des API-Clients, den Anker, den `/tenants` braucht, um den gesamten
+  zugänglichen Mandanten-Baum in einem Aufruf abzulaufen (siehe unten).
+  Wird einmal pro echter Operation ausgeführt (`test_credentials`,
+  `list_tenants`, einmal je zugeordnetem Mandanten innerhalb eines
+  `sync_acronis_connection`-Laufs), wie der Token selbst, nicht über
+  Aufrufe hinweg zwischengespeichert.
+- **Mandanten (die Zuordnungs-Entität)**: `GET {base}/tenants`,
+  Query-Parameter `subtree_root_id=<der entdeckte Wurzel-Mandant>`,
+  `lod=full`, Cursor `after`. Antwort-Umschlag (KEIN nackter Array, anders
+  als Tactical RMMs `/clients/`): `{"timestamp", "paging": {"cursors":
+  {"after": "..."}}, "items": [{"id", "parent_id", "name", "kind"}]}`.
+  `kind` ist eines von `root | partner | folder | customer | unit`; NUR
+  Mandanten mit `kind == "customer"` sind gültige Zuordnungsziele
+  (ansonsten organisatorische Container, keine echten Kundenkonten),
+  spiegelt, wie Tactical RMMs Client-Ebene (nicht Site) die
+  Zuordnungs-Granularität ist, hier nur über ein `kind`-Feld statt eine
+  Hierarchie-Ebene gesteuert. `map_tenant` (einzelnes Element,
+  ungefiltert) und `filter_customer_tenants` (der `kind ==
+  "customer"`-Filter) sind bewusst getrennte, unabhängig testbare, reine
+  Funktionen; siehe deren eigene Doc-Kommentare.
+- **Sicherungsstatus pro Gerät, eine echte Scope-Entscheidung, keine
+  Vermutung**: die Dokumentation bietet kein einziges, offensichtliches
+  "ist die Sicherung ok"-Feld, und zwei getrennte APIs sind beteiligt:
+  1. **Ressourcen-Identität**: `GET
+     {base}/resource_management/v4/resources`, Query-Parameter
+     `tenant_id=<ein zugeordneter Mandant>`, Cursor `before`/`after`.
+     Antwort `{"items": [{"id", "name", "agent_id", "external_id",
+     "type"}], "paging": {"cursors": {...}}}`. Dieses Plugin verwendet
+     `id` als `AcronisResource::external_id` und `name` als Anzeigename,
+     NICHT das eigene, verwirrend benannte `external_id`-Feld der Ressource
+     (ein anderes, Acronis-internes Konzept, nicht der Identitäts-Schlüssel
+     dieser Anwendung) und NICHT `agent_id` (Acronis' eigenes
+     Agenten-Konzept, hier irrelevant).
+  2. **Sicherungs-Gesundheit**: `GET {base}/alert_manager/v1/resource_status`,
+     Query-Parameter `tenant=<derselbe zugeordnete Mandant>` (man beachte
+     den anders benannten Query-Parameter, `tenant`, nicht `tenant_id`,
+     eine echte, leicht zu übersehende Inkonsistenz in Acronis' eigener
+     API, hier exakt wie verifiziert übernommen). Antwort: `{"items":
+     [{"id": "<resourceId>", "severity":
+     "ok|information|warning|error|critical", "alert": {...}}]}`. DAS
+     ist die "ist die Sicherung gerade in Ordnung"-Antwort für dieses
+     Plugin. `join_resources_with_severity` verknüpft `id` (Acronis'
+     Ressourcen-ID, derselbe Wert wie oben unter #1) mit
+     `AcronisResource::external_id` und kopiert `severity` unverändert
+     nach `AcronisResource::backup_status` (freier String, wie Tactical
+     RMMs `status`/`platform`, kein Rust-Enum, damit ein künftiger neuer
+     Severity-Wert das Parsen nicht bricht). Eine Ressource OHNE
+     passenden Alert-Manager-Eintrag (nie gesichert / nicht geschützt)
+     bekommt `backup_status: None`, ein legitimer, erwarteter Fall, kein
+     Fehler.
+  3. **Bewusst NICHT versucht**: das Filtern von
+     `resource_management/v4/resource_statuses`s `policies[]`-Array nach
+     einem bestimmten Backup-Policy-Typ-CTI-String. Dieser String wurde
+     nie gegen echte Dokumentation/Spezifikationen bestätigt, und ihn
+     falsch zu erraten würde dem Nutzer stillschweigend bedeutungslose
+     Daten zeigen. Für eine reichhaltigere Pro-Ressource-Nutzlast ruft
+     dieses Plugin stattdessen `GET
+     {base}/resource_management/v4/resource_statuses?tenant_id=<id>`
+     UNGEFILTERT auf und reicht das rohe JSON unverändert durch (siehe
+     `get_resource_statuses` unten), derselbe "rohes, freies JSON, der
+     Aufrufer/die UI interpretiert es"-Vertrag, den jedes andere Plugin
+     hier für `Plugin::get_system_details` verwendet.
+- **Ein echter Widerspruch, um den dieses Plugin herum entworfen werden
+  musste**: Acronis hat KEINEN verifizierten Einzelressourcen-Detail-
+  Endpunkt. `resource_statuses` ist immer MANDANTEN-bezogen, nie
+  ressourcenbezogen, aber das `Plugin`-Trait-Methode
+  `get_system_details(&self, credentials, external_id)` hat keinen Platz
+  für einen Mandanten-Parameter. Statt einen unbestätigten
+  Einzelressourcen-Endpunkt zu erraten, liefert `Plugin::get_system_details`
+  für `AcronisPlugin` bewusst `PluginError::UnexpectedResponse` mit genau
+  dieser Erklärung, eine ehrliche Lücke, analog zu Tactical RMMs
+  fehlendem Weboberflächen-Link oder Snipe-ITs immer-`None`-`hostname`/
+  `ip_address` (siehe deren eigene Moduldokumentation), keine als Feature
+  verkleidete Vermutung. Die echte, reichhaltigere Nutzlast steht
+  stattdessen über die eigene Methode `get_resource_statuses(&self,
+  credentials, tenant_id)` zur Verfügung, die SEHR WOHL eine Mandanten-ID
+  entgegennimmt: `commands::acronis` ruft diese direkt auf (nie die
+  Trait-Methode) für `sync_acronis_connection`/`link_system_to_acronis`/
+  `get_acronis_system_details`, die alle bereits Mandanten-Kontext aus der
+  Zuordnung tragen, mit der sie gerade arbeiten. Das ist die eine echte,
+  bewusste Abweichung von jedem anderen Plugin hier (wo die Trait-Methode
+  DIE echte Implementierung ist), hier explizit benannt, siehe auch
+  `plugin::acronis`s eigene Moduldokumentation. `Plugin::list_systems` hat
+  dasselbe zugrunde liegende Problem (kein verifizierter
+  "alle Mandanten auf einmal"-Endpunkt, und kein Mandanten-Parameter an
+  der Trait-Methode) und ist deshalb ebenfalls bewusst schmal: es liefert
+  eine leere Liste. `commands::acronis` ruft auch sie nie auf, sondern
+  verwendet stattdessen die mandanten-bezogene eigene Methode
+  `list_resources_with_status`, einmal je zugeordnetem Mandanten.
+- **Paginierung**: Cursor-basiert, `paging.cursors.after` in der Antwort,
+  als Query-Parameter `after` für die nächste Seite zurückgegeben; ein
+  fehlendes/leeres `after` bedeutet keine weiteren Seiten. Dieselbe Form
+  für `/tenants`, `/resource_management/v4/resources` und
+  `/alert_manager/v1/resource_status` (pro Antwort einzeln über
+  `parse_paged_items` ausgelesen, nicht als eine fest angenommene globale
+  Konstante, falls eine künftige Acronis-Version den Umschlag eines
+  Endpunkts ändert, ohne die anderen anzupassen).
+- **Rate-Limits**: nirgends erreichbar dokumentiert. Hier vermerkt, keine
+  besondere Behandlung (kein Backoff/Retry), dieselbe ehrliche Lücke wie
+  bei jedem anderen Plugin hier.
+- **Kein Weboberflächen-Tiefenlink**: nicht dokumentiert, deshalb
+  ausgelassen, dieselbe ehrliche Auslassung wie bei `plugin::tacticalrmm`.
+- **HTTP-Client**: `ureq` 3.4.1, synchron, dieselbe Abhängigkeit wie jedes
+  andere Plugin hier.
+- **Zugangsdaten-Kodierung**: zwei Geheimwerte (`client_id`,
+  `client_secret`); `datacenter_url` bewusst ausgeschlossen (siehe
+  oben), JSON-kodiert genau wie `plugin::ninja::NinjaCredentials`.
+
+### Acronis-Verbindungen, jede mit mehreren Mandanten
+
+Strukturell wie Tactical RMMs Verbindungs-/Client-Modell:
+
+- Nicht-geheime Metadaten (`id`, `label`, `datacenter_url`, bewusst OHNE
+  `customer_id`) liegen als `AcronisConnectionMeta` in
+  `Config::acronis_connections` (`#[serde(default)]`-kompatibel).
+- Welcher Mandant innerhalb einer Verbindung welchem lokalen Kunden
+  entspricht (falls überhaupt), steht granular in
+  `Config::acronis_tenant_mappings` (`AcronisTenantMapping {
+  connection_id, tenant_id, tenant_name, customer_id }`).
+
+### Zwei bewusste Abweichungen von `commands::tacticalrmm`s Form
+
+Beide sind durch Acronis' eigene API-Form erzwungen (siehe
+`plugin::acronis`s Moduldokumentation für die vollständige Begründung),
+hier explizit benannt, nicht stillschweigend aus dem Ausgangs-Briefing
+übernommen:
+
+1. `sync_acronis_connection` läuft NUR über bereits ZUGEORDNETE Mandanten
+   (`Config::acronis_tenant_mappings`), nicht über jeden Mandanten, den die
+   Verbindung sehen kann. Tactical RMMs/NinjaOnes/Snipe-ITs einzelner
+   "alle Clients/Agenten auflisten, dann gruppieren"-Aufruf ist günstig und
+   verbindungsweit; Acronis' Ressourcen-Endpunkt VERLANGT
+   Mandanten-Bezug (`tenant_id`-Query-Parameter, siehe oben); es gibt
+   keine verifizierte "alle Mandanten auf einmal"-Variante, die
+   stattdessen aufgerufen werden könnte. Ein nicht zugeordneter Mandant
+   zeigt deshalb überhaupt keine Ressourcen, bis er zugeordnet wird
+   (anders als Tactical RMM, das die Agenten eines nicht zugeordneten
+   Clients trotzdem zeigt, nur ohne `customer_id`). `list_acronis_tenants`
+   bleibt verfügbar (spiegelt `list_tacticalrmm_clients`), damit die
+   Zuordnungs-UI weiterhin eine Kandidatenliste zum Zuordnen HAT.
+2. `link_system_to_acronis`/`get_acronis_system_details` brauchen einen
+   `tenant_id`-Parameter, den `link_system_to_tacticalrmm`/
+   `get_tacticalrmm_system_details` nicht brauchen; siehe oben, "Ein
+   echter Widerspruch".
+
+Eine dritte, direkte Folge davon zeigt sich im Frontend
+(`AcronisPluginSection.tsx`): Anders als jede andere Plugin-Sektion hier
+ist die Mandanten-Entdeckung NICHT Cache-first: das Öffnen der
+Verbindungs-Übersicht löst zusätzlich zum üblichen
+`get_cached_acronis_sync` immer einen LIVEN `list_acronis_tenants`-Aufruf
+aus, rein um die Kandidatenliste für die Kunde-Zuordnung zu befüllen. Die
+Zuordnungs-Quelle der Wahrheit ist deshalb die live geladene
+`AcronisTenantDto.mapped_customer_id`, NICHT `group.customer_id` aus dem
+Zwischenspeicher (anders als `TacticalRmmPluginSection.tsx`, das
+Zuordnungs-Status ausschließlich aus seinen zwischengespeicherten
+Geräte-Gruppen liest).
+
+### Zwischenspeicher für Offline-Ansicht
+
+Dieselbe Konvention wie Tactical RMM/NinjaOne/Level.io/Snipe-IT:
+`sync_acronis_connection` schreibt das Ergebnis jedes Laufs zusätzlich als
+JSON nach `data_dir/plugin-cache/acronis-<connection_id>.json`
+(`{"synced_at_utc": "...", "groups": [...]}`), hier allerdings NUR
+Gruppen für Mandanten, die zum Sync-Zeitpunkt bereits zugeordnet waren
+(siehe oben). `get_cached_acronis_sync` liest ausschließlich diese Datei
+(kein Netzwerkzugriff), rejoint dabei aber `customer_id` je Gruppe live
+gegen die AKTUELLEN `Config::acronis_tenant_mappings` (nicht den beim
+letzten Sync eingefrorenen Wert). `remove_acronis_connection` löscht
+diese Cache-Datei (bestes Bemühen) und alle
+`acronis_tenant_mappings`-Zeilen der entfernten Verbindung gleich mit.
+
+### Tauri-Kommandos (`commands::acronis`)
+
+`test_acronis_connection`, `list_acronis_connections`,
+`add_acronis_connection`, `remove_acronis_connection`,
+`list_acronis_tenants`, `map_acronis_tenant`, `unmap_acronis_tenant`,
+`sync_acronis_connection`, `get_cached_acronis_sync`,
+`link_system_to_acronis`, `unlink_system_from_acronis`,
+`get_acronis_system_details`: dünne Wrapper nach dem Muster von
+`commands::tacticalrmm`, mit den zwei oben genannten, notwendigen
+Abweichungen. `sync_acronis_connection` holt für jeden zugeordneten
+Mandanten die tenant-weite, ungefilterte `resource_statuses`-Nutzlast
+höchstens EINMAL je Sync-Lauf (verzögert, nur falls dieser Mandant
+tatsächlich eine verknüpfte Ressource hat, deren zwischengespeicherte
+Nutzlast aufgefrischt werden muss), nicht einmal je Ressource, weil es
+keinen Pro-Ressource-Endpunkt gibt und deshalb jede verknüpfte Ressource
+eines Mandanten dieselbe rohe Nutzlast teilt. Das Übernehmen eines extern
+gelieferten Werts in ein selbst gepflegtes Feld bleibt, wie bei jedem
+anderen Plugin hier, ausschließlich eine bewusste, manuelle Aktion;
+kein Kommando hier schreibt automatisch in `name`/`hostname`/
+`ip_address`/`notes`.
+
+### Verknüpfungs-Vorschlag: welches Feld als Abgleichsschlüssel
+
+Anders als jede RMM-/MDM-Sektion hier hat eine Acronis-Ressource KEIN
+Hostname-Feld (siehe oben: die einzige Pro-Ressource-Nutzlast dieses
+Plugins über die Identität hinaus ist `backup_status`).
+`AcronisPluginSection.tsx`s `matchKeyForDevice` vergleicht deshalb
+`device.name` gegen den Namen eines lokalen Systems (`System.name`), nicht
+gegen `hostname`.
+
+### Frontend (`AcronisPluginSection.tsx`)
+
+Mechanisch an `TacticalRmmPluginSection.tsx`s Stand angelehnt (Mandanten
+eingeklappt mit Ressourcen-Anzahl-Zusammenfassung, Kunde-Zuordnungs-`
+<select>` inklusive "+ Neuen Kunden anlegen…", aufklappbare, filterbare,
+10-pro-Seite-paginierte Ressourcenliste mit `j`/`k`/`Enter`/`l`/`u`-
+Tastaturnavigation). Der Verbindungs-Anlage-Dialog hat VIER Felder (Label,
+Datacenter-URL, Client-ID, Client-Secret als `type="password"`), der
+echte Drei-Werte-Zugangsdatensatz (siehe oben). `DeviceSummaryLine` zeigt
+statt Online/Offline/Plattform/Site (die es hier nicht gibt) einen
+Sicherungsstatus-Punkt: `"ok"`/`"information"` -> "In Ordnung" (grün),
+`"warning"` -> "Warnung" (Amber; kein `--warning`-CSS-Custom-Property
+existiert in `theme.css`, deshalb ein literaler Farbwert, analog zu
+`TacticalRmmPluginSection.tsx`s literalen Statusfarben), `"error"`/
+`"critical"` -> "Fehler" (rot), fehlend/`None` -> "Kein Status" (grau).
+Anders als `TacticalRmmPluginSection.tsx` gibt es KEINE
+Vergleichen/Übernehmen-Tabelle für verknüpfte Ressourcen: Acronis hat
+keinen verifizierten Einzelressourcen-Endpunkt, nur die tenant-weite,
+ungefilterte `resource_statuses`-Antwort ohne bestätigte Feldnamen jenseits
+von `id`/`name`/`severity` (siehe oben); das Details-Panel zeigt deshalb
+nur die per `id === device.external_id` gefundene eigene Roh-JSON-Ressource
+dieser Antwort, rein lesbar, statt Feldnamen zu erraten, die nie
+verifiziert wurden. `PluginsView.tsx` bindet die Sektion alphabetisch
+zwischen `AbmPluginSection.tsx` und `IntunePluginSection.tsx` ein.

@@ -1,7 +1,7 @@
 //! Tauri commands for the Acronis Cyber Protect Cloud plugin integration
 //! (see `plugin::acronis` and `docs/PLUGIN_ARCHITECTURE.md`, section
 //! "Acronis-Plugin"). Thin wrappers following exactly the same pattern as
-//! `commands::tacticalrmm` -- an Acronis "connection" is a user-created
+//! `commands::tacticalrmm`: an Acronis "connection" is a user-created
 //! record (datacenter URL + OAuth2 client ID/secret) for exactly one
 //! Acronis API client, NOT for exactly one local customer. A single API
 //! client can see multiple tenants (e.g. because the user setting up the
@@ -17,7 +17,7 @@
 //!
 //! Two DELIBERATE deviations from `commands::tacticalrmm`'s shape, both
 //! forced by Acronis's own API shape (see `plugin::acronis` module docs
-//! for the full reasoning) -- flagged here explicitly, not silently copied
+//! for the full reasoning), flagged here explicitly, not silently copied
 //! from the brief this plugin was built from:
 //!
 //! 1. `sync_acronis_connection` loops ONLY over tenants that are already
@@ -25,31 +25,32 @@
 //!    connection can see. Tactical RMM's/NinjaOne's/Snipe-IT's single
 //!    "list every client/agent, then group" call is cheap and connection-
 //!    wide; Acronis's resources endpoint is REQUIRED to be tenant-scoped
-//!    (`tenant_id` query parameter, see `plugin::acronis` module docs) --
-//!    there is no verified "all tenants at once" variant to call instead.
-//!    An unmapped tenant therefore shows no resources at all until it is
-//!    mapped (unlike Tactical RMM, which shows an unmapped client's agents
-//!    too, just without a `customer_id`). `list_acronis_tenants` remains
-//!    available (mirroring `list_tacticalrmm_clients`) so the mapping UI
-//!    still has a live candidate list to map FROM.
+//!    (`tenant_id` query parameter, see `plugin::acronis` module docs),
+//!    and there is no verified "all tenants at once" variant to call
+//!    instead. An unmapped tenant therefore shows no resources at all
+//!    until it is mapped (unlike Tactical RMM, which shows an unmapped
+//!    client's agents too, just without a `customer_id`).
+//!    `list_acronis_tenants` remains available (mirroring
+//!    `list_tacticalrmm_clients`) so the mapping UI still has a live
+//!    candidate list to map FROM.
 //! 2. `link_system_to_acronis`/`get_acronis_system_details` need a
 //!    `tenant_id` parameter that `link_system_to_tacticalrmm`/
 //!    `get_tacticalrmm_system_details` don't need. Acronis has no verified
-//!    single-resource detail endpoint -- only the tenant-wide, UNFILTERED
+//!    single-resource detail endpoint, only the tenant-wide, UNFILTERED
 //!    `resource_management/v4/resource_statuses` (see `plugin::acronis`
-//!    module docs) -- so `Plugin::get_system_details`
+//!    module docs), so `Plugin::get_system_details`
 //!    (`(credentials, external_id)`, no tenant parameter) can't be the
 //!    real implementation here (`plugin::acronis::AcronisPlugin`'s trait
 //!    impl deliberately reports that gap instead of guessing at an
 //!    unconfirmed endpoint). This module therefore calls the plugin's
 //!    inherent `get_resource_statuses(credentials, tenant_id)` method
 //!    directly wherever a payload is needed, using tenant context it
-//!    already has (from the tenant mapping being synced/linked, or -- for
-//!    `get_acronis_system_details` -- passed in from the frontend, which
+//!    already has: from the tenant mapping being synced/linked, or, for
+//!    `get_acronis_system_details`, passed in from the frontend, which
 //!    already knows which mapped tenant's resource list the device being
-//!    inspected belongs to). The resulting payload is the WHOLE tenant's
+//!    inspected belongs to. The resulting payload is the WHOLE tenant's
 //!    raw `resource_statuses` response (an array covering every resource
-//!    in that tenant, not just one) -- `AcronisPluginSection.tsx` finds its
+//!    in that tenant, not just one); `AcronisPluginSection.tsx` finds its
 //!    own resource's entry inside `data.items` client-side by matching
 //!    `external_id`, exactly the same "raw JSON, caller interprets it"
 //!    contract every other plugin section here already follows for its
@@ -82,7 +83,7 @@ pub struct AcronisTenantDto {
     /// `None` as long as this tenant hasn't been mapped to a local customer
     /// yet (`Config::acronis_tenant_mappings` has no matching row for this
     /// connection+tenant). Only `kind == "customer"` tenants ever appear
-    /// here -- `plugin::acronis::AcronisPlugin::list_tenants` already
+    /// here: `plugin::acronis::AcronisPlugin::list_tenants` already
     /// filters that (see its own doc comment).
     pub mapped_customer_id: Option<i64>,
 }
@@ -94,7 +95,7 @@ pub struct AcronisResourceDto {
     /// Acronis Alert Manager `severity`, passed through verbatim
     /// (`"ok"`/`"information"`/`"warning"`/`"error"`/`"critical"`), or
     /// `None` if this resource has no alert-manager entry at all (never
-    /// backed up / not protected) -- see `plugin::acronis` module docs.
+    /// backed up / not protected); see `plugin::acronis` module docs.
     pub backup_status: Option<String>,
     /// `Some(id)` if any local system is already linked to this external ID
     /// for this connection (an `external_refs` row with matching
@@ -106,7 +107,7 @@ pub struct AcronisResourceDto {
 pub struct AcronisTenantResourceGroupDto {
     pub tenant_id: String,
     pub tenant_name: String,
-    /// `None` if this tenant isn't mapped to a local customer (yet) --
+    /// `None` if this tenant isn't mapped to a local customer (yet); this
     /// can't actually happen for a group produced by
     /// `sync_acronis_connection` (which only ever loops over mapped
     /// tenants, see module docs), but `get_cached_acronis_sync` still
@@ -119,7 +120,7 @@ pub struct AcronisTenantResourceGroupDto {
 /// Snapshot of the last `sync_acronis_connection` run, cached under
 /// `data_dir/plugin-cache/acronis-<connection_id>.json` (see
 /// `write_acronis_cache`/`read_acronis_cache`), so `get_cached_acronis_sync`
-/// works without network access -- exactly the same pattern as
+/// works without network access, exactly the same pattern as
 /// `commands::tacticalrmm::CachedTacticalRmmSyncDto`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CachedAcronisSyncDto {
@@ -135,7 +136,7 @@ fn to_dto(meta: &AcronisConnectionMeta) -> AcronisConnectionDto {
     }
 }
 
-/// The fully qualified `plugin_id` value for an Acronis connection -- both
+/// The fully qualified `plugin_id` value for an Acronis connection: both
 /// the keyring account and `external_refs.plugin_id`.
 fn plugin_id_for(connection_id: &str) -> String {
     format!("acronis:{connection_id}")
@@ -191,7 +192,7 @@ fn find_connection(
 /// Builds the runnable plugin object from a connection metadata row, plus
 /// the associated credentials (client ID/secret) from the keyring. Unlike
 /// Tactical RMM's single secret string, Acronis needs the two-value JSON
-/// `AcronisCredentials` -- but that decoding happens inside
+/// `AcronisCredentials`, but that decoding happens inside
 /// `plugin::acronis` itself (`parse_credentials`), so this function, like
 /// `commands::intune::build_plugin`, just passes the raw stored JSON string
 /// straight through as `PluginCredentials.secret`.
@@ -223,7 +224,7 @@ fn delete_keyring_secret_best_effort(plugin_id: &str) -> Result<(), keyring::Err
 }
 
 /// The same `data_dir/plugin-cache/` directory as every other plugin's
-/// commands module -- one shared folder, just a different filename prefix.
+/// commands module: one shared folder, just a different filename prefix.
 fn plugin_cache_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("plugin-cache")
 }
@@ -253,7 +254,7 @@ fn write_acronis_cache(
 }
 
 /// Reads back a snapshot previously written via `write_acronis_cache`.
-/// `Ok(None)` if this connection has never been synced -- not an error
+/// `Ok(None)` if this connection has never been synced, not an error
 /// case, analogous to `commands::tacticalrmm::read_tacticalrmm_cache`.
 fn read_acronis_cache(
     data_dir: &Path,
@@ -371,7 +372,7 @@ pub fn remove_acronis_connection(state: State<AppState>, id: String) -> Result<(
 
 /// Live fetch of a connection's customer-kind tenant list. Analogous to
 /// `commands::tacticalrmm::list_tacticalrmm_clients`, kept for the mapping
-/// UI's candidate list -- unlike Tactical RMM, this IS load-bearing here
+/// UI's candidate list. Unlike Tactical RMM, this IS load-bearing here
 /// (not just symmetry): `sync_acronis_connection` only ever loops over
 /// already-mapped tenants (see module docs), so this live call is the only
 /// way the mapping UI can discover which tenants exist to map FROM in the
@@ -441,7 +442,7 @@ pub fn unmap_acronis_tenant(
     tenant_id: String,
 ) -> Result<(), AppError> {
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
-    // Not an error if no matching mapping exists -- the result (no mapping
+    // Not an error if no matching mapping exists: the result (no mapping
     // left) is the same, analogous to `db::external_refs::delete`. Existing
     // `external_refs` links are left untouched: unmapping a tenant is
     // deliberately not an automatic unlinking of its already-linked
@@ -479,7 +480,7 @@ pub fn sync_acronis_connection(
     let plugin_id = plugin.id().to_string();
 
     // Reverse index external-id -> local system_id, built ONCE from ALL
-    // external_refs of this plugin -- exactly the pattern
+    // external_refs of this plugin, exactly the pattern
     // `commands::tacticalrmm::sync_tacticalrmm_connection` uses: a resource
     // stays "linked" in the UI even if its tenant mapping was corrected to
     // a different customer AFTER the link was made.
@@ -490,7 +491,7 @@ pub fn sync_acronis_connection(
             .collect();
 
     // Loops ONLY over already-mapped tenants, NOT every tenant the
-    // connection can see -- see module docs on why (the resources API is
+    // connection can see: see module docs on why (the resources API is
     // required to be tenant-scoped, unlike Tactical RMM's/NinjaOne's
     // connection-wide agent/device list).
     let mut result = Vec::with_capacity(mappings.len());
@@ -502,9 +503,9 @@ pub fn sync_acronis_connection(
         )?;
 
         // The tenant-wide, unfiltered resource_statuses payload is fetched
-        // AT MOST ONCE per tenant per sync run, lazily -- only if this
+        // AT MOST ONCE per tenant per sync run, lazily, only if this
         // tenant actually has a linked resource that needs its cached
-        // payload refreshed -- not once per resource (see module docs:
+        // payload refreshed, not once per resource (see module docs:
         // there is no per-resource endpoint, so every linked resource of
         // this tenant shares the exact same raw payload).
         let mut tenant_details: Option<serde_json::Value> = None;
@@ -562,7 +563,7 @@ pub fn get_cached_acronis_sync(
     let mut cached = read_acronis_cache(&data_dir, &connection_id)?;
     // `customer_id` per group is re-resolved here against the CURRENT
     // tenant mappings instead of using the value frozen into the cache
-    // file during the last `sync_acronis_connection` run -- otherwise
+    // file during the last `sync_acronis_connection` run, otherwise
     // mapping or unmapping a tenant would only become visible after the
     // next live sync, even though this exact command is meant to show the
     // frontend the current mapping state without network access (analogous
@@ -628,7 +629,7 @@ pub fn unlink_system_from_acronis(
 }
 
 /// Returns the mapped tenant's WHOLE raw `resource_statuses` payload (see
-/// module docs) -- unlike every other plugin's `get_*_system_details`,
+/// module docs). Unlike every other plugin's `get_*_system_details`,
 /// this is NOT scoped down to one resource server-side (no verified
 /// endpoint exists to do that); `AcronisPluginSection.tsx` finds its own
 /// resource's entry inside the returned `items` array client-side by

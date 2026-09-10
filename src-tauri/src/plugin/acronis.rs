@@ -2,15 +2,15 @@
 //! cyber-protection platform, developer.acronis.com), see
 //! `docs/PLUGIN_ARCHITECTURE.md` section "Acronis-Plugin". Ninth real
 //! integration after NinjaOne, Level.io, Snipe-IT, Microsoft Intune, Iru
-//! (Kandji), Jamf Pro, Apple Business Manager, and Tactical RMM -- and
+//! (Kandji), Jamf Pro, Apple Business Manager, and Tactical RMM, and
 //! DIFFERENT IN KIND from all eight of those: every prior integration
 //! surfaces device/asset inventory (an RMM's or MDM's list of managed
-//! machines). Acronis Cyber Protect Cloud is not an RMM/MDM -- it is a
+//! machines). Acronis Cyber Protect Cloud is not an RMM/MDM; it is a
 //! backup platform, and this plugin's whole job is to surface BACKUP
 //! HEALTH per customer/device (is backup currently OK, warning, or
-//! failing right now), never device inventory management. Concretely:
+//! failing right now), never device inventory management. Concretely,
 //! `AcronisResource.backup_status` (an Alert Manager `severity` value, see
-//! below) is the entire payload this plugin adds beyond bare identity --
+//! below) is the entire payload this plugin adds beyond bare identity;
 //! there is no "install agent"/"run script"/inventory-management concept
 //! here at all.
 //!
@@ -18,66 +18,65 @@
 //! the exact same connection/mapping/sync/link pattern as every other
 //! plugin here: like Tactical RMM/NinjaOne/Snipe-IT/Jamf, a connection
 //! (one Acronis "API client") can see MULTIPLE tenants ("customers" in
-//! Acronis's own tenant hierarchy) -- so the same connection+mapping-table
+//! Acronis's own tenant hierarchy), so the same connection+mapping-table
 //! pattern applies (`AcronisConnectionMeta`/`AcronisTenantMapping`,
 //! mapping granularity at the tenant-of-kind-"customer" level, see below).
-//! Authentication is OAuth2 client-credentials, like NinjaOne/Intune --
-//! plus one extra discovery step unique to this plugin (see below).
+//! Authentication is OAuth2 client-credentials, like NinjaOne/Intune, plus
+//! one extra discovery step unique to this plugin (see below).
 //!
 //! Every fact below is taken verbatim from the verified research this
 //! plugin was built from (developer.acronis.com's own docs plus three
-//! live-fetched OpenAPI specs) -- not guessed:
+//! live-fetched OpenAPI specs), not guessed:
 //!
 //! - **Authentication**: OAuth2 client-credentials grant, `POST
 //!   {datacenter_url}/api/2/idp/token`, header `Authorization: Basic
 //!   base64(client_id:client_secret)`, form body
 //!   `grant_type=client_credentials`. Response `{"access_token", "token_type":
-//!   "bearer", "expires_on", ...}` -- used as `Authorization: Bearer
+//!   "bearer", "expires_on", ...}`, used as `Authorization: Bearer
 //!   <access_token>` on every subsequent call. Like every other plugin here,
 //!   the token is fetched fresh per real operation, never cached/refreshed
 //!   across calls (this app calls plugin methods rarely/manually, not in a
-//!   hot loop -- same reasoning as `plugin::ninja`/`plugin::intune`).
+//!   hot loop, the same reasoning as `plugin::ninja`/`plugin::intune`).
 //! - **`datacenter_url` is entirely user-supplied**: registering an API
 //!   client in Acronis's management console (done once, out-of-band, by
 //!   the user, before configuring this plugin) hands back THREE values at
 //!   once: `client_id`, `client_secret`, AND a `datacenter_url` (e.g.
-//!   `https://eu2-cloud.acronis.com`) -- no fixed/enumerable list of
+//!   `https://eu2-cloud.acronis.com`). No fixed/enumerable list of
 //!   datacenters exists in the docs, so, like Tactical RMM's `base_url`,
 //!   the user must type it in. This makes it a genuine THREE-value
-//!   credential, unlike every other plugin here so far -- but
+//!   credential, unlike every other plugin here so far, but
 //!   `datacenter_url` is NOT itself a secret (it is shown openly in
 //!   Acronis's own UI, just like a base URL), so per the credential
 //!   principle (`docs/PLUGIN_ARCHITECTURE.md`, "Credential-Prinzip") it
 //!   lives in `AcronisConnectionMeta.datacenter_url` (`config.toml`), NOT
-//!   in the keyring secret -- exactly the same non-secret-metadata-in-
-//!   config principle already used for `base_url` on Tactical RMM/
-//!   NinjaOne/Snipe-IT/Iru/Jamf. `AcronisCredentials` therefore stays a
-//!   clean two-value JSON (`client_id`, `client_secret`), just like
+//!   in the keyring secret, exactly the same non-secret-metadata-in-config
+//!   principle already used for `base_url` on Tactical RMM/NinjaOne/
+//!   Snipe-IT/Iru/Jamf. `AcronisCredentials` therefore stays a clean
+//!   two-value JSON (`client_id`, `client_secret`), just like
 //!   `plugin::ninja::NinjaCredentials`.
 //! - **Base URL**: `{datacenter_url}/api/2` for every endpoint below.
 //! - **Extra discovery step, unique to this plugin**: after obtaining a
 //!   bearer token, `GET {datacenter_url}/api/2/clients/{client_id}`
 //!   (Bearer auth) returns `{"tenant_id": "<uuid>", "type": "api_client",
-//!   ...}` -- the API client's own ROOT tenant, the anchor `/tenants`
-//!   needs to walk the full accessible tenant tree in one call (see
-//!   below). Done once per real operation (`test_credentials`,
-//!   `list_tenants`, one per mapped tenant inside a
-//!   `sync_acronis_connection` run) -- like the token itself, not cached
-//!   across calls.
+//!   ...}`, the API client's own ROOT tenant, the anchor `/tenants` needs
+//!   to walk the full accessible tenant tree in one call (see below). Done
+//!   once per real operation (`test_credentials`, `list_tenants`, one per
+//!   mapped tenant inside a `sync_acronis_connection` run), like the token
+//!   itself, not cached across calls.
 //! - **Tenants (the mapping entity)**: `GET {base}/tenants`, query params
 //!   `subtree_root_id=<the discovered root tenant id>`, `lod=full`, cursor
 //!   `after`. Response envelope (NOT a bare array, unlike Tactical RMM's
 //!   `/clients/`): `{"timestamp", "paging": {"cursors": {"after": "..."}},
 //!   "items": [{"id", "parent_id", "name", "kind"}]}`. `kind` is one of
-//!   `root | partner | folder | customer | unit` -- ONLY `kind ==
+//!   `root | partner | folder | customer | unit`; ONLY `kind ==
 //!   "customer"` tenants are valid mapping targets (organizational
-//!   containers otherwise, not real customer accounts) -- mirrors how
+//!   containers otherwise, not real customer accounts), mirroring how
 //!   Tactical RMM's Client level (not Site) is the mapping granularity,
 //!   just gated on a `kind` field instead of a hierarchy level. `map_tenant`
 //!   (single item, unfiltered) and `filter_customer_tenants` (the `kind ==
 //!   "customer"` filter) are deliberately separate, independently
-//!   pure/testable functions -- see their own doc comments.
-//! - **Backup status per device -- a genuine scope decision, not a
+//!   pure/testable functions; see their own doc comments.
+//! - **Backup status per device, a genuine scope decision, not a
 //!   guess**: the docs don't offer one single obvious "is backup OK"
 //!   field, and two separate APIs are involved:
 //!   1. **Resource identity**: `GET {base}/resource_management/v4/resources`,
@@ -85,56 +84,56 @@
 //!      `before`/`after`. Response `{"items": [{"id", "name", "agent_id",
 //!      "external_id", "type"}], "paging": {"cursors": {...}}}`. This
 //!      plugin uses `id` as `AcronisResource::external_id` and `name` as
-//!      the display name -- NOT the resource's own, confusingly-named
+//!      the display name, NOT the resource's own, confusingly-named
 //!      `external_id` field (a different, Acronis-internal concept, not
 //!      this app's identity join key) and NOT `agent_id` (Acronis's own
 //!      agent concept, irrelevant here).
 //!   2. **Backup health**: `GET {base}/alert_manager/v1/resource_status`,
 //!      query param `tenant=<the SAME mapped tenant's id>` (note the
-//!      differently-named query parameter -- `tenant`, not `tenant_id` --
+//!      differently-named query parameter, `tenant`, not `tenant_id`,
 //!      a genuine, easy-to-miss inconsistency in Acronis's own API,
 //!      preserved here exactly as verified). Response: `{"items": [{"id":
 //!      "<resourceId>", "severity": "ok|information|warning|error|critical",
-//!      "alert": {...}}]}` -- THIS is the "is backup currently fine"
+//!      "alert": {...}}]}`. THIS is the "is backup currently fine"
 //!      answer for this plugin. `join_resources_with_severity` joins on
 //!      `id` (Acronis's resource ID, the same value as #1's `id`) against
 //!      `AcronisResource::external_id`, copying `severity` into
 //!      `AcronisResource::backup_status` verbatim (free-form string
-//!      passthrough, like Tactical RMM's `status`/`platform` -- no Rust
+//!      passthrough, like Tactical RMM's `status`/`platform`, no Rust
 //!      enum, so a future new severity value doesn't break parsing). A
-//!      resource with NO matching alert-manager entry (never backed up /
-//!      not protected at all) gets `backup_status: None` -- a legitimate,
+//!      resource with NO matching alert-manager entry (never backed up,
+//!      or not protected at all) gets `backup_status: None`, a legitimate,
 //!      expected case, not an error.
 //!   3. **Deliberately NOT attempted**: filtering
 //!      `resource_management/v4/resource_statuses`'s `policies[]` array by
-//!      a specific backup-policy-type CTI string -- that string was never
+//!      a specific backup-policy-type CTI string. That string was never
 //!      confirmed against real docs/specs, and guessing it wrong would
 //!      silently show meaningless data to the user (worse than showing
 //!      nothing). For a richer per-resource payload, this plugin instead
 //!      calls `GET {base}/resource_management/v4/resource_statuses?tenant_id=<id>`
 //!      UNFILTERED and passes the raw JSON straight through (see
-//!      `get_resource_statuses` below) -- same "raw, free-form JSON,
+//!      `get_resource_statuses` below), the same "raw, free-form JSON,
 //!      caller/UI interprets it" contract every other plugin here uses for
 //!      `Plugin::get_system_details`.
 //! - **A genuine mismatch this plugin had to design around**: Acronis has
-//!   NO verified single-resource detail endpoint -- `resource_statuses` is
-//!   always TENANT-scoped, never resource-scoped -- but the `Plugin`
+//!   NO verified single-resource detail endpoint. `resource_statuses` is
+//!   always TENANT-scoped, never resource-scoped, but the `Plugin`
 //!   trait's `get_system_details(&self, credentials, external_id)` method
 //!   has no room for a tenant parameter. Rather than guess at an
 //!   unconfirmed single-resource endpoint, `Plugin::get_system_details` for
 //!   `AcronisPlugin` deliberately returns `PluginError::UnexpectedResponse`
-//!   explaining exactly this -- an honest gap, analogous to Tactical RMM's
+//!   explaining exactly this, an honest gap, analogous to Tactical RMM's
 //!   missing web-dashboard link or Snipe-IT's always-`None` `hostname`/
 //!   `ip_address` (see their own module docs), not a guess dressed up as a
 //!   feature. The real, richer payload is available via the inherent
 //!   method `get_resource_statuses(&self, credentials, tenant_id)`
-//!   instead, which DOES take a tenant ID -- `commands::acronis` calls
+//!   instead, which DOES take a tenant ID: `commands::acronis` calls
 //!   this directly (never the trait method) for
 //!   `sync_acronis_connection`/`link_system_to_acronis`/
 //!   `get_acronis_system_details`, all of which already carry tenant
 //!   context from the tenant mapping they operate on. This is the one
 //!   genuine, deliberate deviation from every other plugin here (where the
-//!   trait method IS the real implementation) -- flagged here explicitly,
+//!   trait method IS the real implementation), flagged here explicitly,
 //!   see also `docs/PLUGIN_ARCHITECTURE.md`. `Plugin::list_systems` has the
 //!   same underlying problem (no verified "all tenants at once" resources
 //!   endpoint, and no tenant parameter on the trait method) and is
@@ -144,22 +143,22 @@
 //!   tenant.
 //! - **Pagination**: cursor-based, `paging.cursors.after` in the response,
 //!   passed back as the query param `after` for the next page; an
-//!   absent/empty `after` means no more pages -- same shape for
+//!   absent/empty `after` means no more pages. Same shape for
 //!   `/tenants`, `/resource_management/v4/resources`, and
 //!   `/alert_manager/v1/resource_status` (consulted per-response via
 //!   `parse_paged_items`, not assumed as one hardcoded global constant, in
 //!   case a future Acronis release changes one endpoint's envelope without
 //!   the others).
-//! - **Rate limits**: not documented anywhere reachable -- noted here, no
+//! - **Rate limits**: not documented anywhere reachable. Noted here, no
 //!   special handling (no backoff/retry), same honest gap as every other
 //!   plugin's rate-limit situation in this codebase.
-//! - **No web dashboard deep-link**: not documented -- left out, same
-//!   honest omission as `plugin::tacticalrmm`.
+//! - **No web dashboard deep-link**: not documented, so it is left out,
+//!   same honest omission as `plugin::tacticalrmm`.
 //! - **HTTP client**: `ureq` 3.4.1, synchronous, the same dependency as
 //!   every other plugin here.
 //! - **Credential encoding**: two secret values (`client_id`,
-//!   `client_secret`) -- `datacenter_url` deliberately excluded (see
-//!   above) -- JSON-encoded exactly like `plugin::ninja::NinjaCredentials`.
+//!   `client_secret`); `datacenter_url` deliberately excluded (see
+//!   above), JSON-encoded exactly like `plugin::ninja::NinjaCredentials`.
 
 use base64::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -178,10 +177,10 @@ const MAX_PAGES: usize = 50;
 /// Non-secret metadata of an Acronis connection, as stored in
 /// `config.toml` (`Config::acronis_connections`). The OAuth2 client
 /// ID/secret belong, per the credential principle, exclusively in the OS
-/// keyring, never here -- but `datacenter_url` deliberately lives here,
+/// keyring, never here, but `datacenter_url` deliberately lives here,
 /// NOT in the keyring secret (see module docs: it is not itself sensitive,
 /// exactly like Tactical RMM's `base_url`). Deliberately WITHOUT
-/// `customer_id` -- a connection is one Acronis API client, not a local
+/// `customer_id`: a connection is one Acronis API client, not a local
 /// customer; which tenant within it corresponds to which local customer is
 /// tracked granularly in `AcronisTenantMapping`/
 /// `Config::acronis_tenant_mappings`, exactly the same principle as
@@ -195,7 +194,7 @@ pub struct AcronisConnectionMeta {
 
 /// Mapping of a single Acronis tenant (`kind == "customer"`, within a
 /// connection) to a local customer. Lives in
-/// `Config::acronis_tenant_mappings`, not in `AcronisConnectionMeta` -- a
+/// `Config::acronis_tenant_mappings`, not in `AcronisConnectionMeta`: a
 /// connection can see multiple customer tenants, each mapped independently
 /// (or left unmapped), exactly analogous to
 /// `plugin::tacticalrmm::TacticalRmmClientMapping`. `tenant_id` is
@@ -211,7 +210,7 @@ pub struct AcronisTenantMapping {
 }
 
 /// A single tenant from `GET /tenants`, kept as its own small type
-/// (separate from `ExternalSystem`, which is for resources/devices) --
+/// (separate from `ExternalSystem`, which is for resources/devices).
 /// `kind` is deliberately kept as a field (not filtered away at this
 /// level) so the command layer/frontend can apply the `kind == "customer"`
 /// mapping-candidate filter explicitly (see `filter_customer_tenants`),
@@ -225,11 +224,11 @@ pub struct AcronisTenant {
 
 /// A single backup-monitored resource (device), the result of joining
 /// `GET /resource_management/v4/resources` (identity) with
-/// `GET /alert_manager/v1/resource_status` (backup health) -- see module
+/// `GET /alert_manager/v1/resource_status` (backup health); see module
 /// docs on why both calls are needed. `backup_status` is Acronis's own
 /// Alert Manager `severity` string
 /// (`"ok"`/`"information"`/`"warning"`/`"error"`/`"critical"`), passed
-/// through verbatim -- `None` if no alert-manager entry exists for this
+/// through verbatim. `None` if no alert-manager entry exists for this
 /// resource at all (e.g. never backed up / not protected), which is a
 /// legitimate case, not an error.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -243,10 +242,10 @@ pub struct AcronisResource {
 
 /// The two secret values an Acronis connection needs to authenticate.
 /// `PluginCredentials.secret` is, per the trait contract, a single opaque
-/// string that the plugin interprets itself -- here encoded as JSON
+/// string that the plugin interprets itself, here encoded as JSON
 /// (`serde_json::to_string`/`from_str`), analogous to
 /// `plugin::ninja::NinjaCredentials`. Deliberately WITHOUT
-/// `datacenter_url` -- see module docs and `AcronisConnectionMeta`.
+/// `datacenter_url`; see module docs and `AcronisConnectionMeta`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcronisCredentials {
     pub client_id: String,
@@ -279,7 +278,7 @@ impl AcronisPlugin {
     }
 
     /// Live fetch of this connection's tenants, narrowed to `kind ==
-    /// "customer"` (see module docs) -- the mapping UI's candidate list.
+    /// "customer"` (see module docs): the mapping UI's candidate list.
     /// Resolves the root tenant id (the `/clients/{client_id}` discovery
     /// call) first, then walks every page of `/tenants` under it.
     pub fn list_tenants(
@@ -323,10 +322,10 @@ impl AcronisPlugin {
     }
 
     /// Live fetch of the UNFILTERED, tenant-wide
-    /// `resource_management/v4/resource_statuses` payload -- see module
+    /// `resource_management/v4/resource_statuses` payload; see module
     /// docs on why this is tenant-scoped, not resource-scoped, and why
     /// `Plugin::get_system_details` can't be the real implementation for
-    /// this plugin. Raw JSON, passed straight through -- same "caller/UI
+    /// this plugin. Raw JSON, passed straight through, the same "caller/UI
     /// interprets it" contract every other plugin's `get_system_details`
     /// uses.
     pub fn get_resource_statuses(
@@ -347,7 +346,7 @@ impl AcronisPlugin {
 
 /// Checks a datacenter URL/client ID/client secret triple against Acronis
 /// (OAuth2 client-credentials grant, plus the `/clients/{client_id}`
-/// discovery call -- this alone is a meaningful connectivity+credential
+/// discovery call; this alone is a meaningful connectivity+credential
 /// test, no extra call needed), without persisting anything. For
 /// `commands::acronis::test_acronis_connection`, so users notice a typo
 /// before actually creating a connection (writing credentials to the
@@ -376,11 +375,11 @@ impl Plugin for AcronisPlugin {
         &self,
         _credentials: &PluginCredentials,
     ) -> Result<Vec<ExternalSystem>, PluginError> {
-        // Deliberately empty -- see module docs: Acronis's resources
+        // Deliberately empty, see module docs: Acronis's resources
         // endpoint is documented as always tenant-scoped (no verified
         // "all tenants at once" variant exists), and this trait method has
         // no tenant parameter to scope by. `commands::acronis` never calls
-        // this -- it always uses the tenant-scoped
+        // this; it always uses the tenant-scoped
         // `list_resources_with_status` inherent method instead, once per
         // mapped tenant (see `commands::acronis::sync_acronis_connection`).
         Ok(Vec::new())
@@ -392,7 +391,7 @@ impl Plugin for AcronisPlugin {
         _external_id: &str,
     ) -> Result<serde_json::Value, PluginError> {
         // See module docs: Acronis has no verified single-resource detail
-        // endpoint, only a tenant-scoped one -- and this trait method has
+        // endpoint, only a tenant-scoped one, and this trait method has
         // no tenant parameter. An honest gap, not a guess.
         // `commands::acronis` never calls this trait method; it calls the
         // inherent `get_resource_statuses(credentials, tenant_id)` method
@@ -404,8 +403,8 @@ impl Plugin for AcronisPlugin {
     }
 
     fn link_system(&self, local_system_id: i64, external_id: &str) -> Result<(), PluginError> {
-        // Acronis's API doesn't need to know anything about a local link --
-        // purely a local bookkeeping concept, see trait documentation.
+        // Acronis's API doesn't need to know anything about a local link;
+        // it is purely a local bookkeeping concept, see trait documentation.
         // Persisted by the caller via `db::external_refs::upsert`.
         println!("AcronisPlugin({}): verknüpfe lokales System {local_system_id} mit externer ID {external_id}", self.id);
         Ok(())
@@ -445,7 +444,7 @@ fn fetch_access_token(
     Ok(token.access_token)
 }
 
-/// `GET {datacenter_url}/api/2/clients/{client_id}` (see module docs) --
+/// `GET {datacenter_url}/api/2/clients/{client_id}` (see module docs),
 /// the extra discovery step unique to this plugin, resolving the API
 /// client's own root tenant id.
 fn fetch_root_tenant_id(
@@ -467,7 +466,7 @@ fn fetch_root_tenant_id(
     Ok(info.tenant_id)
 }
 
-/// A single, non-paginated authenticated `GET {url}` -- used for
+/// A single, non-paginated authenticated `GET {url}`, used for
 /// `get_resource_statuses`, which passes its response straight through as
 /// raw JSON (no merging across pages, unlike `fetch_all_pages` below).
 fn fetch_json(
@@ -556,7 +555,7 @@ fn fetch_all_resources(
     fetch_all_pages(agent, &url, token, &[("tenant_id", tenant_id)])
 }
 
-/// Note the query parameter here is `tenant`, NOT `tenant_id` -- a
+/// Note the query parameter here is `tenant`, NOT `tenant_id`, a
 /// verified, genuine inconsistency in Acronis's own API (see module docs).
 fn fetch_all_severities(
     agent: &Agent,
@@ -588,7 +587,7 @@ fn map_ureq_error(e: ureq::Error) -> PluginError {
 
 /// Extracts the `items` array and the `paging.cursors.after` continuation
 /// cursor from one page of Acronis's cursor-paginated response envelope
-/// (`{"items": [...], "paging": {"cursors": {"after": "..."}}}`) -- the
+/// (`{"items": [...], "paging": {"cursors": {"after": "..."}}}`), the
 /// SAME envelope shape verified for `/tenants`,
 /// `/resource_management/v4/resources`, and
 /// `/alert_manager/v1/resource_status` (see module docs). An absent or
@@ -609,9 +608,9 @@ fn parse_paged_items(
 
 /// A single tenant object from `GET /tenants`'s `items` array
 /// (`{"id", "parent_id", "name", "kind"}`, see module docs). Deliberately
-/// UNFILTERED by `kind` -- see `filter_customer_tenants` for that, kept as
+/// UNFILTERED by `kind`; see `filter_customer_tenants` for that, kept as
 /// its own, separately testable step. A tenant without a usable `id` or
-/// `kind` is skipped -- without a `kind` the customer filter downstream
+/// `kind` is skipped: without a `kind` the customer filter downstream
 /// couldn't meaningfully classify it anyway, and a single broken tenant
 /// object shouldn't make the whole list unusable, analogous to
 /// `plugin::ninja::map_organization`'s "skip without id" rule.
@@ -622,7 +621,7 @@ fn map_tenant(value: &serde_json::Value) -> Option<AcronisTenant> {
     Some(AcronisTenant { id, name, kind })
 }
 
-/// Narrows a tenant list down to `kind == "customer"` -- the only valid
+/// Narrows a tenant list down to `kind == "customer"`, the only valid
 /// mapping targets (see module docs: `root`/`partner`/`folder`/`unit` are
 /// organizational containers, not real customer accounts). Deliberately a
 /// separate, pure function from `map_tenant` so both the raw mapping and
@@ -639,8 +638,8 @@ fn filter_customer_tenants(tenants: &[AcronisTenant]) -> Vec<AcronisTenant> {
 /// `GET /resource_management/v4/resources`'s `items` array (`{"id",
 /// "name", "agent_id", "external_id", "type"}`, see module docs). `id`
 /// becomes `AcronisResource::external_id` (NOT the resource's own,
-/// confusingly-named `external_id` field, and NOT `agent_id` -- see module
-/// docs on why). `backup_status` always starts `None` here -- filled in
+/// confusingly-named `external_id` field, and NOT `agent_id`; see module
+/// docs on why). `backup_status` always starts `None` here, filled in
 /// later by `join_resources_with_severity`. A resource without a usable
 /// `id` is skipped, same "don't fail the whole call over one broken
 /// entry" convention as every other plugin's mapping function here.
@@ -684,7 +683,7 @@ fn map_severities_response(items: &[serde_json::Value]) -> HashMap<String, Strin
 /// Acronis's resource `id`, see `map_resource`) against the alert-manager
 /// severity lookup (`map_severities_response`), setting
 /// `AcronisResource::backup_status`. A resource with NO matching entry
-/// (never backed up / not protected) keeps `backup_status: None` -- a
+/// (never backed up / not protected) keeps `backup_status: None`, a
 /// legitimate, expected case, not an error. Pure function, given thorough
 /// test coverage below (matching id, no matching alert entry, empty alert
 /// list) per the brief this plugin was built from.
@@ -779,7 +778,7 @@ mod tests {
             "type": "machine"
         });
         let resource = map_resource(&value, "tenant-1", "Acme Corp").unwrap();
-        // The resource's own "id" becomes external_id -- NOT its own
+        // The resource's own "id" becomes external_id, NOT its own
         // "external_id" field, see module docs.
         assert_eq!(resource.external_id, "res-1");
         assert_eq!(resource.name, "SRV-01");

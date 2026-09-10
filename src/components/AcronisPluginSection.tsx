@@ -8,10 +8,10 @@ import { getKeymap, matchesBinding } from "../lib/keymap";
 import Modal from "./Modal";
 
 // Acronis Cyber Protect Cloud (backup / cyber-protection platform,
-// developer.acronis.com) plugin settings screen -- ninth integration after
+// developer.acronis.com) plugin settings screen, ninth integration after
 // NinjaOne, Level.io, Snipe-IT, Microsoft Intune, Iru (Kandji), Jamf Pro,
 // Apple Business Manager, and Tactical RMM (TacticalRmmPluginSection.tsx,
-// the structural template for this file) -- and DIFFERENT IN KIND from
+// the structural template for this file), and DIFFERENT IN KIND from
 // every one of those: Acronis is not an RMM/MDM, it surfaces BACKUP
 // HEALTH per device, never device inventory management. See
 // docs/PLUGIN_ARCHITECTURE.md "Acronis-Plugin" and plugin::acronis's own
@@ -27,7 +27,7 @@ import Modal from "./Modal";
 //    section's client/organization/company list. `sync_acronis_connection`
 //    only ever fetches resources for tenants that are ALREADY mapped (the
 //    resources API is tenant-scoped by design, see plugin::acronis module
-//    docs) -- so there is no cached record of an UNMAPPED tenant to show.
+//    docs), so there is no cached record of an UNMAPPED tenant to show.
 //    Opening a connection's overlay therefore fires a live
 //    `list_acronis_tenants` call every time (in addition to the usual
 //    cache-first `get_cached_acronis_sync`), purely to populate the
@@ -41,12 +41,12 @@ import Modal from "./Modal";
 //    single-resource detail endpoint, only a tenant-wide, UNFILTERED
 //    `resource_statuses` payload (`get_acronis_system_details` returns
 //    the WHOLE mapped tenant's raw response, see commands::acronis module
-//    docs) -- and no field names inside it (beyond the already-used
+//    docs), and no field names inside it (beyond the already-used
 //    `id`/`name`/`severity`) were ever confirmed against real docs. Rather
 //    than guess at unverified field names for a compare/adopt table, the
 //    details panel below just shows this resource's own raw JSON entry
 //    (found by matching `id` against `device.external_id` inside the
-//    returned `items` array) -- read-only, same "caller/UI interprets it"
+//    returned `items` array), read-only, same "caller/UI interprets it"
 //    contract the backend already documents.
 //
 // A Kunde-mapping select's option list, backup-status badge colors,
@@ -55,7 +55,7 @@ import Modal from "./Modal";
 // conventions as TacticalRmmPluginSection.tsx/SnipeitPluginSection.tsx.
 // Acronis resources have no hostname/ip_address/platform field at all
 // (see plugin::acronis module docs: this plugin's only per-resource
-// payload beyond identity is `backup_status`) -- so, unlike every RMM/MDM
+// payload beyond identity is `backup_status`), so, unlike every RMM/MDM
 // section here, the "link to existing system" match heuristic below
 // compares `device.name` against the local System's own `name`, not
 // `hostname` (there is no hostname to compare).
@@ -75,11 +75,11 @@ interface AcronisTenantDto {
 interface AcronisResourceDto {
   external_id: string;
   name: string;
-  // Acronis Alert Manager "severity", passed through verbatim -- kept as a
+  // Acronis Alert Manager "severity", passed through verbatim, kept as a
   // free string here too (not a union type), so an unrecognized future
   // value still renders instead of failing a type check. `null` means "no
   // alert-manager entry for this resource at all" (never backed up / not
-  // protected), not an error -- see plugin::acronis module docs.
+  // protected), not an error; see plugin::acronis module docs.
   backup_status: string | null;
   linked_system_id: number | null;
 }
@@ -102,7 +102,7 @@ interface Customer {
   short_code: string;
 }
 
-// Mirrors SystemForm.tsx's local System shape exactly -- needed here both
+// Mirrors SystemForm.tsx's local System shape exactly, needed here both
 // to render the "existing system" picker and to build the
 // update_system/create_system input objects the same way SystemForm.tsx
 // does, analogous to every other plugin section.
@@ -123,7 +123,7 @@ const CREATE_NEW_CUSTOMER_VALUE = "__create_new__";
 // German labels + colors for Acronis's own free-form Alert Manager
 // "severity" strings (see module docs on why they're not a Rust/TS enum).
 // "ok"/"information" both read as "backup is fine" per the brief this
-// plugin was built from; "warning" gets its own color -- no --warning CSS
+// plugin was built from; "warning" gets its own color: no --warning CSS
 // custom property exists in theme.css (checked: only
 // --success/--danger/--text-muted are defined), so a literal amber is used
 // here, the same way TacticalRmmPluginSection.tsx's STATUS_COLORS uses
@@ -154,7 +154,7 @@ function localTimeZone(): string {
 }
 
 // Resources come back from the Acronis API in whatever order the API
-// returns them in -- sort alphabetically by name (German collation) for
+// returns them in, so sort alphabetically by name (German collation) for
 // display, independent of the text filter, analogous to
 // TacticalRmmPluginSection.tsx's sortByName.
 function sortByName<T extends { name: string }>(items: T[]): T[] {
@@ -276,8 +276,8 @@ function DeviceSummaryLine({ device }: { device: AcronisResourceDto }) {
   );
 }
 
-// Acronis resources have no hostname field at all (see module docs) -- the
-// suggested match key for "Mit bestehendem System verknüpfen" is therefore
+// Acronis resources have no hostname field at all (see module docs), so
+// the suggested match key for "Mit bestehendem System verknüpfen" is
 // the resource's own display name, compared against a local System's own
 // `name` field (unlike every RMM/MDM section here, which compares against
 // `hostname`).
@@ -287,7 +287,7 @@ function matchKeyForDevice(device: AcronisResourceDto): string {
 
 // Finds this resource's own entry inside a get_acronis_system_details
 // payload (`{"items": [...]}`, the WHOLE mapped tenant's raw
-// resource_statuses response -- see module docs on why this can't be
+// resource_statuses response; see module docs on why this can't be
 // scoped down to one resource server-side). `null` if the payload has no
 // usable `items` array, or no entry with a matching `id`.
 function findOwnResourceEntry(data: Record<string, unknown>, externalId: string): Record<string, unknown> | null {
@@ -307,7 +307,7 @@ export default function AcronisPluginSection() {
 
   const [pendingCustomerCreationGroupKey, setPendingCustomerCreationGroupKey] = useState<string | null>(null);
 
-  // Add-connection modal -- four fields, unlike every other plugin section
+  // Add-connection modal: four fields, unlike every other plugin section
   // here: Label, Datacenter-URL, Client ID, AND Client Secret (see module
   // docs: a genuine three-value credential, Datacenter-URL itself
   // non-secret).
@@ -325,8 +325,8 @@ export default function AcronisPluginSection() {
   const [openConnectionId, setOpenConnectionId] = useState<string | null>(null);
 
   // Live tenant list per connection (see module docs: NOT cache-first,
-  // unlike every other plugin section's client/organization/company list)
-  // -- the source of truth for the Kunde-mapping <select>s below.
+  // unlike every other plugin section's client/organization/company list),
+  // the source of truth for the Kunde-mapping <select>s below.
   const [tenantsByConnection, setTenantsByConnection] = useState<Record<string, AcronisTenantDto[] | null>>({});
   const [tenantsLoaded, setTenantsLoaded] = useState<Record<string, boolean>>({});
   const [tenantsBusy, setTenantsBusy] = useState<Record<string, boolean>>({});
@@ -335,7 +335,7 @@ export default function AcronisPluginSection() {
   const [tenantMapBusy, setTenantMapBusy] = useState<Record<string, boolean>>({});
   const [tenantMapError, setTenantMapError] = useState<Record<string, string | null>>({});
 
-  // Cached (offline) resource sync per connection -- only ever contains
+  // Cached (offline) resource sync per connection, only ever containing
   // groups for tenants that were mapped AT THE TIME of the last sync (see
   // module docs).
   const [cachedSyncByConnection, setCachedSyncByConnection] = useState<Record<string, CachedAcronisSyncDto | null>>({});
@@ -351,7 +351,7 @@ export default function AcronisPluginSection() {
 
   const [deviceFilter, setDeviceFilter] = useState<Record<string, string>>({});
 
-  // Which tenants are expanded -- collapsed by default, keyed by
+  // Which tenants are expanded, collapsed by default, keyed by
   // `${connectionId}:${tenantId}`, same convention as
   // TacticalRmmPluginSection.tsx's client groups.
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set());
@@ -377,7 +377,7 @@ export default function AcronisPluginSection() {
   const [detailsBusy, setDetailsBusy] = useState<Record<string, boolean>>({});
   const [detailsError, setDetailsError] = useState<Record<string, string | null>>({});
   // The found own-resource entry (or null if not present in the returned
-  // payload) -- NOT the raw compare-table data TacticalRmmPluginSection.tsx
+  // payload), NOT the raw compare-table data TacticalRmmPluginSection.tsx
   // keeps, see module docs on why there's no field-level compare/adopt
   // table here.
   const [detailsData, setDetailsData] = useState<Record<string, Record<string, unknown> | null>>({});
@@ -616,7 +616,7 @@ export default function AcronisPluginSection() {
         void refreshLocalSystems(customerId);
       }
       // Optimistic local update so the select reflects the new mapping
-      // immediately -- this IS the authoritative state here (see module
+      // immediately; this IS the authoritative state here (see module
       // docs), no cache re-read needed for the mapping status itself.
       setTenantsByConnection((prev) => {
         const current = prev[connection.id];
@@ -681,7 +681,7 @@ export default function AcronisPluginSection() {
     setCreateLinkBusy((prev) => ({ ...prev, [key]: true }));
     setDeviceError((prev) => ({ ...prev, [key]: null }));
     try {
-      // A local System has no backup-status field of its own -- rather
+      // A local System has no backup-status field of its own, so rather
       // than silently losing that Acronis-native context on creation, the
       // status at creation time is seeded into "Notizen" once, up front,
       // the same "one-time default, never an automatic overwrite later"
@@ -755,10 +755,10 @@ export default function AcronisPluginSection() {
   }
 
   // Combines a tenant's filtered "unlinked" and "linked" devices into one
-  // flat, keyboard-navigable list -- shared by renderDeviceGroup (for
+  // flat, keyboard-navigable list, shared by renderDeviceGroup (for
   // rendering) and the global keydown handler below, analogous to
   // TacticalRmmPluginSection.tsx's computeGroupDevices. Devices come from
-  // the CACHED sync group for this tenant (if any) -- see module docs on
+  // the CACHED sync group for this tenant (if any); see module docs on
   // why an unsynced/unmapped tenant simply has none.
   function computeGroupDevices(connectionId: string, tenant: AcronisTenantDto, cachedGroup: AcronisTenantResourceGroupDto | undefined) {
     const groupKey = `${connectionId}:${tenant.id}`;
@@ -779,7 +779,7 @@ export default function AcronisPluginSection() {
   }
 
   // Global j/k (+ ArrowDown/ArrowUp) / Enter / l / u handling for the
-  // currently keyboard-active tenant's device list -- same
+  // currently keyboard-active tenant's device list, the same
   // isTypingTarget-gated pattern as TacticalRmmPluginSection.tsx.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {

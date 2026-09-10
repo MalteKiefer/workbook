@@ -234,9 +234,9 @@ pub struct Config {
     /// Non-secret metadata per configured Acronis Cyber Protect Cloud
     /// connection (one Acronis API client; a user can create as many
     /// connections as they like). Like Ninja/Snipe-IT/Tactical RMM, an
-    /// Acronis connection is NOT bound to exactly one local customer --
+    /// Acronis connection is NOT bound to exactly one local customer;
     /// see `acronis_tenant_mappings`. `datacenter_url` deliberately lives
-    /// here, non-secret, like Tactical RMM's `base_url` -- see
+    /// here, non-secret, like Tactical RMM's `base_url`; see
     /// `plugin::acronis` module docs. The associated OAuth2 client
     /// ID/secret live exclusively in the OS keyring, see
     /// `plugin::secrets`. `#[serde(default)]`-compatible with configs from
@@ -244,10 +244,10 @@ pub struct Config {
     pub acronis_connections: Vec<AcronisConnectionMeta>,
     /// Mapping of individual Acronis tenants (`kind == "customer"`, within
     /// a connection) to local customers. A single Acronis API client (one
-    /// connection) can see multiple customer tenants -- e.g. because the
+    /// connection) can see multiple customer tenants, e.g. because the
     /// user is themselves an MSP running several of their own customers as
-    /// separate Acronis tenants -- hence this separate, granular mapping
-    /// table instead of a `customer_id` field directly on the connection --
+    /// separate Acronis tenants, hence this separate, granular mapping
+    /// table instead of a `customer_id` field directly on the connection,
     /// exactly the same principle as `tacticalrmm_client_mappings`.
     /// `#[serde(default)]`-compatible with configs from before this
     /// change.

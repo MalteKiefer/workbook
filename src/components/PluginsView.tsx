@@ -25,7 +25,7 @@ import TacticalRmmPluginSection from "./TacticalRmmPluginSection";
 // docs/PLUGIN_ARCHITECTURE.md "Apple-Business-Manager-Plugin"),
 // TacticalRmmPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
 // "Tactical-RMM-Plugin"), and AcronisPluginSection.tsx (backup-status, NOT
-// device management -- see docs/PLUGIN_ARCHITECTURE.md "Acronis-Plugin").
+// device management; see docs/PLUGIN_ARCHITECTURE.md "Acronis-Plugin").
 export default function PluginsView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
