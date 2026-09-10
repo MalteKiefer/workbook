@@ -8,6 +8,7 @@ import IruPluginSection from "./IruPluginSection";
 import JamfPluginSection from "./JamfPluginSection";
 import KaseyaPluginSection from "./KaseyaPluginSection";
 import LevelPluginSection from "./LevelPluginSection";
+import NetcupPluginSection from "./NetcupPluginSection";
 import NinjaPluginSection from "./NinjaPluginSection";
 import PulsewayPluginSection from "./PulsewayPluginSection";
 import SnipeitPluginSection from "./SnipeitPluginSection";
@@ -36,8 +37,12 @@ import TacticalRmmPluginSection from "./TacticalRmmPluginSection";
 // (Kaseya VSA, see docs/PLUGIN_ARCHITECTURE.md "Kaseya-VSA-Plugin"),
 // Action1PluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Action1-Plugin"),
 // DattoRmmPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
-// "Datto-RMM-Plugin"), and AcronisPluginSection.tsx (backup-status, NOT
-// device management; see docs/PLUGIN_ARCHITECTURE.md "Acronis-Plugin").
+// "Datto-RMM-Plugin"), AcronisPluginSection.tsx (backup-status, NOT
+// device management; see docs/PLUGIN_ARCHITECTURE.md "Acronis-Plugin"),
+// and NetcupPluginSection.tsx (server inventory, see
+// docs/PLUGIN_ARCHITECTURE.md "netcup-Plugin") -- its heading
+// "netcup-Verbindungen" sorts between "Level-Verbindungen" and
+// "Ninja-Verbindungen" (the letter "e" precedes "i"), NOT after Ninja.
 export default function PluginsView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
@@ -52,6 +57,7 @@ export default function PluginsView() {
       <JamfPluginSection />
       <KaseyaPluginSection />
       <LevelPluginSection />
+      <NetcupPluginSection />
       <NinjaPluginSection />
       <PulsewayPluginSection />
       <SnipeitPluginSection />
