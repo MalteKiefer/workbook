@@ -1,6 +1,6 @@
 # Plugin-Architektur
 
-Status: Fünfzehn echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Fünfzehn echte Integrationen umgesetzt: NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
@@ -12,14 +12,14 @@ Kaseya VSA (`plugin::kaseya`, `commands::kaseya`), Action1
 (`plugin::action1`, `commands::action1`), Datto RMM
 (`plugin::dattormm`, `commands::dattormm`), Acronis Cyber Protect Cloud
 (`plugin::acronis`, `commands::acronis`) und Vultr (`plugin::vultr`,
-`commands::vultr`) --, alle mit Mehrfach-Verbindungs-Unterstützung. Acronis
+`commands::vultr`), alle mit Mehrfach-Verbindungs-Unterstützung. Acronis
 ist dabei anders als die übrigen: kein RMM/MDM-Gerätebestand, sondern
 Sicherungsstatus pro Gerät (siehe eigener Abschnitt unten). Vultr ist
 ebenfalls anders: kein RMM/MDM-Gerätebestand und kein Sicherungsstatus,
 sondern reiner Server-Bestand (Cloud-VPS-Instanzen, siehe eigener Abschnitt
-unten) -- die einfachste Plugin-Art in dieser Codebasis. `DummyPlugin`
+unten), die einfachste Plugin-Art in dieser Codebasis. `DummyPlugin`
 bleibt als Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf
-im Sinne einer Command Palette -- die Kommandos sind aber vollständig
+im Sinne einer Command Palette, die Kommandos sind aber vollständig
 Ende-zu-Ende von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne
 Hülle um
 `NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AteraPluginSection.tsx`/`PulsewayPluginSection.tsx`/`KaseyaPluginSection.tsx`/`Action1PluginSection.tsx`/`DattoRmmPluginSection.tsx`/`AcronisPluginSection.tsx`/`VultrPluginSection.tsx`).
@@ -2941,99 +2941,100 @@ dieser Antwort, rein lesbar, statt Feldnamen zu erraten, die nie
 verifiziert wurden. `PluginsView.tsx` bindet die Sektion alphabetisch
 vor `Action1PluginSection.tsx` und weit vor `IntunePluginSection.tsx` ein.
 
-## Vultr-Plugin (`plugin::vultr`) -- fünfzehnte echte Integration
+## Vultr-Plugin (`plugin::vultr`): fünfzehnte echte Integration
 
 `plugin/vultr.rs` implementiert `Plugin` für Vultrs öffentliche REST-API v2
-über HTTPS (`https://api.vultr.com/v2`, feste Konstante -- kein
-selbst-gehostetes/regionsabhängiges Host-Muster wie bei Tactical RMM/
+über HTTPS (`https://api.vultr.com/v2`, feste Konstante, kein
+selbstgehostetes, regionsabhängiges Host-Muster wie bei Tactical RMM oder
 NinjaOne). Fakten unten verifiziert gegen Vultrs echten, offiziellen
 Go-SDK-Quellcode (`govultr`, <https://github.com/vultr/govultr>) und
 <https://www.vultr.com/api/> (die interaktive API-Referenz auf
-docs.vultr.com). Anders als jede RMM-/MDM-Integration hier: Vultr ist reiner
-Server-Bestand (Cloud-VPS-Instanzen eines Kunden), keine Geräteverwaltungs-
-Telemetrie -- kein Gruppen-/Site-/Organisationskonzept aufzulösen (anders
-als Levels Gruppen), und kein Sicherungsstatus-Konzept wie bei Acronis. Die
-einfachste Plugin-Art in dieser Codebasis.
+docs.vultr.com). Anders als jede RMM- oder MDM-Integration hier: Vultr ist
+reiner Server-Bestand (Cloud-VPS-Instanzen eines Kunden), keine
+Geräteverwaltungs-Telemetrie, also kein Gruppen-, Site- oder
+Organisationskonzept aufzulösen (anders als Levels Gruppen), und kein
+Sicherungsstatus-Konzept wie bei Acronis. Die einfachste Plugin-Art in
+dieser Codebasis.
 
 - **Authentifizierung**: statischer API-Key im `Authorization`-Header, MIT
-  `Bearer`-Präfix (anders als Level.ios Header ohne Präfix) --
+  `Bearer`-Präfix (anders als Level.ios Header ohne Präfix):
   `Authorization: Bearer <api-key>`. Wird im Kundenportal unter Account >
-  API erzeugt (erfordert vorher "Enable API") -- ein einmaliger,
+  API erzeugt (erfordert vorher "Enable API"), ein einmaliger,
   außerhalb dieser App liegender Einrichtungsschritt, den der Nutzer selbst
   durchführt, genau wie bei jedem anderen API-Key-Plugin hier.
 - **Fester Host, kein `base_url`**: Vultrs API-Host ist immer
-  `api.vultr.com` -- wie `plugin::level::BASE_URL`/
+  `api.vultr.com`, wie `plugin::level::BASE_URL` und
   `plugin::intune::GRAPH_BASE_URL` eine Konstante statt eines
   konfigurierbaren `base_url`-Felds auf `VultrConnectionMeta`.
 - **1:1 an einen Kunden gebunden**: bestätigt für das, was dieses Plugin
-  braucht -- ein Vultr-API-Key sieht ausschließlich die Instanzen genau
-  eines Accounts ("List all instances on your account"). Vultr hat zwar ein
+  braucht: ein Vultr-API-Key sieht ausschließlich die Instanzen genau eines
+  Accounts ("List all instances on your account"). Vultr hat zwar ein
   echtes "Sub-Accounts"-Feature, aber jeder Unter-Account ist ein
-  vollständig unabhängiger Vultr-Nutzer mit EIGENEM, separatem API-Key --
-  ein MSP mit mehreren Vultr-Unter-Accounts braucht also eine Verbindung
-  (einen API-Key) pro Unter-Account, exakt dasselbe Muster wie Level.ios/
-  Intunes "eine Verbindung = ein Kunde", KEINE
+  vollständig unabhängiger Vultr-Nutzer mit einem EIGENEN, separaten
+  API-Key. Ein MSP mit mehreren Vultr-Unter-Accounts braucht also eine
+  Verbindung (einen API-Key) pro Unter-Account, exakt dasselbe Muster wie
+  Level.ios und Intunes "eine Verbindung = ein Kunde", KEINE
   Eltern-Account-sieht-alle-Kinder-Zuordnungstabelle wie NinjaOnes
   `NinjaOrgMapping`. `VultrConnectionMeta` trägt deshalb `customer_id`
-  direkt, wie `LevelConnectionMeta`/`IntuneConnectionMeta`.
+  direkt, wie `LevelConnectionMeta` und `IntuneConnectionMeta`.
 - **Instanzen**: `GET {BASE_URL}/instances` -> `{"instances": [...], "meta":
-  {...}}`. Verifizierte Pro-Instanz-Felder: `id` (String, eine UUID -- direkt
+  {...}}`. Verifizierte Pro-Instanz-Felder: `id` (String, eine UUID, direkt
   als `external_id` verwendet), `label` (String, nutzergesetzter
-  Anzeigename) und `hostname` (eigenes Feld) -- `label` gewinnt, wenn
-  nicht-leer, sonst `hostname`, sonst die externe ID, dasselbe
-  "menschlichen Namen bevorzugen, auf Rohkennung zurückfallen"-Muster, das
-  mehrere Plugins hier bereits verwenden (siehe `map_instance`), `main_ip`
-  (String, IPv4 -- die primäre `ip_address`), `v6_main_ip` (String, IPv6 --
-  ein LEERER STRING, nicht `null`, wenn IPv6 für diese Instanz deaktiviert
-  ist; wird genauso wie fehlend behandelt, nie als `Some("")` gespeichert,
-  siehe `non_empty_str`), `plan` (String, die Instanzgröße/-ausstattung --
-  als `platform`-äquivalenter Anzeigestring verwendet, wie Datto RMMs
-  `deviceClass`), `region` (String, z. B. `"ewr"` -- rein informativ).
-- **`status` vs. `power_status`**: ein echtes Instanzobjekt hat SOWOHL ein
-  `status`-Feld (übergeordneter Lebenszyklus-Zustand, z. B.
-  `"active"`/`"pending"`) ALS AUCH ein separates `power_status`-Feld
-  (Ein-/Aus-Zustand) -- zwei unterschiedliche Felder, verifiziert in der
-  echten SDK-Struktur. Dieses Plugin stellt bewusst `power_status` als
-  `VultrInstance::status` dar (statt Vultrs eigenem `status`-Feld): es ist
-  das unmittelbar handlungsrelevantere "läuft sie gerade"-Signal, das einen
-  IT-Administrator auf den ersten Blick interessiert, während der
-  Lebenszyklus-`status` hauptsächlich während Provisionierung/Löschung eine
-  Rolle spielt -- ein deutlich kleinerer Ausschnitt der tatsächlichen
+  Anzeigename) und `hostname` (eigenes Feld): `label` gewinnt, wenn nicht
+  leer, sonst `hostname`, sonst die externe ID, dasselbe Muster "menschlichen
+  Namen bevorzugen, auf Rohkennung zurückfallen", das mehrere Plugins hier
+  bereits verwenden (siehe `map_instance`); `main_ip` (String, IPv4, die
+  primäre `ip_address`); `v6_main_ip` (String, IPv6, ein LEERER STRING,
+  nicht `null`, wenn IPv6 für diese Instanz deaktiviert ist; wird genauso
+  wie fehlend behandelt, nie als `Some("")` gespeichert, siehe
+  `non_empty_str`); `plan` (String, die Größe beziehungsweise Ausstattung der
+  Instanz, als `platform`-äquivalenter Anzeigestring verwendet, wie Datto
+  RMMs `deviceClass`); `region` (String, z. B. `"ewr"`, rein informativ).
+- **`status` gegenüber `power_status`**: ein echtes Instanzobjekt hat SOWOHL
+  ein `status`-Feld (übergeordneter Lebenszyklus-Zustand, z. B. `"active"`
+  oder `"pending"`) ALS AUCH ein separates `power_status`-Feld (Ein- oder
+  Aus-Zustand), zwei unterschiedliche Felder, verifiziert in der echten
+  SDK-Struktur. Dieses Plugin stellt bewusst `power_status` als
+  `VultrInstance::status` dar (statt Vultrs eigenem `status`-Feld), weil das
+  unmittelbar handlungsrelevantere Signal ist, ob die Instanz gerade läuft,
+  was einen IT-Administrator auf den ersten Blick interessiert, während der
+  Lebenszyklus-`status` hauptsächlich während Provisionierung oder Löschung
+  eine Rolle spielt: ein deutlich kleinerer Ausschnitt der tatsächlichen
   Nutzung dieses Plugins.
 - **Pagination**: cursor-basiert. Query-Parameter `per_page` (Standard 100,
-  Maximum 500 -- dieses Plugin fragt immer das Maximum an, `PAGE_LIMIT =
+  Maximum 500; dieses Plugin fragt immer das Maximum an, `PAGE_LIMIT =
   500`, um Roundtrips zu minimieren) und `cursor`. Antwort-Umschlag:
   `{"instances": [...], "meta": {"total": <int>, "links": {"next": "<cursor
   oder leerer String>", "prev": "..."}}}`. Weitere Seiten existieren,
-  solange `meta.links.next` ein nicht-leerer String ist -- dieser String
-  wird zum `cursor`-Query-Parameter der nächsten Anfrage. `fetch_all_instances`
+  solange `meta.links.next` ein nicht leerer String ist; dieser String wird
+  zum `cursor`-Query-Parameter der nächsten Anfrage. `fetch_all_instances`
   durchläuft alle Seiten intern und liefert eine einzige, bereits
   zusammengefügte Liste. `fetch_all_instances_via` ist bewusst generisch
-  über die Seiten-Abruf-Funktion (statt einen echten HTTP-Aufruf
+  über die Seiten-Abruf-Funktion gehalten (statt einen echten HTTP-Aufruf
   fest zu verdrahten), sodass die Pagination-Zusammenführungslogik selbst
   als reine Funktion über vorab abgerufenen, hartkodierten JSON-Seiten
-  testbar ist, ohne echten Netzwerkzugriff -- exakt dasselbe Muster wie
-  `plugin::dattormm::fetch_all_pages`. Begrenzt auf `MAX_PAGES`, Schutz
+  testbar ist, ganz ohne echten Netzwerkzugriff, exakt dasselbe Muster wie
+  `plugin::dattormm::fetch_all_pages`. Begrenzt auf `MAX_PAGES`, zum Schutz
   gegen eine sich falsch verhaltende Gegenstelle.
 - **Einzelinstanz-Details**: `GET {BASE_URL}/instances/{id}` ->
   `{"instance": {...}}`, reicht die Antwort unverändert als
   `serde_json::Value` durch, exakt wie jedes andere Plugin hier.
-- **Rate-Limits**: dokumentiert -- 30 Anfragen/Sekunde pro Quell-IP, `429`
+- **Rate-Limits**: dokumentiert, 30 Anfragen pro Sekunde pro Quell-IP, `429`
   bei Überschreitung, keine dokumentierte `Retry-After`-Kopfzeile. Keine
-  spezielle Wiederholungs-/Backoff-Logik nötig -- das Nutzungsmuster dieser
-  App (manuelle/gelegentliche Synchronisationen) liegt bei Weitem unter
-  30 Anfragen/Sekunde, wie bei jedem anderen Plugin hier.
+  spezielle Wiederholungs- oder Backoff-Logik nötig: das Nutzungsmuster
+  dieser App (manuelle, gelegentliche Synchronisationen) liegt bei Weitem
+  unter 30 Anfragen pro Sekunde, wie bei jedem anderen Plugin hier.
 - **Kein Dashboard-Deep-Link**: NICHT verifizierbar gegen die aktuelle
-  v2-API -- das einzige konkrete Vultr-Instanz-URL-Muster, das in
+  v2-API: das einzige konkrete Vultr-Instanz-URL-Muster, das in
   öffentlichen Quellen gefunden wurde, verwendet eine veraltete
   v1-Zahlen-ID, nicht die v2-UUID `id`, die dieses Plugin tatsächlich hat.
-  Bewusst vollständig ausgelassen, dasselbe Ehrliche-Auslassung-Prinzip wie
-  Tactical RMMs fehlender Dashboard-Link.
+  Bewusst vollständig ausgelassen, dasselbe Prinzip der ehrlichen Auslassung
+  wie bei Tactical RMMs fehlendem Dashboard-Link.
 - **HTTP-Client**: dieselbe `ureq`-3.4.1-Abhängigkeit wie jedes andere
   Plugin hier.
 - **Zugangsdaten-Kodierung**: Vultr braucht nur einen einzigen Geheimwert
-  (den API-Key), der 1:1 als `PluginCredentials.secret` durchgereicht wird --
-  keine JSON-Kodierung nötig, genau wie bei `plugin::level`.
+  (den API-Key), der 1:1 als `PluginCredentials.secret` durchgereicht wird,
+  ganz ohne JSON-Kodierung, genau wie bei `plugin::level`.
 
 ### Vultr-Verbindungen sind 1:1 an einen Kunden gebunden
 
@@ -3046,10 +3047,10 @@ einfachste Plugin-Art in dieser Codebasis.
   (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
   demselben Muster wie bei Level.io/Intune.
 - Weil jede Verbindung genau eine `customer_id` trägt, braucht
-  `sync_vultr_connection` keine Fallunterscheidung "zugeordnet/
-  unzugeordnet" -- jede synchronisierte Instanz gehört automatisch zum
-  Kunden der Verbindung, `linked_system_id` wird für jede Instanz direkt
-  gegen die `external_refs`-Zeilen dieses Kunden geprüft.
+  `sync_vultr_connection` keine Fallunterscheidung zwischen "zugeordnet"
+  und "unzugeordnet": jede synchronisierte Instanz gehört automatisch zum
+  Kunden der Verbindung, und `linked_system_id` wird für jede Instanz
+  direkt gegen die `external_refs`-Zeilen dieses Kunden geprüft.
 
 ### Zwischenspeicher für Offline-Ansicht
 
@@ -3067,16 +3068,16 @@ diese Cache-Datei (bestes Bemühen).
 `test_vultr_connection`, `list_vultr_connections`, `add_vultr_connection`,
 `remove_vultr_connection`, `sync_vultr_connection`, `get_cached_vultr_sync`,
 `link_system_to_vultr`, `unlink_system_from_vultr`,
-`get_vultr_system_details` -- dünne Wrapper nach demselben Muster wie
+`get_vultr_system_details`: dünne Wrapper nach demselben Muster wie
 `commands::level`, ohne Organisations-Zuordnungskommandos (kein
-Vultr-Äquivalent zu `map_ninja_organization`/`unmap_ninja_organization`
-nötig, siehe oben).
+Vultr-Äquivalent zu `map_ninja_organization` oder
+`unmap_ninja_organization` nötig, siehe oben).
 
 `test_vultr_connection` prüft einen API-Key per leichtgewichtigem Aufruf
 (eine Seite mit `per_page=1`), ohne irgendetwas zu persistieren. Das
 Übernehmen eines extern gelieferten Werts in ein selbst gepflegtes Feld
-(`name`, `hostname`, `ip_address`, `notes` in `systems`) bleibt dabei --
-wie bei jedem anderen Plugin hier -- ausschließlich eine bewusste, manuelle
+(`name`, `hostname`, `ip_address`, `notes` in `systems`) bleibt dabei, wie
+bei jedem anderen Plugin hier, ausschließlich eine bewusste, manuelle
 Aktion über `get_vultr_system_details` plus eine spätere UI-Aktion; kein
 Kommando hier schreibt automatisch in diese vier Felder.
 
@@ -3085,7 +3086,7 @@ Kommando hier schreibt automatisch in diese vier Felder.
 Wie bei jedem anderen Plugin hier ist das Einbinden in
 `list_unlinked_external_systems_for_customer_pure`
 (`commands::external_directory`) ein PFLICHTSCHRITT, kein optionales
-Verdrahten -- genau der Fehler, der kürzlich für sechs andere Plugins
+Verdrahten: genau der Fehler, der kürzlich für sechs andere Plugins
 behoben wurde (siehe der Modul-Doc-Kommentar dort), wäre sonst für Vultr von
 Anfang an reproduziert worden. `collect_vultr` folgt exakt demselben Muster
 wie `collect_level`/`collect_intune` (keine Mandanten-Zuordnungstabelle,
@@ -3102,12 +3103,12 @@ Tastaturnavigation, die "Alle anlegen (N)"-Sammel-Anlegen-Schaltfläche
 (geschlüsselt direkt über `connection.id`, wie bei jedem
 1:1-Kunde-Plugin). Der Verbindungs-Anlage-Dialog hat wie
 `LevelPluginSection.tsx`s nur ein Kunde-Auswahlfeld plus ein einzelnes
-API-Schlüssel-Feld (`type="password"`) -- kein Base-URL-Feld (siehe oben).
-`InstanceSummaryLine` zeigt Plan/Region/Status(power_status)/IP-Adresse
-zusätzlich zum Namen an. Die Vergleichen/Übernehmen-Tabelle für verknüpfte
-Instanzen bleibt bei den drei üblichen Feldern (Name/Hostname/IP-Adresse);
-zusätzliche Vultr-Felder (Plan, Region, Status, IPv6-Adresse) werden im
-Details-Panel rein informativ angezeigt, nicht übernehmbar, analog zu
-Intunes Compliance-/Betriebssystem-Feldern. `PluginsView.tsx` bindet die
-Sektion alphabetisch nach `TacticalRmmPluginSection.tsx` ein (letzte
-Position, "V" kommt zuletzt).
+API-Schlüssel-Feld (`type="password"`), aber kein Base-URL-Feld (siehe
+oben). `InstanceSummaryLine` zeigt Plan/Region/Status(power_status)/
+IP-Adresse zusätzlich zum Namen an. Die Vergleichen/Übernehmen-Tabelle für
+verknüpfte Instanzen bleibt bei den drei üblichen Feldern
+(Name/Hostname/IP-Adresse); zusätzliche Vultr-Felder (Plan, Region, Status,
+IPv6-Adresse) werden im Details-Panel rein informativ angezeigt, nicht
+übernehmbar, analog zu Intunes Compliance- und Betriebssystem-Feldern.
+`PluginsView.tsx` bindet die Sektion alphabetisch nach
+`TacticalRmmPluginSection.tsx` ein (letzte Position, "V" kommt zuletzt).
