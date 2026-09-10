@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import MarkdownEditor, { type MarkdownEditorHandle } from "../components/MarkdownEditor";
 import { formatInvokeError } from "../lib/errors";
-import { formatShortcut } from "../lib/platform";
+import { getKeymap, matchesBinding, formatBindingForDisplay } from "../lib/keymap";
 
 interface Customer {
   id: number;
@@ -518,7 +518,7 @@ export default function QuickCapture() {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      if (matchesBinding(e, getKeymap().save)) {
         e.preventDefault();
         void save();
       } else if (e.key === "Escape") {
@@ -755,7 +755,7 @@ export default function QuickCapture() {
           Verwerfen (Esc)
         </button>
         <button type="button" className="btn-primary" onClick={() => void save()}>
-          Speichern ({formatShortcut("S")})
+          Speichern ({formatBindingForDisplay(getKeymap().save)})
         </button>
       </div>
     </main>

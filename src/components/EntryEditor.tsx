@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
 import { formatInvokeError } from "../lib/errors";
+import { getKeymap, matchesBinding } from "../lib/keymap";
 import Modal from "./Modal";
 import MarkdownEditor, { type MarkdownEditorHandle } from "./MarkdownEditor";
 import AttachmentDropzone, { type PickedFile } from "./AttachmentDropzone";
@@ -615,7 +616,7 @@ export default function EntryEditor() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (editorTarget === null) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      if (matchesBinding(e, getKeymap().save)) {
         e.preventDefault();
         void save();
       }
