@@ -80,6 +80,7 @@ pub mod dummy;
 pub mod intune;
 pub mod iru;
 pub mod jamf;
+pub mod kaseya;
 pub mod level;
 pub mod ninja;
 pub mod secrets;

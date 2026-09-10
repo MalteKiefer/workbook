@@ -8,6 +8,7 @@ pub mod external_directory;
 pub mod intune;
 pub mod iru;
 pub mod jamf;
+pub mod kaseya;
 pub mod keymap;
 pub mod level;
 pub mod plugins;
