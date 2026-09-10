@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
@@ -23,6 +24,12 @@ interface Customer {
   name: string;
 }
 
+// Kept in sync with src-tauri/src/commands/systems.rs::BulkArchiveSummary.
+interface BulkArchiveSummary {
+  archived: number;
+  errors: string[];
+}
+
 export default function SystemListView() {
   const selectedCustomerId = useAppStore((s) => s.selectedCustomerId);
   const goToCustomers = useAppStore((s) => s.goToCustomers);
@@ -37,6 +44,10 @@ export default function SystemListView() {
   const [importBusy, setImportBusy] = useState(false);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkArchiveBusy, setBulkArchiveBusy] = useState(false);
+  const [bulkArchiveErrors, setBulkArchiveErrors] = useState<string[] | null>(null);
 
   const reload = useCallback(() => {
     if (selectedCustomerId === null) return;
@@ -95,6 +106,40 @@ export default function SystemListView() {
     reload();
   }
 
+  function toggleSelected(id: number, e: MouseEvent) {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll(e: MouseEvent) {
+    e.stopPropagation();
+    setSelectedIds((prev) =>
+      prev.size === systems.length && systems.length > 0 ? new Set() : new Set(systems.map((s) => s.id)),
+    );
+  }
+
+  async function handleBulkArchive() {
+    if (!window.confirm(`${selectedIds.size} Systeme wirklich archivieren?`)) return;
+    setBulkArchiveErrors(null);
+    setBulkArchiveBusy(true);
+    try {
+      const summary = await invoke<BulkArchiveSummary>("archive_systems", { ids: Array.from(selectedIds) });
+      setSelectedIds(new Set());
+      reload();
+      if (summary.errors.length > 0) setBulkArchiveErrors(summary.errors);
+    } finally {
+      setBulkArchiveBusy(false);
+    }
+  }
+
   async function handleImportCsv() {
     if (selectedCustomerId === null) return;
     setImportError(null);
@@ -135,7 +180,16 @@ export default function SystemListView() {
             Systeme von {customerName ?? `Kunde #${selectedCustomerId}`}
           </h1>
         </div>
-        <span style={{ display: "flex", gap: "0.4rem" }}>
+        <span style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.85rem" }}>
+            <input
+              type="checkbox"
+              checked={selectedIds.size === systems.length && systems.length > 0}
+              onClick={toggleSelectAll}
+              onChange={() => {}}
+            />
+            Alle auswählen
+          </label>
           <button disabled={importBusy} onClick={() => void handleImportCsv()}>
             CSV importieren…
           </button>
@@ -146,6 +200,51 @@ export default function SystemListView() {
       </div>
       {importError && <p style={{ color: "var(--danger)", fontSize: "0.82rem", marginBottom: "0.75rem" }}>Fehler: {importError}</p>}
       {importSummary && <ImportSummaryPanel summary={importSummary} onDismiss={() => setImportSummary(null)} />}
+      {selectedIds.size > 0 && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "0.5rem 0.6rem",
+            marginBottom: "0.75rem",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--bg-surface)",
+          }}
+        >
+          <span style={{ fontSize: "0.85rem" }}>{selectedIds.size} ausgewählt</span>
+          <button disabled={bulkArchiveBusy} onClick={() => void handleBulkArchive()}>
+            Archivieren
+          </button>
+        </div>
+      )}
+      {bulkArchiveErrors && bulkArchiveErrors.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.4rem",
+            padding: "0.75rem",
+            marginBottom: "0.75rem",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--bg-surface)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              <strong style={{ color: "var(--danger)" }}>{bulkArchiveErrors.length}</strong> Fehler beim Archivieren
+            </p>
+            <button onClick={() => setBulkArchiveErrors(null)}>Schließen</button>
+          </div>
+          <ul style={{ margin: 0, padding: "0 0 0 1.1rem", fontSize: "0.8rem", color: "var(--text-secondary)", maxHeight: "8rem", overflow: "auto" }}>
+            {bulkArchiveErrors.map((message, i) => (
+              <li key={i}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {systems.map((s, i) => (
           <li
@@ -159,7 +258,14 @@ export default function SystemListView() {
               alignItems: "center",
             }}
           >
-            <span>
+            <input
+              type="checkbox"
+              checked={selectedIds.has(s.id)}
+              onClick={(e) => toggleSelected(s.id, e)}
+              onChange={() => {}}
+              style={{ marginRight: "0.6rem" }}
+            />
+            <span style={{ flex: 1 }}>
               {s.name} <span style={{ color: "var(--text-muted)" }}>({s.system_type})</span>{" "}
               <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)", fontSize: "0.85em" }}>
                 {s.hostname}
