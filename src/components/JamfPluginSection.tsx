@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
 import { formatInvokeError } from "../lib/errors";
+import { getKeymap, matchesBinding } from "../lib/keymap";
 import Modal from "./Modal";
 
 // Jamf Pro (Apple device management) plugin settings screen — fourth
@@ -940,10 +941,11 @@ export default function JamfPluginSection() {
       if (pageItems.length === 0) return;
       const index = Math.min(selectedIndexByGroup[groupKey] ?? 0, pageItems.length - 1);
 
-      if (e.key === "j" || e.key === "ArrowDown") {
+      const keymap = getKeymap();
+      if (matchesBinding(e, keymap.list_next) || e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedIndexByGroup((prev) => ({ ...prev, [groupKey]: Math.min(index + 1, pageItems.length - 1) }));
-      } else if (e.key === "k" || e.key === "ArrowUp") {
+      } else if (matchesBinding(e, keymap.list_prev) || e.key === "ArrowUp") {
         e.preventDefault();
         setSelectedIndexByGroup((prev) => ({ ...prev, [groupKey]: Math.max(index - 1, 0) }));
       } else if (e.key === "Enter") {

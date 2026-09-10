@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
 import { formatInvokeError } from "../lib/errors";
+import { getKeymap, matchesBinding } from "../lib/keymap";
 import Modal from "./Modal";
 
 // Iru (Apple MDM, formerly "Kandji") plugin settings screen — fourth
@@ -547,10 +548,11 @@ export default function IruPluginSection() {
       if (pageItems.length === 0) return;
       const idx = Math.min(selectedIndexByConnection[connectionId] ?? 0, pageItems.length - 1);
 
-      if (e.key === "j" || e.key === "ArrowDown") {
+      const keymap = getKeymap();
+      if (matchesBinding(e, keymap.list_next) || e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedIndexByConnection((prev) => ({ ...prev, [connectionId]: Math.min(idx + 1, pageItems.length - 1) }));
-      } else if (e.key === "k" || e.key === "ArrowUp") {
+      } else if (matchesBinding(e, keymap.list_prev) || e.key === "ArrowUp") {
         e.preventDefault();
         setSelectedIndexByConnection((prev) => ({ ...prev, [connectionId]: Math.max(idx - 1, 0) }));
       } else if (e.key === "Enter") {

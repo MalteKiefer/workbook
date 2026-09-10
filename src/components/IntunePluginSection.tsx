@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
 import { formatInvokeError } from "../lib/errors";
+import { getKeymap, matchesBinding } from "../lib/keymap";
 import Modal from "./Modal";
 
 // Microsoft Intune plugin settings screen -- fourth RMM/asset management
@@ -564,10 +565,11 @@ export default function IntunePluginSection() {
       if (pageRows.length === 0) return;
       const idx = Math.min(selectedIndex[id] ?? 0, pageRows.length - 1);
 
-      if (e.key === "j" || e.key === "ArrowDown") {
+      const keymap = getKeymap();
+      if (matchesBinding(e, keymap.list_next) || e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedIndex((prev) => ({ ...prev, [id]: Math.min(idx + 1, pageRows.length - 1) }));
-      } else if (e.key === "k" || e.key === "ArrowUp") {
+      } else if (matchesBinding(e, keymap.list_prev) || e.key === "ArrowUp") {
         e.preventDefault();
         setSelectedIndex((prev) => ({ ...prev, [id]: Math.max(idx - 1, 0) }));
       } else if (e.key === "Enter") {
