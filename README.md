@@ -32,6 +32,7 @@ Wartungsdoku is an offline, keyboard first desktop application for a single IT a
   ```
 
   Some distributions name the AppIndicator package `libayatana-appindicator3-dev` instead of `libappindicator3-dev`. Tauri maintains the current, full list at <https://v2.tauri.app/start/prerequisites/>.
+* macOS: the Xcode Command Line Tools (`xcode-select --install`). CI builds and releases a native `aarch64-apple-darwin` (Apple Silicon) package; running on an Intel Mac would need a separate build with that target installed (`rustup target add x86_64-apple-darwin`) since no universal binary is built. The quick capture popup's automatic "which app was in front" context is Windows/Linux only (see `src-tauri/src/context_capture/unsupported.rs`) -- quick capture itself still works on macOS, just without that auto-filled context.
 
 ## Development
 
@@ -63,7 +64,7 @@ cargo test
 
 ## Releases
 
-Pushing a tag matching `v*` triggers a GitHub Actions workflow that builds installers for Linux and Windows and publishes them as a GitHub Release.
+Pushing a tag matching `v*` triggers a GitHub Actions workflow that builds installers for Linux, Windows, and macOS (Apple Silicon) and publishes them as a GitHub Release.
 
 ## License
 
