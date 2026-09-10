@@ -10,6 +10,7 @@
 //!   frontend surfaces explicitly rather than pretending it's live.
 
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_global_shortcut::Shortcut;
 
 use crate::config::{HotkeyConfig, KeymapConfig};
 use crate::{AppError, AppState};
@@ -54,10 +55,35 @@ pub fn get_hotkeys(state: State<AppState>) -> HotkeyConfig {
 
 #[tauri::command]
 pub fn set_hotkeys(state: State<AppState>, hotkeys: HotkeyConfig) -> Result<(), AppError> {
+    validate_hotkeys(&hotkeys)?;
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
     config.hotkeys = hotkeys;
     let config_path = config.data_dir.join("config.toml");
     config.save(&config_path)
+}
+
+/// Rejects a hotkey string tauri-plugin-global-shortcut cannot parse --
+/// reuses the same `Shortcut::parse` call `src-tauri/src/hotkeys.rs`'s real
+/// registration path uses, so a value that passes here is guaranteed
+/// registerable (modulo another application already holding the OS-level
+/// binding, which can only be discovered at registration time itself).
+fn validate_hotkeys(hotkeys: &HotkeyConfig) -> Result<(), AppError> {
+    let entries: [(&str, &str); 3] = [
+        ("Schnellerfassung öffnen", hotkeys.quick_capture.as_str()),
+        ("Fenster anzeigen / Suche", hotkeys.search.as_str()),
+        (
+            "Zwischenablage-Screenshot",
+            hotkeys.clipboard_screenshot.as_str(),
+        ),
+    ];
+    for (label, raw) in entries {
+        if raw.parse::<Shortcut>().is_err() {
+            return Err(AppError::Config(format!(
+                "\"{label}\": \"{raw}\" ist keine gültige Tastenkombination"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Rejects an empty binding, two actions sharing an identical binding
@@ -82,6 +108,25 @@ fn validate_keymap(keymap: &KeymapConfig) -> Result<(), AppError> {
         if binding.trim().is_empty() {
             return Err(AppError::Config(format!(
                 "\"{label}\" braucht eine Tastenkombination"
+            )));
+        }
+    }
+
+    for (label, binding) in [
+        ("Command Palette", keymap.command_palette.as_str()),
+        ("Schnellerfassung", keymap.quick_capture.as_str()),
+        ("Speichern", keymap.save.as_str()),
+    ] {
+        let has_modifier = binding
+            .split('+')
+            .take(binding.split('+').count().saturating_sub(1))
+            .any(|part| {
+                let lower = part.trim().to_ascii_lowercase();
+                lower == "ctrl" || lower == "cmd" || lower == "meta" || lower == "alt"
+            });
+        if !has_modifier {
+            return Err(AppError::Config(format!(
+                "\"{label}\" braucht mindestens eine Modifikatortaste (Strg/Cmd/Alt), sonst ist die zugewiesene Taste im ganzen Programm nicht mehr normal eingebbar"
             )));
         }
     }
@@ -115,6 +160,10 @@ mod tests {
 
     fn valid_keymap() -> KeymapConfig {
         KeymapConfig::default()
+    }
+
+    fn valid_hotkeys() -> HotkeyConfig {
+        HotkeyConfig::default()
     }
 
     #[test]
@@ -162,5 +211,42 @@ mod tests {
         keymap.goto_systems = "x s".to_string();
         keymap.goto_journal = "x j".to_string();
         assert!(validate_keymap(&keymap).is_ok());
+    }
+
+    #[test]
+    fn command_palette_without_a_modifier_is_rejected() {
+        let mut keymap = valid_keymap();
+        keymap.command_palette = "k".to_string();
+        let result = validate_keymap(&keymap);
+        assert!(matches!(result, Err(AppError::Config(_))));
+    }
+
+    #[test]
+    fn goto_customers_without_a_modifier_is_still_accepted() {
+        // The modifier requirement applies only to command_palette/quick_capture/save
+        // (always-live, unguarded-by-typing-target listeners) -- goto_* and the list-nav/
+        // edit-selected single-key bindings are intentionally bare letters by design.
+        let keymap = valid_keymap();
+        assert!(validate_keymap(&keymap).is_ok());
+    }
+
+    #[test]
+    fn valid_hotkeys_pass_validation() {
+        assert!(validate_hotkeys(&valid_hotkeys()).is_ok());
+    }
+
+    #[test]
+    fn unparseable_hotkey_is_rejected() {
+        let mut hotkeys = valid_hotkeys();
+        hotkeys.quick_capture = "Ctrl+Alt+ ".to_string();
+        let result = validate_hotkeys(&hotkeys);
+        assert!(matches!(result, Err(AppError::Config(_))));
+    }
+
+    #[test]
+    fn hotkey_with_space_token_is_accepted() {
+        let mut hotkeys = valid_hotkeys();
+        hotkeys.quick_capture = "Ctrl+Alt+Space".to_string();
+        assert!(validate_hotkeys(&hotkeys).is_ok());
     }
 }

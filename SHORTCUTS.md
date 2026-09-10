@@ -24,8 +24,9 @@ for why).
 Active across the whole system, even while Wartungsdoku has no focus or
 sits only in the tray. Registered via `tauri-plugin-global-shortcut` in
 `src-tauri/src/hotkeys.rs`, defaults from `HotkeyConfig` in
-`src-tauri/src/config.rs`. **All three can be freely changed in
-`config.toml`** (the `[hotkeys]` section).
+`src-tauri/src/config.rs`. **All three can be freely changed under
+Settings → Tastaturbelegung** (which under the hood writes to the
+`[hotkeys]` section of `config.toml`).
 
 | Key (default) | Effect |
 |---|---|
@@ -64,7 +65,9 @@ for the second, separate way to create a new entry.
 `Ctrl+K` opens or closes the Command Palette
 (`src/components/CommandPalette.tsx`) and is **always active**, even while
 a text field is focused (its own capture phase listener with
-`stopPropagation`, runs before every other keyboard handler).
+`stopPropagation`, runs before every other keyboard handler). Only
+`Ctrl+K` itself is customizable here; the Arrow Down/Arrow Up/Enter/Esc
+rows below are fixed navigation keys within the palette, not configurable.
 
 | Key | Effect |
 |---|---|

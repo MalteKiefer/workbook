@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { formatInvokeError } from "../lib/errors";
-import { getKeymap, matchesBinding, formatBindingForDisplay } from "../lib/keymap";
+import { getKeymap, matchesBinding, formatBindingForDisplay, useKeymap } from "../lib/keymap";
 
 interface DirectoryHit {
   kind: "customer" | "system";
@@ -74,6 +74,7 @@ export default function CommandPalette() {
   const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
   const openSystemEditor = useAppStore((s) => s.openSystemEditor);
   const openShortcutOverview = useAppStore((s) => s.openShortcutOverview);
+  const keymap = useKeymap();
 
   const close = useCallback(() => {
     setOpen(false);
@@ -105,7 +106,6 @@ export default function CommandPalette() {
 
   // Static, always-available commands (context-dependent per current view/selection).
   const staticCommands = useMemo<StaticCommand[]>(() => {
-    const keymap = getKeymap();
     const cmds: StaticCommand[] = [
       {
         id: "quick-capture",
@@ -191,6 +191,7 @@ export default function CommandPalette() {
     openSystemEditor,
     openShortcutOverview,
     selectSystem,
+    keymap,
   ]);
 
   const filteredCommands = useMemo(() => {

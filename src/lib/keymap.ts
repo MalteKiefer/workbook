@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useSyncExternalStore } from "react";
 import { isMac } from "./platform";
 
 // Kept in sync with src-tauri/src/config.rs::KeymapConfig field-for-field.
@@ -25,7 +26,8 @@ interface ParsedBinding {
 
 function parseBinding(binding: string): ParsedBinding {
   const parts = binding.split("+").map((p) => p.trim());
-  const key = parts[parts.length - 1].toLowerCase();
+  const rawKey = parts[parts.length - 1].toLowerCase();
+  const key = rawKey === "space" ? " " : rawKey === "plus" ? "+" : rawKey;
   const mods = parts.slice(0, -1).map((p) => p.toLowerCase());
   return {
     ctrl: mods.includes("ctrl"),
@@ -62,7 +64,7 @@ export function formatBinding(e: KeyboardEvent): string {
   if (e.metaKey) mods.push("Cmd");
   if (e.altKey) mods.push("Alt");
   if (e.shiftKey) mods.push("Shift");
-  const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+  const key = e.key === " " ? "Space" : e.key === "+" ? "Plus" : e.key.length === 1 ? e.key.toUpperCase() : e.key;
   return [...mods, key].join("+");
 }
 
@@ -118,8 +120,28 @@ export async function loadKeymap(): Promise<void> {
   }
 }
 
+const subscribers = new Set<() => void>();
+
+function notifySubscribers(): void {
+  for (const callback of subscribers) callback();
+}
+
+function subscribe(callback: () => void): () => void {
+  subscribers.add(callback);
+  return () => subscribers.delete(callback);
+}
+
+// React hook for components that display a binding at render time (as
+// opposed to keydown handlers, which read getKeymap() fresh on every event
+// and don't need this) -- re-renders the calling component whenever the
+// keymap changes, e.g. after a live "keymap-changed" event.
+export function useKeymap(): Keymap {
+  return useSyncExternalStore(subscribe, getKeymap);
+}
+
 export function listenForKeymapChanges(): void {
   void listen<Keymap>("keymap-changed", (event) => {
     currentKeymap = event.payload;
+    notifySubscribers();
   });
 }

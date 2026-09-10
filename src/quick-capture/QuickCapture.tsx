@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import MarkdownEditor, { type MarkdownEditorHandle } from "../components/MarkdownEditor";
 import { formatInvokeError } from "../lib/errors";
-import { getKeymap, matchesBinding, formatBindingForDisplay } from "../lib/keymap";
+import { getKeymap, matchesBinding, formatBindingForDisplay, useKeymap } from "../lib/keymap";
 
 interface Customer {
   id: number;
@@ -85,6 +85,7 @@ export default function QuickCapture() {
   const titleRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const draftIsEmptyRef = useRef(true);
+  const keymap = useKeymap();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [systems, setSystems] = useState<System[]>([]);
@@ -755,7 +756,7 @@ export default function QuickCapture() {
           Verwerfen (Esc)
         </button>
         <button type="button" className="btn-primary" onClick={() => void save()}>
-          Speichern ({formatBindingForDisplay(getKeymap().save)})
+          Speichern ({formatBindingForDisplay(keymap.save)})
         </button>
       </div>
     </main>
