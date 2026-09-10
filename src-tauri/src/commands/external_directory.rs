@@ -1,7 +1,8 @@
 //! Pure read-access aggregation across all configured RMM/asset management
 //! plugin connections (Ninja, Level, Snipe-IT, Intune, Iru, Jamf, ABM,
-//! Tactical RMM) for a given local customer: returns all devices/assets that
-//! (a) belong to this customer according to the most recently synced plugin
+//! Tactical RMM, Atera, Pulseway, Kaseya, Action1, Datto RMM, Acronis) for a
+//! given local customer: returns all devices/assets/resources that (a)
+//! belong to this customer according to the most recently synced plugin
 //! caches, and (b) are not yet linked to any local system.
 //!
 //! Background: the system field when creating a maintenance entry
@@ -13,14 +14,30 @@
 //! keystroke/customer switch in the frontend without waiting on network
 //! latency.
 //!
+//! IMPORTANT, a real gap fixed here: the six plugins added after this module
+//! was first written (Atera, Pulseway, Kaseya, Action1, Datto RMM, Acronis)
+//! were never wired into `list_unlinked_external_systems_for_customer_pure`
+//! -- their devices/resources were entirely invisible in the Journal entry's
+//! System field, even when a customer had dozens of unlinked, correctly
+//! mapped devices in one of those plugins. Adding a new plugin's `collect_*`
+//! function here is a required step, not optional wiring -- see the six
+//! `collect_atera`/`collect_pulseway`/`collect_kaseya`/`collect_action1`/
+//! `collect_dattormm`/`collect_acronis` functions below for the pattern.
+//!
 //! Deliberately reuses the real, already `Deserialize`-capable cache DTOs of
 //! the plugin modules (`commands::plugins::CachedNinjaSyncDto`,
 //! `commands::level::CachedLevelSyncDto`, `commands::snipeit::CachedSnipeitSyncDto`,
 //! `commands::intune::CachedIntuneSyncDto`, `commands::iru::CachedIruSyncDto`,
 //! `commands::jamf::CachedJamfSyncDto`, `commands::abm::CachedAbmSyncDto`,
-//! `commands::tacticalrmm::CachedTacticalRmmSyncDto`), instead of defining
-//! the JSON shape here a second time -- that way this module stays
-//! automatically in sync if one of those shapes ever changes.
+//! `commands::tacticalrmm::CachedTacticalRmmSyncDto`,
+//! `commands::atera::CachedAteraSyncDto`,
+//! `commands::pulseway::CachedPulsewaySyncDto`,
+//! `commands::kaseya::CachedKaseyaSyncDto`,
+//! `commands::action1::CachedAction1SyncDto`,
+//! `commands::dattormm::CachedDattoRmmSyncDto`,
+//! `commands::acronis::CachedAcronisSyncDto`), instead of defining the JSON
+//! shape here a second time -- that way this module stays automatically in
+//! sync if one of those shapes ever changes.
 //!
 //! The cache path convention (`data_dir/plugin-cache/<plugin>-<connection_id>.json`)
 //! and the reading itself (`std::fs::read_to_string` + `serde_json::from_str`)
@@ -49,11 +66,17 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 
 use crate::commands::abm::CachedAbmSyncDto;
+use crate::commands::acronis::CachedAcronisSyncDto;
+use crate::commands::action1::CachedAction1SyncDto;
+use crate::commands::atera::CachedAteraSyncDto;
+use crate::commands::dattormm::CachedDattoRmmSyncDto;
 use crate::commands::intune::CachedIntuneSyncDto;
 use crate::commands::iru::CachedIruSyncDto;
 use crate::commands::jamf::CachedJamfSyncDto;
+use crate::commands::kaseya::CachedKaseyaSyncDto;
 use crate::commands::level::CachedLevelSyncDto;
 use crate::commands::plugins::CachedNinjaSyncDto;
+use crate::commands::pulseway::CachedPulsewaySyncDto;
 use crate::commands::snipeit::CachedSnipeitSyncDto;
 use crate::commands::tacticalrmm::CachedTacticalRmmSyncDto;
 use crate::config::Config;
@@ -184,6 +207,90 @@ fn read_tacticalrmm_cache_file(
     let text = std::fs::read_to_string(&path)?;
     let cached: CachedTacticalRmmSyncDto = serde_json::from_str(&text)
         .map_err(|e| AppError::Plugin(format!("Tactical-RMM-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_atera_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedAteraSyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("atera-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedAteraSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Atera-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_pulseway_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedPulsewaySyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("pulseway-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedPulsewaySyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Pulseway-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_kaseya_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedKaseyaSyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("kaseya-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedKaseyaSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Kaseya-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_action1_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedAction1SyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("action1-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedAction1SyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Action1-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_dattormm_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedDattoRmmSyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("dattormm-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedDattoRmmSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Datto-RMM-Cache-Datei ungültig: {e}")))?;
+    Ok(Some(cached))
+}
+
+fn read_acronis_cache_file(
+    data_dir: &Path,
+    connection_id: &str,
+) -> Result<Option<CachedAcronisSyncDto>, AppError> {
+    let path = plugin_cache_dir(data_dir).join(format!("acronis-{connection_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let cached: CachedAcronisSyncDto = serde_json::from_str(&text)
+        .map_err(|e| AppError::Plugin(format!("Acronis-Cache-Datei ungültig: {e}")))?;
     Ok(Some(cached))
 }
 
@@ -518,6 +625,279 @@ fn collect_tacticalrmm(
     Ok(())
 }
 
+/// Atera: exactly the same pattern as Ninja/Snipe-IT/Jamf/Tactical RMM
+/// (`collect_ninja` etc.) -- re-checking against the current
+/// `config.atera_customer_mappings` instead of the frozen cache value, for
+/// the same freshness reason. Note the mapping struct's own field names:
+/// `AteraCustomerMapping.customer_id` is Atera's OWN customer id (matched
+/// against the group's `atera_customer_id`), `local_customer_id` is the
+/// LOCAL customer id being asked about here -- not the usual
+/// `customer_id`-means-local convention every other mapping struct in this
+/// file uses, see `plugin::atera` module docs.
+fn collect_atera(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.atera_connections {
+        let Some(cache) = read_atera_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for group in &cache.groups {
+            let mapped_customer_id = config
+                .atera_customer_mappings
+                .iter()
+                .find(|m| {
+                    m.connection_id == connection.id && m.customer_id == group.atera_customer_id
+                })
+                .map(|m| m.local_customer_id);
+            if mapped_customer_id != Some(customer_id) {
+                continue;
+            }
+            for device in &group.devices {
+                if device.linked_system_id.is_some() {
+                    continue;
+                }
+                out.push(UnlinkedExternalSystemDto {
+                    plugin: "atera".to_string(),
+                    connection_id: connection.id.clone(),
+                    external_id: device.external_id.clone(),
+                    name: device.name.clone(),
+                    hostname: device.hostname.clone(),
+                    ip_address: device.ip_address.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Pulseway: exactly the same pattern as Ninja/Snipe-IT (`collect_ninja`/
+/// `collect_snipeit`), re-checking against the current
+/// `config.pulseway_org_mappings`. `ip_address` is always `None` -- Pulseway
+/// has no such field on its device object at all (only `hostname`, which
+/// doubles as the display name), see `plugin::pulseway` module docs.
+fn collect_pulseway(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.pulseway_connections {
+        let Some(cache) = read_pulseway_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for group in &cache.groups {
+            let mapped_customer_id = config
+                .pulseway_org_mappings
+                .iter()
+                .find(|m| {
+                    m.connection_id == connection.id && m.organization_id == group.organization_id
+                })
+                .map(|m| m.customer_id);
+            if mapped_customer_id != Some(customer_id) {
+                continue;
+            }
+            for device in &group.devices {
+                if device.linked_system_id.is_some() {
+                    continue;
+                }
+                out.push(UnlinkedExternalSystemDto {
+                    plugin: "pulseway".to_string(),
+                    connection_id: connection.id.clone(),
+                    external_id: device.external_id.clone(),
+                    name: device.name.clone(),
+                    hostname: device.hostname.clone(),
+                    ip_address: None,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Kaseya: exactly the same pattern as Ninja/Snipe-IT (`collect_ninja`/
+/// `collect_snipeit`), re-checking against the current
+/// `config.kaseya_org_mappings`. `hostname`/`ip_address` are always `None`
+/// -- no confirmed hostname/IP field exists on a Kaseya device at all, see
+/// `plugin::kaseya` module docs.
+fn collect_kaseya(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.kaseya_connections {
+        let Some(cache) = read_kaseya_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for group in &cache.groups {
+            let mapped_customer_id = config
+                .kaseya_org_mappings
+                .iter()
+                .find(|m| {
+                    m.connection_id == connection.id && m.organization_id == group.organization_id
+                })
+                .map(|m| m.customer_id);
+            if mapped_customer_id != Some(customer_id) {
+                continue;
+            }
+            for device in &group.devices {
+                if device.linked_system_id.is_some() {
+                    continue;
+                }
+                out.push(UnlinkedExternalSystemDto {
+                    plugin: "kaseya".to_string(),
+                    connection_id: connection.id.clone(),
+                    external_id: device.external_id.clone(),
+                    name: device.name.clone(),
+                    hostname: None,
+                    ip_address: None,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Action1: exactly the same pattern as Ninja/Snipe-IT (`collect_ninja`/
+/// `collect_snipeit`), re-checking against the current
+/// `config.action1_org_mappings`. `hostname` is always `None` -- Action1's
+/// endpoint object has no hostname field (only `device_name`, already used
+/// as `name`, and a separate `ip_address` field), see `plugin::action1`
+/// module docs.
+fn collect_action1(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.action1_connections {
+        let Some(cache) = read_action1_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for group in &cache.groups {
+            let mapped_customer_id = config
+                .action1_org_mappings
+                .iter()
+                .find(|m| {
+                    m.connection_id == connection.id && m.organization_id == group.organization_id
+                })
+                .map(|m| m.customer_id);
+            if mapped_customer_id != Some(customer_id) {
+                continue;
+            }
+            for device in &group.devices {
+                if device.linked_system_id.is_some() {
+                    continue;
+                }
+                out.push(UnlinkedExternalSystemDto {
+                    plugin: "action1".to_string(),
+                    connection_id: connection.id.clone(),
+                    external_id: device.external_id.clone(),
+                    name: device.name.clone(),
+                    hostname: None,
+                    ip_address: device.ip_address.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Datto RMM: exactly the same pattern as Ninja/Snipe-IT (`collect_ninja`/
+/// `collect_snipeit`), re-checking against the current
+/// `config.dattormm_site_mappings`, keyed by `site_uid` (Datto RMM's flat
+/// grouping level, see `plugin::dattormm` module docs) rather than an
+/// `organization_id`.
+fn collect_dattormm(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.dattormm_connections {
+        let Some(cache) = read_dattormm_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for group in &cache.groups {
+            let mapped_customer_id = config
+                .dattormm_site_mappings
+                .iter()
+                .find(|m| m.connection_id == connection.id && m.site_uid == group.site_uid)
+                .map(|m| m.customer_id);
+            if mapped_customer_id != Some(customer_id) {
+                continue;
+            }
+            for device in &group.devices {
+                if device.linked_system_id.is_some() {
+                    continue;
+                }
+                out.push(UnlinkedExternalSystemDto {
+                    plugin: "dattormm".to_string(),
+                    connection_id: connection.id.clone(),
+                    external_id: device.external_id.clone(),
+                    name: device.name.clone(),
+                    hostname: device.hostname.clone(),
+                    ip_address: device.ip_address.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Acronis: same pattern as Ninja/Snipe-IT/Tactical RMM (`collect_ninja`
+/// etc.), re-checking against the current `config.acronis_tenant_mappings`,
+/// keyed by `tenant_id`. `hostname`/`ip_address` are always `None` --
+/// Acronis's `AcronisResourceDto` has neither field at all (this plugin
+/// surfaces backup status, not device inventory, see `plugin::acronis`
+/// module docs). Unlike every other plugin collected here, Acronis's own
+/// cache is only ever populated for tenants that were ALREADY mapped at
+/// sync time (`sync_acronis_connection` only loops mapped tenants, see
+/// `commands::acronis` module docs) -- so, unlike Ninja/Snipe-IT/Jamf/
+/// Tactical RMM, a cached group here can't legitimately belong to a
+/// DIFFERENT customer than the one it was synced for; re-checking against
+/// the live mapping table is still done anyway, for the same "freshly
+/// remapped without a new sync" consistency every other plugin here gets.
+fn collect_acronis(
+    config: &Config,
+    data_dir: &Path,
+    customer_id: i64,
+    out: &mut Vec<UnlinkedExternalSystemDto>,
+) -> Result<(), AppError> {
+    for connection in &config.acronis_connections {
+        let Some(cache) = read_acronis_cache_file(data_dir, &connection.id)? else {
+            continue;
+        };
+        for group in &cache.groups {
+            let mapped_customer_id = config
+                .acronis_tenant_mappings
+                .iter()
+                .find(|m| m.connection_id == connection.id && m.tenant_id == group.tenant_id)
+                .map(|m| m.customer_id);
+            if mapped_customer_id != Some(customer_id) {
+                continue;
+            }
+            for device in &group.devices {
+                if device.linked_system_id.is_some() {
+                    continue;
+                }
+                out.push(UnlinkedExternalSystemDto {
+                    plugin: "acronis".to_string(),
+                    connection_id: connection.id.clone(),
+                    external_id: device.external_id.clone(),
+                    name: device.name.clone(),
+                    hostname: None,
+                    ip_address: None,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Pure core logic, without `State<AppState>` -- testable with a hardcoded
 /// `Config` plus a `tempfile::tempdir()`, analogous to
 /// `commands::plugins::group_devices_by_organization`. The
@@ -541,6 +921,12 @@ pub fn list_unlinked_external_systems_for_customer_pure(
     collect_jamf(config, data_dir, customer_id, &mut result)?;
     collect_abm(config, data_dir, customer_id, &mut result)?;
     collect_tacticalrmm(config, data_dir, customer_id, &mut result)?;
+    collect_atera(config, data_dir, customer_id, &mut result)?;
+    collect_pulseway(config, data_dir, customer_id, &mut result)?;
+    collect_kaseya(config, data_dir, customer_id, &mut result)?;
+    collect_action1(config, data_dir, customer_id, &mut result)?;
+    collect_dattormm(config, data_dir, customer_id, &mut result)?;
+    collect_acronis(config, data_dir, customer_id, &mut result)?;
     Ok(result)
 }
 
@@ -559,14 +945,30 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::commands::abm::ExternalSystemDto as AbmExternalSystemDto;
+    use crate::commands::acronis::{AcronisResourceDto, AcronisTenantResourceGroupDto};
+    use crate::commands::action1::{
+        Action1OrgDeviceGroupDto, ExternalSystemDto as Action1ExternalSystemDto,
+    };
+    use crate::commands::atera::{
+        AteraCustomerDeviceGroupDto, ExternalSystemDto as AteraExternalSystemDto,
+    };
+    use crate::commands::dattormm::{
+        DattoRmmSiteDeviceGroupDto, ExternalSystemDto as DattoRmmExternalSystemDto,
+    };
     use crate::commands::intune::ExternalSystemDto as IntuneExternalSystemDto;
     use crate::commands::iru::ExternalSystemDto as IruExternalSystemDto;
     use crate::commands::jamf::{
         ExternalSystemDto as JamfExternalSystemDto, JamfSiteDeviceGroupDto,
     };
+    use crate::commands::kaseya::{
+        ExternalSystemDto as KaseyaExternalSystemDto, KaseyaOrgDeviceGroupDto,
+    };
     use crate::commands::level::ExternalSystemDto as LevelExternalSystemDto;
     use crate::commands::plugins::{
         ExternalSystemDto as NinjaExternalSystemDto, NinjaOrgDeviceGroupDto,
+    };
+    use crate::commands::pulseway::{
+        ExternalSystemDto as PulsewayExternalSystemDto, PulsewayOrgDeviceGroupDto,
     };
     use crate::commands::snipeit::{
         ExternalSystemDto as SnipeitExternalSystemDto, SnipeitCompanyDeviceGroupDto,
@@ -575,11 +977,17 @@ mod tests {
         ExternalSystemDto as TacticalRmmExternalSystemDto, TacticalRmmClientDeviceGroupDto,
     };
     use crate::plugin::abm::AbmConnectionMeta;
+    use crate::plugin::acronis::{AcronisConnectionMeta, AcronisTenantMapping};
+    use crate::plugin::action1::{Action1ConnectionMeta, Action1OrgMapping};
+    use crate::plugin::atera::{AteraConnectionMeta, AteraCustomerMapping};
+    use crate::plugin::dattormm::{DattoRmmConnectionMeta, DattoRmmSiteMapping};
     use crate::plugin::intune::IntuneConnectionMeta;
     use crate::plugin::iru::IruConnectionMeta;
     use crate::plugin::jamf::{JamfConnectionMeta, JamfSiteMapping};
+    use crate::plugin::kaseya::{KaseyaConnectionMeta, KaseyaOrgMapping};
     use crate::plugin::level::LevelConnectionMeta;
     use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
+    use crate::plugin::pulseway::{PulsewayConnectionMeta, PulsewayOrgMapping};
     use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
     use crate::plugin::tacticalrmm::{TacticalRmmClientMapping, TacticalRmmConnectionMeta};
 
@@ -1762,5 +2170,531 @@ mod tests {
         assert_eq!(result[0].plugin, "jamf");
         assert_eq!(result[1].plugin, "level");
         assert_eq!(result[2].plugin, "ninja");
+    }
+
+    fn atera_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("atera-{connection_id}.json"))
+    }
+
+    fn pulseway_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("pulseway-{connection_id}.json"))
+    }
+
+    fn kaseya_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("kaseya-{connection_id}.json"))
+    }
+
+    fn action1_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("action1-{connection_id}.json"))
+    }
+
+    fn dattormm_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("dattormm-{connection_id}.json"))
+    }
+
+    fn acronis_cache_path(data_dir: &Path, connection_id: &str) -> PathBuf {
+        plugin_cache_dir(data_dir).join(format!("acronis-{connection_id}.json"))
+    }
+
+    #[test]
+    fn atera_device_appears_when_its_customer_is_mapped_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.atera_connections.push(AteraConnectionMeta {
+            id: "atera-conn-1".to_string(),
+            label: "ACME Atera".to_string(),
+        });
+        config.atera_customer_mappings.push(AteraCustomerMapping {
+            connection_id: "atera-conn-1".to_string(),
+            customer_id: "atera-cust-1".to_string(),
+            customer_name: "ACME GmbH".to_string(),
+            local_customer_id: 5,
+        });
+        let cache = CachedAteraSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![AteraCustomerDeviceGroupDto {
+                atera_customer_id: "atera-cust-1".to_string(),
+                atera_customer_name: "ACME GmbH".to_string(),
+                customer_id: None,
+                devices: vec![AteraExternalSystemDto {
+                    external_id: "agent-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    hostname: Some("SRV-01".to_string()),
+                    ip_address: Some("10.0.0.5".to_string()),
+                    status: Some("online".to_string()),
+                    platform: Some("Windows Server 2022".to_string()),
+                    view_url: None,
+                    linked_system_id: None,
+                }],
+            }],
+        };
+        write_json(&atera_cache_path(dir.path(), "atera-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "atera");
+        assert_eq!(result[0].connection_id, "atera-conn-1");
+        assert_eq!(result[0].external_id, "agent-1");
+        assert_eq!(result[0].hostname.as_deref(), Some("SRV-01"));
+    }
+
+    #[test]
+    fn already_linked_atera_device_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.atera_connections.push(AteraConnectionMeta {
+            id: "atera-conn-1".to_string(),
+            label: "ACME Atera".to_string(),
+        });
+        config.atera_customer_mappings.push(AteraCustomerMapping {
+            connection_id: "atera-conn-1".to_string(),
+            customer_id: "atera-cust-1".to_string(),
+            customer_name: "ACME GmbH".to_string(),
+            local_customer_id: 5,
+        });
+        let cache = CachedAteraSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![AteraCustomerDeviceGroupDto {
+                atera_customer_id: "atera-cust-1".to_string(),
+                atera_customer_name: "ACME GmbH".to_string(),
+                customer_id: Some(5),
+                devices: vec![AteraExternalSystemDto {
+                    external_id: "agent-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    hostname: None,
+                    ip_address: None,
+                    status: None,
+                    platform: None,
+                    view_url: None,
+                    linked_system_id: Some(11),
+                }],
+            }],
+        };
+        write_json(&atera_cache_path(dir.path(), "atera-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn pulseway_device_appears_when_its_organization_is_mapped_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.pulseway_connections.push(PulsewayConnectionMeta {
+            id: "pulseway-conn-1".to_string(),
+            label: "ACME Pulseway".to_string(),
+            base_url: "https://api.pulseway.com/v3".to_string(),
+        });
+        config.pulseway_org_mappings.push(PulsewayOrgMapping {
+            connection_id: "pulseway-conn-1".to_string(),
+            organization_id: "6978".to_string(),
+            organization_name: "ACME GmbH".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedPulsewaySyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![PulsewayOrgDeviceGroupDto {
+                organization_id: "6978".to_string(),
+                organization_name: "ACME GmbH".to_string(),
+                customer_id: None,
+                devices: vec![PulsewayExternalSystemDto {
+                    external_id: "dev-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    hostname: Some("SRV-01".to_string()),
+                    site_name: None,
+                    group_name: None,
+                    is_agent_installed: true,
+                    linked_system_id: None,
+                }],
+            }],
+        };
+        write_json(&pulseway_cache_path(dir.path(), "pulseway-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "pulseway");
+        assert_eq!(result[0].connection_id, "pulseway-conn-1");
+        assert_eq!(result[0].external_id, "dev-1");
+        assert_eq!(result[0].ip_address, None);
+    }
+
+    #[test]
+    fn already_linked_pulseway_device_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.pulseway_connections.push(PulsewayConnectionMeta {
+            id: "pulseway-conn-1".to_string(),
+            label: "ACME Pulseway".to_string(),
+            base_url: "https://api.pulseway.com/v3".to_string(),
+        });
+        config.pulseway_org_mappings.push(PulsewayOrgMapping {
+            connection_id: "pulseway-conn-1".to_string(),
+            organization_id: "6978".to_string(),
+            organization_name: "ACME GmbH".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedPulsewaySyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![PulsewayOrgDeviceGroupDto {
+                organization_id: "6978".to_string(),
+                organization_name: "ACME GmbH".to_string(),
+                customer_id: Some(5),
+                devices: vec![PulsewayExternalSystemDto {
+                    external_id: "dev-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    hostname: None,
+                    site_name: None,
+                    group_name: None,
+                    is_agent_installed: true,
+                    linked_system_id: Some(11),
+                }],
+            }],
+        };
+        write_json(&pulseway_cache_path(dir.path(), "pulseway-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn kaseya_device_appears_when_its_organization_is_mapped_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.kaseya_connections.push(KaseyaConnectionMeta {
+            id: "kaseya-conn-1".to_string(),
+            label: "ACME Kaseya".to_string(),
+            base_url: "https://vsa.example.com/api".to_string(),
+        });
+        config.kaseya_org_mappings.push(KaseyaOrgMapping {
+            connection_id: "kaseya-conn-1".to_string(),
+            organization_id: "org-1".to_string(),
+            organization_name: "ACME GmbH".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedKaseyaSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![KaseyaOrgDeviceGroupDto {
+                organization_id: "org-1".to_string(),
+                organization_name: "ACME GmbH".to_string(),
+                customer_id: None,
+                devices: vec![KaseyaExternalSystemDto {
+                    external_id: "machine-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    organization_id: Some("org-1".to_string()),
+                    organization_name: Some("ACME GmbH".to_string()),
+                    group_id: None,
+                    is_agent_installed: true,
+                    is_mdm_enrolled: false,
+                    linked_system_id: None,
+                }],
+            }],
+        };
+        write_json(&kaseya_cache_path(dir.path(), "kaseya-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "kaseya");
+        assert_eq!(result[0].connection_id, "kaseya-conn-1");
+        assert_eq!(result[0].external_id, "machine-1");
+        assert_eq!(result[0].hostname, None);
+    }
+
+    #[test]
+    fn already_linked_kaseya_device_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.kaseya_connections.push(KaseyaConnectionMeta {
+            id: "kaseya-conn-1".to_string(),
+            label: "ACME Kaseya".to_string(),
+            base_url: "https://vsa.example.com/api".to_string(),
+        });
+        config.kaseya_org_mappings.push(KaseyaOrgMapping {
+            connection_id: "kaseya-conn-1".to_string(),
+            organization_id: "org-1".to_string(),
+            organization_name: "ACME GmbH".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedKaseyaSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![KaseyaOrgDeviceGroupDto {
+                organization_id: "org-1".to_string(),
+                organization_name: "ACME GmbH".to_string(),
+                customer_id: Some(5),
+                devices: vec![KaseyaExternalSystemDto {
+                    external_id: "machine-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    organization_id: Some("org-1".to_string()),
+                    organization_name: Some("ACME GmbH".to_string()),
+                    group_id: None,
+                    is_agent_installed: true,
+                    is_mdm_enrolled: false,
+                    linked_system_id: Some(11),
+                }],
+            }],
+        };
+        write_json(&kaseya_cache_path(dir.path(), "kaseya-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn action1_device_appears_when_its_organization_is_mapped_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.action1_connections.push(Action1ConnectionMeta {
+            id: "action1-conn-1".to_string(),
+            label: "ACME Action1".to_string(),
+            base_url: "https://app.eu.action1.com/api/3.0".to_string(),
+        });
+        config.action1_org_mappings.push(Action1OrgMapping {
+            connection_id: "action1-conn-1".to_string(),
+            organization_id: "org-1".to_string(),
+            organization_name: "ACME GmbH".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedAction1SyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![Action1OrgDeviceGroupDto {
+                organization_id: "org-1".to_string(),
+                organization_name: "ACME GmbH".to_string(),
+                customer_id: None,
+                devices: vec![Action1ExternalSystemDto {
+                    external_id: "endpoint-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    ip_address: Some("10.0.0.5".to_string()),
+                    status: Some("Connected".to_string()),
+                    platform: Some("Windows".to_string()),
+                    linked_system_id: None,
+                }],
+            }],
+        };
+        write_json(&action1_cache_path(dir.path(), "action1-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "action1");
+        assert_eq!(result[0].connection_id, "action1-conn-1");
+        assert_eq!(result[0].external_id, "endpoint-1");
+        assert_eq!(result[0].ip_address.as_deref(), Some("10.0.0.5"));
+    }
+
+    #[test]
+    fn already_linked_action1_device_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.action1_connections.push(Action1ConnectionMeta {
+            id: "action1-conn-1".to_string(),
+            label: "ACME Action1".to_string(),
+            base_url: "https://app.eu.action1.com/api/3.0".to_string(),
+        });
+        config.action1_org_mappings.push(Action1OrgMapping {
+            connection_id: "action1-conn-1".to_string(),
+            organization_id: "org-1".to_string(),
+            organization_name: "ACME GmbH".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedAction1SyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![Action1OrgDeviceGroupDto {
+                organization_id: "org-1".to_string(),
+                organization_name: "ACME GmbH".to_string(),
+                customer_id: Some(5),
+                devices: vec![Action1ExternalSystemDto {
+                    external_id: "endpoint-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    ip_address: None,
+                    status: None,
+                    platform: None,
+                    linked_system_id: Some(11),
+                }],
+            }],
+        };
+        write_json(&action1_cache_path(dir.path(), "action1-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn dattormm_device_appears_when_its_site_is_mapped_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.dattormm_connections.push(DattoRmmConnectionMeta {
+            id: "dattormm-conn-1".to_string(),
+            label: "ACME Datto RMM".to_string(),
+            base_url: "https://merlot-api.centrastage.net".to_string(),
+        });
+        config.dattormm_site_mappings.push(DattoRmmSiteMapping {
+            connection_id: "dattormm-conn-1".to_string(),
+            site_uid: "site-uid-1".to_string(),
+            site_name: "ACME Hauptsitz".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedDattoRmmSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![DattoRmmSiteDeviceGroupDto {
+                site_uid: "site-uid-1".to_string(),
+                site_name: "ACME Hauptsitz".to_string(),
+                portal_url: None,
+                customer_id: None,
+                devices: vec![DattoRmmExternalSystemDto {
+                    external_id: "device-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    hostname: Some("SRV-01".to_string()),
+                    ip_address: Some("10.0.0.5".to_string()),
+                    status: Some("online".to_string()),
+                    platform: Some("device".to_string()),
+                    portal_url: None,
+                    linked_system_id: None,
+                }],
+            }],
+        };
+        write_json(&dattormm_cache_path(dir.path(), "dattormm-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "dattormm");
+        assert_eq!(result[0].connection_id, "dattormm-conn-1");
+        assert_eq!(result[0].external_id, "device-1");
+        assert_eq!(result[0].hostname.as_deref(), Some("SRV-01"));
+    }
+
+    #[test]
+    fn already_linked_dattormm_device_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.dattormm_connections.push(DattoRmmConnectionMeta {
+            id: "dattormm-conn-1".to_string(),
+            label: "ACME Datto RMM".to_string(),
+            base_url: "https://merlot-api.centrastage.net".to_string(),
+        });
+        config.dattormm_site_mappings.push(DattoRmmSiteMapping {
+            connection_id: "dattormm-conn-1".to_string(),
+            site_uid: "site-uid-1".to_string(),
+            site_name: "ACME Hauptsitz".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedDattoRmmSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![DattoRmmSiteDeviceGroupDto {
+                site_uid: "site-uid-1".to_string(),
+                site_name: "ACME Hauptsitz".to_string(),
+                portal_url: None,
+                customer_id: Some(5),
+                devices: vec![DattoRmmExternalSystemDto {
+                    external_id: "device-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    hostname: None,
+                    ip_address: None,
+                    status: None,
+                    platform: None,
+                    portal_url: None,
+                    linked_system_id: Some(11),
+                }],
+            }],
+        };
+        write_json(&dattormm_cache_path(dir.path(), "dattormm-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn acronis_resource_appears_when_its_tenant_is_mapped_to_the_target_customer() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.acronis_connections.push(AcronisConnectionMeta {
+            id: "acronis-conn-1".to_string(),
+            label: "ACME Acronis".to_string(),
+            datacenter_url: "https://eu2-cloud.acronis.com".to_string(),
+        });
+        config.acronis_tenant_mappings.push(AcronisTenantMapping {
+            connection_id: "acronis-conn-1".to_string(),
+            tenant_id: "tenant-1".to_string(),
+            tenant_name: "ACME GmbH".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedAcronisSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![AcronisTenantResourceGroupDto {
+                tenant_id: "tenant-1".to_string(),
+                tenant_name: "ACME GmbH".to_string(),
+                customer_id: None,
+                devices: vec![AcronisResourceDto {
+                    external_id: "resource-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    backup_status: Some("ok".to_string()),
+                    linked_system_id: None,
+                }],
+            }],
+        };
+        write_json(&acronis_cache_path(dir.path(), "acronis-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].plugin, "acronis");
+        assert_eq!(result[0].connection_id, "acronis-conn-1");
+        assert_eq!(result[0].external_id, "resource-1");
+        assert_eq!(result[0].hostname, None);
+    }
+
+    #[test]
+    fn already_linked_acronis_resource_is_excluded() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.acronis_connections.push(AcronisConnectionMeta {
+            id: "acronis-conn-1".to_string(),
+            label: "ACME Acronis".to_string(),
+            datacenter_url: "https://eu2-cloud.acronis.com".to_string(),
+        });
+        config.acronis_tenant_mappings.push(AcronisTenantMapping {
+            connection_id: "acronis-conn-1".to_string(),
+            tenant_id: "tenant-1".to_string(),
+            tenant_name: "ACME GmbH".to_string(),
+            customer_id: 5,
+        });
+        let cache = CachedAcronisSyncDto {
+            synced_at_utc: "2026-09-07T12:00:00.000Z".to_string(),
+            groups: vec![AcronisTenantResourceGroupDto {
+                tenant_id: "tenant-1".to_string(),
+                tenant_name: "ACME GmbH".to_string(),
+                customer_id: Some(5),
+                devices: vec![AcronisResourceDto {
+                    external_id: "resource-1".to_string(),
+                    name: "SRV-01".to_string(),
+                    backup_status: None,
+                    linked_system_id: Some(11),
+                }],
+            }],
+        };
+        write_json(&acronis_cache_path(dir.path(), "acronis-conn-1"), &cache);
+
+        let result =
+            list_unlinked_external_systems_for_customer_pure(&config, dir.path(), 5).unwrap();
+
+        assert!(result.is_empty());
     }
 }
