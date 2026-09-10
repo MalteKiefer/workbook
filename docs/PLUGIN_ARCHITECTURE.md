@@ -1,6 +1,6 @@
 # Plugin-Architektur
 
-Status: Vierzehn echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Fünfzehn echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
@@ -10,15 +10,20 @@ Business Manager (`plugin::abm`, `commands::abm`), Tactical RMM
 `commands::atera`), Pulseway (`plugin::pulseway`, `commands::pulseway`),
 Kaseya VSA (`plugin::kaseya`, `commands::kaseya`), Action1
 (`plugin::action1`, `commands::action1`), Datto RMM
-(`plugin::dattormm`, `commands::dattormm`) und Acronis Cyber Protect Cloud
-(`plugin::acronis`, `commands::acronis`) --, alle mit
+(`plugin::dattormm`, `commands::dattormm`), Acronis Cyber Protect Cloud
+(`plugin::acronis`, `commands::acronis`) und Hetzner Cloud
+(`plugin::hetzner`, `commands::hetzner`) --, alle mit
 Mehrfach-Verbindungs-Unterstützung. Acronis ist dabei anders als die
-übrigen dreizehn: kein RMM/MDM-Gerätebestand, sondern Sicherungsstatus pro
-Gerät (siehe eigener Abschnitt unten). `DummyPlugin` bleibt als
-Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
-einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
-von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AteraPluginSection.tsx`/`PulsewayPluginSection.tsx`/`KaseyaPluginSection.tsx`/`Action1PluginSection.tsx`/`DattoRmmPluginSection.tsx`/`AcronisPluginSection.tsx`).
+übrigen: kein RMM/MDM-Gerätebestand, sondern Sicherungsstatus pro Gerät
+(siehe eigener Abschnitt unten). Hetzner Cloud liefert wie die RMM-/MDM-
+Plugins einen Gerätebestand, allerdings Cloud-Server statt verwalteter
+Endgeräte, und ohne jedes Backup-Status-Konzept (siehe eigener Abschnitt
+unten) -- strukturell die einfachste Integration hier. `DummyPlugin` bleibt
+als Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im
+Sinne einer Command Palette -- die Kommandos sind aber vollständig
+Ende-zu-Ende von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne
+Hülle um
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AteraPluginSection.tsx`/`PulsewayPluginSection.tsx`/`KaseyaPluginSection.tsx`/`Action1PluginSection.tsx`/`DattoRmmPluginSection.tsx`/`AcronisPluginSection.tsx`/`HetznerPluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -2936,3 +2941,191 @@ nur die per `id === device.external_id` gefundene eigene Roh-JSON-Ressource
 dieser Antwort, rein lesbar, statt Feldnamen zu erraten, die nie
 verifiziert wurden. `PluginsView.tsx` bindet die Sektion alphabetisch
 vor `Action1PluginSection.tsx` und weit vor `IntunePluginSection.tsx` ein.
+
+## Hetzner-Cloud-Plugin (`plugin::hetzner`) -- fünfzehnte echte Integration
+
+`plugin/hetzner.rs` implementiert `Plugin` für Hetzner Clouds öffentliche
+REST-API (`https://api.hetzner.cloud/v1`, feste Konstante -- Hetzner Cloud
+hat, wie Level.io, keine Regionen-/Instanz-Varianten). Anders als jede
+RMM-/MDM-Integration hier ist der Zweck dieses Plugins **Server-Inventar**
+(welche Hetzner-Cloud-Server ein Kunde hat), keine Geräteverwaltungs-Agenten
+-- und anders als Acronis gibt es hier auch kein Sicherungsstatus-Konzept.
+Strukturell die einfachste Integration in dieser Codebasis, architektonisch
+am nächsten an `plugin::level`/`plugin::intune`: eine Verbindung ist 1:1 an
+genau einen lokalen Kunden gebunden, keine Organisations-/Mandanten-
+Zuordnungstabelle.
+
+Verifiziert gegen Hetzners eigene offizielle Cloud-API-Dokumentation und den
+`hcloud-go`-SDK-Quellcode:
+
+- **Authentifizierung**: statischer API-Token, Header `Authorization:
+  Bearer <token>`, KEIN OAuth2. Erzeugt in der Hetzner Cloud Console unter
+  Security > API tokens (Nur-Lesen oder Lesen&Schreiben -- dieses Plugin
+  macht ausschließlich GETs, beide Varianten funktionieren also, keine
+  client-seitige Berechtigungsprüfung nötig). Der Token ist an genau EIN
+  Hetzner-"Projekt" gebunden -- bestätigt: ein Token kann keine anderen
+  Projekte sehen.
+- **Kein Organisations-/Mandanten-Konzept**: ein API-Token = ein
+  Hetzner-Projekt = genau ein lokaler Kunde, bestätigt 1:1. Deshalb
+  entspricht eine Hetzner-"Verbindung" hier direkt genau einem lokalen
+  Kunden -- `HetznerConnectionMeta.customer_id` --, OHNE eine
+  Zuordnungstabelle wie `NinjaOrgMapping`/`TacticalRmmClientMapping`,
+  dasselbe Prinzip wie bei Level.io/Intune.
+- **Server (der Inventar-Endpunkt)**: `GET {BASE_URL}/servers` ->
+  `{"servers": [...]}` -- eine umschließende Hülle, KEIN nacktes Array
+  (anders als Level.ios `{"devices": [...]}`). Verifizierte Pro-Server-
+  Felder: `id` (Ganzzahl, als `external_id` verwendet, in Textform),
+  `name` (String, der Anzeigename -- dient zugleich als
+  `HetznerServer::hostname`, dieselbe "kein separates Hostname-Feld"-
+  Konvention wie bei Intunes `deviceName`), `status` (freier
+  String-Durchreich, kein Rust-Enum, dieselbe Konvention wie bei jedem
+  anderen Plugin hier), `server_type.name` (verschachtelt -- als
+  `HetznerServer::platform` verwendet, z. B. "cx22"), `location.name`
+  (verschachtelt -- als `HetznerServer::location` verwendet, z. B. "fsn1",
+  rein informative Anzeige). `datacenter` wird bewusst NIE gelesen --
+  Hetzners eigenes SDK markiert es als veraltet (Entfernung nach
+  2026-10-01), abgelöst durch `location`.
+- **IPv4 vs. IPv6, eine echte Unterscheidung, kein Versehen**:
+  `public_net.ipv4.ip` ist eine einzelne Host-Adresse, direkt als
+  `ip_address` verwendet. `public_net.ipv6.ip` wird für dieses Feld
+  BEWUSST NIE verwendet -- verifiziert gegen Hetzners API-Schema, es ist
+  ein **/64-CIDR-Subnetz** (z. B. `"2001:db8::/64"`), keine einzelne
+  Host-Adresse. Dieses Subnetz als die reine IP eines Servers darzustellen
+  wäre aktiv falsch, nicht nur eine Auslassung -- siehe
+  `extract_ipv4_address`, das ausschließlich `public_net.ipv4.ip` liest.
+  Dieselbe Regel gilt im Frontend (`findExternalIp` in
+  `HetznerPluginSection.tsx`).
+- **Einzelner Server, Detailansicht**: `GET {BASE_URL}/servers/{id}` ->
+  `{"server": {...}}` -- unter einem "server"-Schlüssel verpackt, anders
+  als Level.ios/Intunes Einzelgeräte-Endpunkte (die das Geräteobjekt direkt,
+  unverpackt, liefern). Diese Hülle unverändert durchzureichen würde den
+  flachen, Top-Level-Feld-Scan des Frontends
+  (`findExternalValue` in `HetznerPluginSection.tsx`) brechen, deshalb
+  packt `fetch_server_json` das innere Server-Objekt aus, bevor es
+  zurückgegeben wird (`unwrap_server_envelope`, mit Rückfallwert auf das
+  unveränderte Rohobjekt, falls "server" unerwartet fehlt).
+- **Paginierung**: Query-Parameter `page` (1-basiert) und `per_page`.
+  Antwort-Umschlag: `{"servers": [...], "meta": {"pagination": {"page",
+  "per_page", "previous_page", "next_page", "last_page",
+  "total_entries"}}}`. Weitere Seiten existieren, solange `next_page`
+  nicht null/0 ist -- `collect_paginated` durchläuft alle Seiten intern
+  (bis zu 50 Seiten à 50 Servern als Schutz gegen eine sich falsch
+  verhaltende Gegenstelle, `PAGE_LIMIT` ist Hetzners eigener dokumentierter
+  `per_page`-Höchstwert) und liefert eine einzige, bereits zusammengefügte
+  Liste. Anders als bei den meisten anderen Plugins hier ist die
+  Akkumulations-/Abbruchlogik selbst als eigene, netzwerkunabhängige
+  Funktion (`collect_paginated`, mit injizierter Fetch-Funktion) reine,
+  für sich mit hartkodierten JSON-Seiten testbare Logik -- diese Codebasis
+  hat keine HTTP-Mocking-Abhängigkeit, das ist der einzige Weg, "die
+  Paginierungsschleife sammelt tatsächlich über mehrere Seiten hinweg"
+  ohne eine solche echt zu testen.
+- **Rate-Limits**: Antwort-Header `RateLimit-Limit`/`RateLimit-Remaining`/
+  `RateLimit-Reset` existieren; häufig genannt ~3600 Anfragen/Stunde je
+  Projekt (häufig zitiert, nicht unabhängig aus primärer Fließtext-Doku
+  verifiziert -- hier ehrlich vermerkt). Keine besondere
+  Retry-/Backoff-Behandlung nötig, dieselbe Konvention wie bei jedem
+  anderen Plugin hier.
+- **Kein Weboberflächen-Tiefenlink**: ein plausibles Muster existiert
+  (`https://console.hetzner.cloud/projects/{project_id}/servers/{server_id}`),
+  benötigt aber eine `project_id`, die nichts in der `/servers`-Antwort
+  liefert, und das Muster selbst ist nur eine beobachtete Konvention, keine
+  dokumentierte Garantie -- deshalb komplett ausgelassen, dieselbe
+  ehrliche Auslassung wie bei `plugin::tacticalrmm`s fehlendem
+  Dashboard-Link.
+- **HTTP-Client**: `ureq` 3.4.1, synchron, dieselbe Abhängigkeit wie jedes
+  andere Plugin hier.
+- **Zugangsdaten-Kodierung**: Hetzner braucht nur einen einzigen
+  Geheimwert (den API-Token), der 1:1 als `PluginCredentials.secret`
+  durchgereicht wird -- keine JSON-Kodierung nötig, genau wie bei
+  Level.io.
+
+### Hetzner-Verbindungen sind 1:1 an einen Kunden gebunden
+
+- Nicht-geheime Metadaten (`id`, `customer_id`, `label`) liegen als
+  `HetznerConnectionMeta` in `Config::hetzner_connections` (`config.toml`,
+  `#[serde(default)]`-kompatibel mit älteren Konfigurationen ohne dieses
+  Feld).
+- Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"hetzner:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei Level.io
+  (`commands::hetzner::generate_connection_id`/`plugin_id_for`, identisch
+  zu den Level-Gegenstücken).
+- Weil jede Verbindung genau eine `customer_id` trägt, braucht
+  `sync_hetzner_connection` keine Fallunterscheidung "zugeordnet/
+  unzugeordnet" wie `sync_ninja_connection` -- jeder synchronisierte Server
+  gehört automatisch zum Kunden der Verbindung, `linked_system_id` wird für
+  jeden Server direkt gegen die `external_refs`-Zeilen dieses Kunden
+  geprüft.
+- `HetznerServer` (Plugin-Ebene, `plugin/hetzner.rs`) trägt bewusst KEIN
+  `linked_system_id`-Feld -- ob ein Server bereits mit einem lokalen System
+  verknüpft ist, ist ein Buchführungs-Anliegen des Aufrufers
+  (`commands::hetzner`, über `db::external_refs`), nicht etwas, das die
+  Plugin-Ebene selbst weiß. Genau dieselbe Trennung wie bei
+  `LevelDevice`/`IntuneDevice`: `linked_system_id` existiert erst auf der
+  `commands`-Ebene-DTO (`commands::hetzner::ExternalSystemDto`).
+
+### Zwischenspeicher für Offline-Ansicht
+
+Exakt dieselbe Konvention wie Level.io, nur mit zusätzlichen Hetzner-
+eigenen Feldern (`status`, `platform`, `location`) statt Level-Gruppen:
+`sync_hetzner_connection` schreibt das Ergebnis jedes Laufs zusätzlich als
+JSON nach `data_dir/plugin-cache/hetzner-<connection_id>.json`
+(`{"synced_at_utc": "...", "devices": [...]}`). `get_cached_hetzner_sync`
+liest ausschließlich diese Datei (kein Netzwerkzugriff) und liefert `None`,
+wenn für eine Verbindung noch nie synchronisiert wurde.
+`remove_hetzner_connection` löscht diese Cache-Datei (bestes Bemühen).
+
+### Tauri-Kommandos (`commands::hetzner`)
+
+`test_hetzner_connection`, `list_hetzner_connections`,
+`add_hetzner_connection`, `remove_hetzner_connection`,
+`sync_hetzner_connection`, `get_cached_hetzner_sync`,
+`link_system_to_hetzner`, `unlink_system_from_hetzner`,
+`get_hetzner_system_details` -- dünne Wrapper nach demselben Muster wie
+`commands::level`, aber ohne jegliche Zuordnungskommandos (kein
+Hetzner-Äquivalent zu `map_ninja_organization`/`unmap_ninja_organization`
+nötig, siehe oben).
+
+`test_hetzner_connection` prüft einen API-Token per leichtgewichtigem
+Aufruf (eine Seite mit `per_page=1`), ohne irgendetwas zu persistieren. Das
+Übernehmen eines extern gelieferten Werts in ein selbst gepflegtes Feld
+(`name`, `hostname`, `ip_address`, `notes` in `systems`) bleibt dabei --
+wie bei jedem anderen Plugin hier -- ausschließlich eine bewusste, manuelle
+Aktion über `get_hetzner_system_details` plus eine spätere UI-Aktion; kein
+Kommando hier schreibt automatisch in diese vier Felder.
+
+### Eingebunden in den Journal-System-Picker (`commands::external_directory`)
+
+Wie bei jedem anderen Plugin hier ist `collect_hetzner` (plus
+`read_hetzner_cache_file`) in `list_unlinked_external_systems_for_customer_pure`
+verdrahtet -- bewusst als Teil dieser Änderung selbst, nicht als
+Nachtrag: ein echter, kürzlich behobener Fehler in dieser Codebasis
+bestand genau darin, dass sechs Plugins ergänzt, aber nie in diesen
+Aggregator verdrahtet wurden, wodurch ihre Geräte im System-Feld des
+Journal-Eintrags (`EntryEditor.tsx`/`QuickCapture.tsx`) wochenlang
+unsichtbar blieben. `collect_hetzner` folgt exakt demselben Muster wie
+`collect_level`/`collect_intune`: keine Mandanten-Zuordnungstabelle, ein
+Server erscheint genau dann, wenn seine Verbindung an den angefragten
+Kunden gebunden ist UND er noch nicht lokal verknüpft ist.
+
+### Frontend (`HetznerPluginSection.tsx`)
+
+Strukturell an `IntunePluginSection.tsx` angelehnt: flache, filterbare,
+10-pro-Seite-paginierte Serverliste je Verbindung (kein Gruppierungs-
+Layer, Hetzner kennt weder Organisationen noch Level.ios Gruppen-Konzept),
+`j`/`k`/`Enter`/`l`/`u`-Tastaturnavigation, ein Kunde-Auswahlfeld im
+Anlage-Formular (statt einer separaten Zuordnungs-UI). Der
+Verbindungs-Anlage-Dialog hat nur EIN Geheimwert-Feld (API-Token als
+`type="password"`), wie bei Level.io, nicht Intunes Drei-Werte-Formular.
+Die "Alle anlegen (N)"-Sammel-Schaltfläche neben der "Nicht
+verknüpft"-Überschrift ist, wie bei
+`AbmPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`,
+direkt nach `connection.id` verschlüsselt (nicht Level.ios eigene, komplexere
+UI-Gruppen-Verschlüsselung -- Hetzner hat kein Gruppen-Konzept, für das
+diese Komplexität nötig wäre). `findExternalIp` im Frontend spiegelt
+`plugin::hetzner::extract_ipv4_address` exakt: liest ausschließlich
+`public_net.ipv4.ip`, niemals das IPv6-/64-CIDR-Feld. `PluginsView.tsx`
+bindet die Sektion alphabetisch zwischen `DattoRmmPluginSection.tsx` und
+`IntunePluginSection.tsx` ein ("Hetzner-Verbindungen" sortiert zwischen
+"Datto-RMM-Verbindungen" und "Intune-Verbindungen").

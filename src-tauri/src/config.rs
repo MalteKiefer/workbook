@@ -7,6 +7,7 @@ use crate::plugin::acronis::{AcronisConnectionMeta, AcronisTenantMapping};
 use crate::plugin::action1::{Action1ConnectionMeta, Action1OrgMapping};
 use crate::plugin::atera::{AteraConnectionMeta, AteraCustomerMapping};
 use crate::plugin::dattormm::{DattoRmmConnectionMeta, DattoRmmSiteMapping};
+use crate::plugin::hetzner::HetznerConnectionMeta;
 use crate::plugin::intune::IntuneConnectionMeta;
 use crate::plugin::iru::IruConnectionMeta;
 use crate::plugin::jamf::{JamfConnectionMeta, JamfSiteMapping};
@@ -355,6 +356,16 @@ pub struct Config {
     /// `#[serde(default)]`-compatible with configs from before this
     /// change.
     pub acronis_tenant_mappings: Vec<AcronisTenantMapping>,
+    /// Non-secret metadata per configured Hetzner Cloud connection. Like a
+    /// Level/Intune connection, a Hetzner connection is bound directly to
+    /// exactly one local customer (`HetznerConnectionMeta.customer_id`) --
+    /// one Hetzner Cloud API token is bound to exactly one Hetzner
+    /// "Project", confirmed 1:1, see `plugin::hetzner`. No mapping table
+    /// needed. The associated API token lives exclusively in the OS
+    /// keyring, see `plugin::secrets`. `#[serde(default)]`-compatible with
+    /// configs from before this change, analogous to `level_connections`
+    /// above.
+    pub hetzner_connections: Vec<HetznerConnectionMeta>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -418,6 +429,7 @@ impl Default for Config {
             dattormm_site_mappings: Vec::new(),
             acronis_connections: Vec::new(),
             acronis_tenant_mappings: Vec::new(),
+            hetzner_connections: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -1450,6 +1462,41 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.acronis_tenant_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_hetzner_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.hetzner_connections.push(HetznerConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            customer_id: 7,
+            label: "ACME Hetzner".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.hetzner_connections.len(), 1);
+        assert_eq!(loaded.hetzner_connections[0].customer_id, 7);
+        assert_eq!(loaded.hetzner_connections[0].label, "ACME Hetzner");
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_hetzner_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the Hetzner Cloud integration
+        // was introduced -- the field is entirely missing and must fall
+        // back gracefully to an empty list thanks to `#[serde(default)]`
+        // instead of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.hetzner_connections.is_empty());
     }
 
     #[test]

@@ -81,6 +81,7 @@ pub mod action1;
 pub mod atera;
 pub mod dattormm;
 pub mod dummy;
+pub mod hetzner;
 pub mod intune;
 pub mod iru;
 pub mod jamf;
