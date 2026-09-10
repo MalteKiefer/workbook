@@ -91,3 +91,4 @@ pub mod pulseway;
 pub mod secrets;
 pub mod snipeit;
 pub mod tacticalrmm;
+pub mod vultr;

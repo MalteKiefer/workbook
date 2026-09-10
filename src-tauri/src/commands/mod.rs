@@ -24,3 +24,4 @@ pub mod snipeit;
 pub mod systems;
 pub mod tacticalrmm;
 pub mod tags;
+pub mod vultr;
