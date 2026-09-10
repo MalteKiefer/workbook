@@ -83,6 +83,7 @@ pub mod iru;
 pub mod jamf;
 pub mod level;
 pub mod ninja;
+pub mod pulseway;
 pub mod secrets;
 pub mod snipeit;
 pub mod tacticalrmm;

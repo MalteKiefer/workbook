@@ -264,6 +264,18 @@ pub fn run() {
             commands::atera::link_system_to_atera,
             commands::atera::unlink_system_from_atera,
             commands::atera::get_atera_system_details,
+            commands::pulseway::test_pulseway_connection,
+            commands::pulseway::list_pulseway_connections,
+            commands::pulseway::add_pulseway_connection,
+            commands::pulseway::remove_pulseway_connection,
+            commands::pulseway::list_pulseway_organizations,
+            commands::pulseway::map_pulseway_organization,
+            commands::pulseway::unmap_pulseway_organization,
+            commands::pulseway::sync_pulseway_connection,
+            commands::pulseway::get_cached_pulseway_sync,
+            commands::pulseway::link_system_to_pulseway,
+            commands::pulseway::unlink_system_from_pulseway,
+            commands::pulseway::get_pulseway_system_details,
             commands::external_directory::list_unlinked_external_systems_for_customer,
         ])
         .run(tauri::generate_context!())

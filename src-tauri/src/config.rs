@@ -9,6 +9,7 @@ use crate::plugin::iru::IruConnectionMeta;
 use crate::plugin::jamf::{JamfConnectionMeta, JamfSiteMapping};
 use crate::plugin::level::LevelConnectionMeta;
 use crate::plugin::ninja::{NinjaConnectionMeta, NinjaOrgMapping};
+use crate::plugin::pulseway::{PulsewayConnectionMeta, PulsewayOrgMapping};
 use crate::plugin::snipeit::{SnipeitCompanyMapping, SnipeitConnectionMeta};
 use crate::plugin::tacticalrmm::{TacticalRmmClientMapping, TacticalRmmConnectionMeta};
 
@@ -253,6 +254,25 @@ pub struct Config {
     /// `ninja_org_mappings`. `#[serde(default)]`-compatible with configs
     /// from before this change.
     pub atera_customer_mappings: Vec<AteraCustomerMapping>,
+    /// Non-secret metadata per configured Pulseway connection (a
+    /// cloud-hosted Pulseway account, or a self-hosted "Enterprise Server"
+    /// instance under the same API shape; a user can create as many
+    /// connections as they like). Like a Tactical RMM/Ninja/Snipe-IT
+    /// connection, a Pulseway connection is NOT bound to exactly one local
+    /// customer -- see `pulseway_org_mappings`. The associated Token ID/
+    /// Token Secret pair lives exclusively in the OS keyring, see
+    /// `plugin::secrets`. `#[serde(default)]`-compatible with configs from
+    /// before this change, analogous to `tacticalrmm_connections` above.
+    pub pulseway_connections: Vec<PulsewayConnectionMeta>,
+    /// Mapping of individual Pulseway "Organizations" (within a connection)
+    /// to local customers. A single Pulseway connection can see multiple
+    /// organizations -- e.g. because the user is themselves an MSP who runs
+    /// several of their own customers as separate organizations in Pulseway
+    /// -- hence this separate, granular mapping table instead of a
+    /// `customer_id` field directly on the connection -- exactly the same
+    /// principle as `tacticalrmm_client_mappings`/`ninja_org_mappings`.
+    /// `#[serde(default)]`-compatible with configs from before this change.
+    pub pulseway_org_mappings: Vec<PulsewayOrgMapping>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -306,6 +326,8 @@ impl Default for Config {
             tacticalrmm_client_mappings: Vec::new(),
             atera_connections: Vec::new(),
             atera_customer_mappings: Vec::new(),
+            pulseway_connections: Vec::new(),
+            pulseway_org_mappings: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -945,6 +967,84 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.atera_customer_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_pulseway_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.pulseway_connections.push(PulsewayConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Pulseway".to_string(),
+            base_url: "https://api.pulseway.com/v3".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.pulseway_connections.len(), 1);
+        assert_eq!(
+            loaded.pulseway_connections[0].base_url,
+            "https://api.pulseway.com/v3"
+        );
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_pulseway_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the Pulseway integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.pulseway_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_pulseway_org_mappings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.pulseway_connections.push(PulsewayConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Pulseway".to_string(),
+            base_url: "https://api.pulseway.com/v3".to_string(),
+        });
+        config.pulseway_org_mappings.push(PulsewayOrgMapping {
+            connection_id: "acme-1700000000000".to_string(),
+            organization_id: "6978".to_string(),
+            organization_name: "Acme Corp".to_string(),
+            customer_id: 7,
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.pulseway_org_mappings.len(), 1);
+        assert_eq!(loaded.pulseway_org_mappings[0].organization_id, "6978");
+        assert_eq!(loaded.pulseway_org_mappings[0].customer_id, 7);
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_pulseway_org_mappings_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the organization mapping was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.pulseway_org_mappings.is_empty());
     }
 
     #[test]

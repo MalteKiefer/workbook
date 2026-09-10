@@ -5,6 +5,7 @@ import IruPluginSection from "./IruPluginSection";
 import JamfPluginSection from "./JamfPluginSection";
 import LevelPluginSection from "./LevelPluginSection";
 import NinjaPluginSection from "./NinjaPluginSection";
+import PulsewayPluginSection from "./PulsewayPluginSection";
 import SnipeitPluginSection from "./SnipeitPluginSection";
 import TacticalRmmPluginSection from "./TacticalRmmPluginSection";
 
@@ -24,7 +25,9 @@ import TacticalRmmPluginSection from "./TacticalRmmPluginSection";
 // (Apple Business Manager, see docs/PLUGIN_ARCHITECTURE.md
 // "Apple-Business-Manager-Plugin"), TacticalRmmPluginSection.tsx
 // (docs/PLUGIN_ARCHITECTURE.md "Tactical-RMM-Plugin"), and
-// AteraPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Atera-Plugin").
+// AteraPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md "Atera-Plugin"), and
+// PulsewayPluginSection.tsx (docs/PLUGIN_ARCHITECTURE.md
+// "Pulseway-Plugin").
 export default function PluginsView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
@@ -36,6 +39,7 @@ export default function PluginsView() {
       <JamfPluginSection />
       <LevelPluginSection />
       <NinjaPluginSection />
+      <PulsewayPluginSection />
       <SnipeitPluginSection />
       <TacticalRmmPluginSection />
     </div>
