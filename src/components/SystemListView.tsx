@@ -16,11 +16,25 @@ interface System {
   ip_address: string;
   notes: string;
   archived_at_utc: string | null;
+  maintenance_interval_days: number | null;
+  // Computed by list_systems_with_maintenance_status (maintenance::is_overdue),
+  // not stored columns -- see SystemWithMaintenanceStatus on the Rust side.
+  overdue: boolean;
+  last_performed_at_utc: string | null;
 }
 
 interface Customer {
   id: number;
   name: string;
+}
+
+// Same synchronous de-DE formatting already used for other system-generated
+// timestamps shown as plain text (BackupView.tsx, UpdateSettingsView.tsx) --
+// simpler than the async format_timestamp_for_display command, which exists
+// for temporal-input-parsing round-trips rather than one-off badge tooltips.
+function formatOverdueSince(s: System): string {
+  if (s.last_performed_at_utc === null) return "Anlage des Systems";
+  return new Date(s.last_performed_at_utc).toLocaleString("de-DE");
 }
 
 export default function SystemListView() {
@@ -40,7 +54,10 @@ export default function SystemListView() {
 
   const reload = useCallback(() => {
     if (selectedCustomerId === null) return;
-    invoke<System[]>("list_systems", { customerId: selectedCustomerId, includeArchived: false }).then(setSystems);
+    invoke<System[]>("list_systems_with_maintenance_status", {
+      customerId: selectedCustomerId,
+      includeArchived: false,
+    }).then(setSystems);
   }, [selectedCustomerId]);
 
   useEffect(() => {
@@ -160,7 +177,22 @@ export default function SystemListView() {
             }}
           >
             <span>
-              {s.name} <span style={{ color: "var(--text-muted)" }}>({s.system_type})</span>{" "}
+              {s.name}
+              {s.overdue && (
+                <span
+                  title={`Überfällig seit ${formatOverdueSince(s)}`}
+                  style={{
+                    display: "inline-block",
+                    width: "6px",
+                    height: "6px",
+                    borderRadius: "50%",
+                    background: "var(--danger)",
+                    marginLeft: "0.4rem",
+                    verticalAlign: "middle",
+                  }}
+                />
+              )}{" "}
+              <span style={{ color: "var(--text-muted)" }}>({s.system_type})</span>{" "}
               <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)", fontSize: "0.85em" }}>
                 {s.hostname}
               </span>
