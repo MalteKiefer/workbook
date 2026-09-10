@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
 use crate::plugin::abm::AbmConnectionMeta;
+use crate::plugin::action1::{Action1ConnectionMeta, Action1OrgMapping};
 use crate::plugin::atera::{AteraConnectionMeta, AteraCustomerMapping};
 use crate::plugin::intune::IntuneConnectionMeta;
 use crate::plugin::iru::IruConnectionMeta;
@@ -293,6 +294,26 @@ pub struct Config {
     /// `tacticalrmm_client_mappings`/`ninja_org_mappings`.
     /// `#[serde(default)]`-compatible with configs from before this change.
     pub kaseya_org_mappings: Vec<KaseyaOrgMapping>,
+    /// Non-secret metadata per configured Action1 connection (a cloud-hosted
+    /// Action1 account; a user can create as many connections as they
+    /// like -- e.g. one per region, see `plugin::action1`). Like a Ninja/
+    /// Tactical RMM connection, an Action1 connection is NOT bound to
+    /// exactly one local customer -- see `action1_org_mappings`. The
+    /// associated client ID/secret pair lives exclusively in the OS
+    /// keyring, see `plugin::secrets`. `#[serde(default)]`-compatible with
+    /// configs from before this change, analogous to `ninja_connections`
+    /// above.
+    pub action1_connections: Vec<Action1ConnectionMeta>,
+    /// Mapping of individual Action1 "Organizations" (within a connection)
+    /// to local customers. A single Action1 account (one connection) can
+    /// manage multiple organizations -- e.g. because the user is themselves
+    /// an MSP who runs several of their own customers as separate
+    /// organizations in a shared Action1 account -- hence this separate,
+    /// granular mapping table instead of a `customer_id` field directly on
+    /// the connection -- exactly the same principle as `ninja_org_mappings`/
+    /// `tacticalrmm_client_mappings`. `#[serde(default)]`-compatible with
+    /// configs from before this change.
+    pub action1_org_mappings: Vec<Action1OrgMapping>,
     /// User-selected theme preference (Settings → General).
     /// `#[serde(default)]`-compatible with configs from before this field
     /// was introduced, analogous to `ninja_connections` above -- if missing,
@@ -350,6 +371,8 @@ impl Default for Config {
             pulseway_org_mappings: Vec::new(),
             kaseya_connections: Vec::new(),
             kaseya_org_mappings: Vec::new(),
+            action1_connections: Vec::new(),
+            action1_org_mappings: Vec::new(),
             theme_preference: ThemePreference::default(),
             auto_backup_enabled: false,
             auto_backup_dir: None,
@@ -1145,6 +1168,87 @@ mod tests {
         let loaded = Config::load_or_default(&path).unwrap();
 
         assert!(loaded.kaseya_org_mappings.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_action1_connections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.action1_connections.push(Action1ConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Action1".to_string(),
+            base_url: "https://app.eu.action1.com/api/3.0".to_string(),
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.action1_connections.len(), 1);
+        assert_eq!(
+            loaded.action1_connections[0].base_url,
+            "https://app.eu.action1.com/api/3.0"
+        );
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_action1_connections_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the Action1 integration was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.action1_connections.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_action1_org_mappings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.action1_connections.push(Action1ConnectionMeta {
+            id: "acme-1700000000000".to_string(),
+            label: "ACME Action1".to_string(),
+            base_url: "https://app.eu.action1.com/api/3.0".to_string(),
+        });
+        config.action1_org_mappings.push(Action1OrgMapping {
+            connection_id: "acme-1700000000000".to_string(),
+            organization_id: "11111111-1111-1111-1111-111111111111".to_string(),
+            organization_name: "ACME Hauptsitz".to_string(),
+            customer_id: 7,
+        });
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.action1_org_mappings.len(), 1);
+        assert_eq!(
+            loaded.action1_org_mappings[0].organization_id,
+            "11111111-1111-1111-1111-111111111111"
+        );
+        assert_eq!(loaded.action1_org_mappings[0].customer_id, 7);
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_action1_org_mappings_field_defaults_to_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the organization mapping was
+        // introduced -- the field is entirely missing and must fall back
+        // gracefully to an empty list thanks to `#[serde(default)]` instead
+        // of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert!(loaded.action1_org_mappings.is_empty());
     }
 
     #[test]

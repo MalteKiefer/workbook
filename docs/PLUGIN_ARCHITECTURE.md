@@ -1,19 +1,20 @@
 # Plugin-Architektur
 
-Status: Zehn echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
+Status: Zwölf echte Integrationen umgesetzt -- NinjaOne (`plugin::ninja`,
 `commands::plugins`), Level.io (`plugin::level`, `commands::level`),
 Snipe-IT (`plugin::snipeit`, `commands::snipeit`), Microsoft Intune
 (`plugin::intune`, `commands::intune`), Iru (`plugin::iru`,
 `commands::iru`), Jamf Pro (`plugin::jamf`, `commands::jamf`), Apple
 Business Manager (`plugin::abm`, `commands::abm`), Tactical RMM
 (`plugin::tacticalrmm`, `commands::tacticalrmm`), Atera (`plugin::atera`,
-`commands::atera`) und Pulseway (`plugin::pulseway`,
-`commands::pulseway`) --, alle mit
+`commands::atera`), Pulseway (`plugin::pulseway`, `commands::pulseway`),
+Kaseya VSA (`plugin::kaseya`, `commands::kaseya`) und Action1
+(`plugin::action1`, `commands::action1`) --, alle mit
 Mehrfach-Verbindungs-Unterstützung. `DummyPlugin` bleibt als
 Attrappen-Referenzimplementierung bestehen. Noch kein UI-Aufruf im Sinne
 einer Command Palette -- die Kommandos sind aber vollständig Ende-zu-Ende
 von einem Frontend aus nutzbar (`PluginsView.tsx` als dünne Hülle um
-`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AteraPluginSection.tsx`/`PulsewayPluginSection.tsx`).
+`NinjaPluginSection.tsx`/`LevelPluginSection.tsx`/`SnipeitPluginSection.tsx`/`IntunePluginSection.tsx`/`IruPluginSection.tsx`/`JamfPluginSection.tsx`/`AbmPluginSection.tsx`/`TacticalRmmPluginSection.tsx`/`AteraPluginSection.tsx`/`PulsewayPluginSection.tsx`/`KaseyaPluginSection.tsx`/`Action1PluginSection.tsx`).
 
 ## Isolationsprinzip
 
@@ -2117,3 +2118,254 @@ gibt es bewusst KEINEN "In X öffnen"-Link auf einer Geräte-Zeile (siehe
 oben, kein verifizierter Weboberflächen-Link). `PluginsView.tsx` bindet die
 Sektion alphabetisch zwischen `JamfPluginSection.tsx` und
 `LevelPluginSection.tsx` ein.
+
+## Action1-Plugin (`plugin::action1`) -- zwölfte echte Integration
+
+`plugin/action1.rs` implementiert `Plugin` für Action1s REST-API über HTTPS.
+Action1 (<https://www.action1.com>) ist ein cloud gehostetes,
+patch management fokussiertes RMM Tool (Remote Monitoring & Management). Bei
+der Authentifizierung ist es strukturell am nächsten an Microsoft Intune:
+ein OAuth2-Grant im Client-Credentials-Stil gegen einen Token-Endpunkt
+(Client-ID und Client-Secret werden gegen einen Bearer-Token eingetauscht).
+Bei der Mehrfach-Mandantenfähigkeit ist es dagegen am nächsten an
+NinjaOne/Tactical RMM: eine Verbindung sieht mehrere "Organizations", jede
+wird einzeln einem lokalen Kunden zugeordnet.
+
+Ein Hinweis vorab: Action1s eigene Quellen widersprechen sich an einer
+Stelle, und diese Integration löst diesen Widerspruch bewusst nicht heimlich
+auf, sondern trifft eine dokumentierte, ausdrücklich als ungeprüft
+markierte Entscheidung (siehe "Authentifizierung" unten).
+
+Jede Angabe unten stammt aus Action1s eigener Prosa-Dokumentation und seiner
+interaktiven OpenAPI 3.1/Swagger-Spezifikation:
+
+- **Authentifizierung, dokumentierter, ungeklärter Widerspruch**:
+  `POST {base_url}/oauth2/token`. Action1s Prosa-Dokumentation zeigt
+  `Content-Type: application/x-www-form-urlencoded` mit dem Body
+  `client_id=...&client_secret=...`. Die Swagger-Spezifikation zeigt
+  stattdessen `Content-Type: application/json` mit dem Body
+  `{"client_id": "...", "client_secret": "..."}`. Keine der beiden Quellen
+  nennt irgendwo ein Feld `grant_type` (anders als bei NinjaOne/Intune, wo
+  `grant_type=client_credentials` verifiziert ist). Diese Integration
+  implementiert die JSON-Variante, denn die interaktive Swagger-Spezifikation
+  bildet vermutlich eher den tatsächlich akzeptierten Vertrag des
+  Live-Servers ab als statische Prosa. Diese Entscheidung ist ausdrücklich
+  ungeprüft gegen einen echten Action1-Aufruf. Ein eigener Test
+  (`token_request_body_is_json_with_client_id_and_client_secret_only` in
+  `plugin::action1`) legt die genaue JSON-Form fest, damit eine spätere
+  Korrektur, falls sich die Prosa-Variante doch als richtig erweist, ein
+  Ein-Zeilen-Diff bleibt statt einer erneuten Recherche. Die Antwort (beide
+  Quellen stimmen hier überein): `{"access_token": "<JWT>", "refresh_token":
+  "...", "expires_in": 3600, "token_type": "bearer"}`, verwendet als
+  `Authorization: Bearer <access_token>`. Client-ID und Client-Secret werden
+  vom Nutzer in der Action1-Konsole erzeugt (Configuration, Users and API
+  Credentials); die dort zugewiesene Rolle steuert den Zugriffsumfang, ein
+  separater `scope`-Parameter existiert nicht.
+- **Basis-URL**: vier feste, regionale Hosts, jeweils bereits mit
+  `/api/3.0` im Pfad: `https://app.action1.com/api/3.0` (Nordamerika),
+  `https://app.na-2.action1.com/api/3.0` (Nordamerika 2),
+  `https://app.eu.action1.com/api/3.0` (Europa) und
+  `https://app.au.action1.com/api/3.0` (Australien). Wie bei
+  NinjaOne/Snipe-IT/Tactical RMM gibt der Nutzer dies selbst an
+  (`Action1ConnectionMeta.base_url`). Das Frontend bietet die vier Optionen
+  als Auswahlliste an, das Feld selbst bleibt ein einfacher String.
+- **Organisationen (Mehrfach-Mandantenfähigkeit)**: `GET {base_url}/organizations`,
+  verpackt in Action1s generischem `ResultPage`-Umschlag, der in der
+  gesamten API verwendet wird: `{"id","type":"ResultPage","name","self",
+  "items":[{"id","type":"Organization","name","description","self",
+  "access"}],"total_items","limit","next_page","prev_page"}`. Die genaue
+  Form der Organisations-ID ist über einen Platzhalterwert hinaus nicht
+  bestätigt. Sie wird deshalb defensiv behandelt (String oder Zahl werden
+  beide akzeptiert), nicht als garantiert numerisch angenommen.
+- **Endpunkte (Geräte)**: `GET {base_url}/endpoints/managed/{orgId}`,
+  derselbe `ResultPage`-Umschlag. Wichtig: dies ist ein Aufruf PRO
+  ORGANISATION, anders als NinjaOnes `/v2/devices`, das alle Geräte des
+  gesamten Tenants in einem einzigen Aufruf listet, unabhängig von der
+  Organisation. Es gibt keinen dokumentierten Aufruf für "alle Endpunkte des
+  Kontos". Das vollständige Geräteverzeichnis einer Verbindung zu holen
+  erfordert deshalb genau einen `/endpoints/managed/{orgId}` Durchlauf pro
+  Organisation (siehe unten, Rate-Limit). Verifizierte, verwendete Felder:
+  `id` (als `external_id`), `device_name` (der echte Hostname, bevorzugt),
+  `name` (ein separates, vom Nutzer editierbares Anzeige-Label, nur als
+  Rückfallebene verwendet), `address` (IP), `platform` und `status` (Enum
+  `Connected`/`Disconnected`/`Pending Uninstall`, das echte
+  Konnektivitätsfeld, als freier String durchgereicht). Entscheidend:
+  `organization_id`, ein echter UUID-String-Fremdschlüssel direkt am
+  Endpunkt-Objekt. Anders als Tactical RMM, dessen Agentenliste nur einen
+  `client_name`-String trägt und einen Namens-basierten Join erzwingt, lässt
+  sich ein Action1-Endpunkt über eine echte ID zuordnen.
+  `commands::action1::group_endpoints_by_organization` ist entsprechend als
+  ID-Join geschrieben, nicht als Namens-Join.
+- **`online_status` ist KEINE Konnektivität, nicht mit `status`
+  verwechseln**: `online_status` ist ein separates Enum
+  (`SUCCESS`/`WARNING`/`ERROR`), ein Zustands- bzw. Gesundheitsflag der
+  Überwachung selbst, nicht "ist dieser Endpunkt online". Dieses Feld wird
+  in der gesamten Integration bewusst nirgends gelesen. `status` ist das
+  einzige Feld, das als Konnektivität angezeigt wird.
+- **Pagination**: Query-Parameter `limit` (Seitengröße) und `from` (Offset
+  des ersten Datensatzes) beim ersten Aufruf. `next_page`/`prev_page` im
+  `ResultPage`-Umschlag sind bereits fertige, RELATIVE URLs, die den
+  nächsten `from`/`limit`-Wert schon enthalten (Beispiel aus Action1s
+  eigener Dokumentation: `/API/endpoints/managed?from=60&limit=10`). Eine
+  Fortsetzung berechnet deshalb nie selbst `from`/`limit`, sondern folgt nur
+  `next_page`. Das Verhalten auf dem letzten Blatt (null, fehlendes Feld
+  oder leerer String) ist nicht ausdrücklich bestätigt. Ein leerer String
+  wird deshalb defensiv genauso wie ein fehlendes Feld behandelt, "keine
+  weitere Seite", um eine Endlosschleife zu vermeiden. `MAX_PAGES` begrenzt
+  den Durchlauf zusätzlich, dieselbe defensive Konvention wie bei
+  `plugin::intune`/`plugin::level`.
+- **Einzelgerät-Detail**: `GET {base_url}/endpoints/managed/{orgId}/{endpointId}`,
+  auch direkt über das Feld `self` jedes Listeneintrags gegeben, roher
+  JSON-Durchgriff wie bei jedem anderen Plugin. Wichtig: dieser Aufruf
+  braucht BEIDE IDs (Organisation und Endpunkt) im URL-Pfad, anders als
+  Tactical RMMs `/agents/{agent_id}/`, wo eine einzelne ID genügt. Der
+  generische `Plugin`-Trait (`get_system_details`/`link_system`) trägt nur
+  eine einzelne `external_id`. Der empfohlene, tatsächlich verwendete Weg
+  ist deshalb die eigene Methode
+  `Action1Plugin::get_endpoint_details(credentials, organization_id,
+  endpoint_id)`, die `commands::action1` direkt aufruft (dort ist
+  `organization_id` aus der Organisations-/Geräte-Gruppierung ohnehin schon
+  bekannt). Die Trait-Methode `get_system_details` existiert trotzdem, zur
+  Schnittstellen-Konformität, implementiert über eine dokumentierte
+  Kompakt-Kodierung `"<organisation_id>:<endpunkt_id>"` von `external_id`
+  (siehe `split_compound_external_id`); `commands::action1` verlässt sich
+  darauf nie.
+- **Rate-Limit, spürbar enger als bei den anderen RMM-Plugins dieser
+  Codebasis**: Action1 empfiehlt, unter 30 Anfragen pro Minute je
+  Enterprise-Konto zu bleiben, über alle Endpunkte der API hinweg gezählt
+  (zum Vergleich: Tactical RMM/NinjaOne haben in dieser Codebasis keine
+  dokumentierte Grenze; Datto RMM liegt laut Recherche bei 600/60s,
+  Pulseway bei rund 3600/Stunde). Eine Überschreitung liefert `429` mit
+  `{"status":429,"details":{"retry_after":<Sekunden>}}`. Das ist hier
+  konkret relevant, weil `sync_action1_connection` (siehe
+  `commands::action1`) wegen der Endpunkte-Liste PRO Organisation (siehe
+  oben) für eine reguläre Synchronisierung schon ungefähr "1 (Organisations-
+  Aufruf) + 1 Endpunkte-Aufruf pro Organisation" braucht, bevor Pagination
+  oder Detail-Aktualisierungen bereits verknüpfter Geräte überhaupt
+  mitgezählt sind. Für ein Konto mit vielen Organisationen summiert sich das
+  gegen ein Budget von 30 pro Minute schnell auf. Das bestehende Muster
+  "vollständiger Abruf pro Synchronisierung, manuell ausgelöst" (siehe
+  `plugin::tacticalrmm`/`plugin::ninja`) bleibt auch hier bestehen, es passt
+  für die realistischen Flottengrößen eines einzelnen Administrators, den
+  diese Anwendung anspricht. Diese Grenze wird trotzdem ausdrücklich
+  benannt, damit eine künftige Änderung nicht ungesehen noch mehr Aufrufe
+  pro Synchronisierung hinzufügt (etwa eine Live-Detail-Aktualisierung für
+  jedes gelistete Gerät statt nur für bereits verknüpfte).
+  `Action1Plugin::list_organizations_with_endpoints` holt deshalb schon
+  jetzt genau EIN OAuth2-Token pro Synchronisierung, nicht eines pro
+  Organisation.
+- **Kein verifizierter Weboberflächen-Link**: nirgends erreichbar
+  dokumentiert, deshalb bewusst weggelassen, dasselbe ehrliche
+  Auslassungsprinzip wie bei Tactical RMMs fehlendem `tacticalrmm_url`.
+- **HTTP-Client**: `ureq`, synchron, dieselbe Abhängigkeit wie jedes andere
+  Plugin-Modul dieser Codebasis. Keine neue Cargo-Abhängigkeit nötig.
+- **Zugangsdaten-Kodierung**: Action1 braucht zwei Geheimwerte (`client_id`,
+  `client_secret`), als JSON in `PluginCredentials.secret` kodiert
+  (`serde_json::to_string`/`from_str`), dasselbe Zwei-Werte-Muster wie bei
+  `plugin::ninja::NinjaCredentials`.
+
+### Action1-Verbindungen, jede mit mehreren Organisationen
+
+Strukturell identisch zu NinjaOnes/Tactical RMMs Verbindungs- bzw.
+Organisations-/Client-Modell:
+
+- Nicht-geheime Metadaten (`id`, `label`, `base_url`, bewusst OHNE
+  `customer_id`) liegen als `Action1ConnectionMeta` in
+  `Config::action1_connections` (`#[serde(default)]`-kompatibel).
+  Verbindungs-`id`-Erzeugung (`slugify` + Millisekunden-Zeitstempel) und der
+  vollqualifizierte `"action1:<connection_id>"`-Bezeichner
+  (Schlüsselspeicher-Konto UND `external_refs.plugin_id`) folgen exakt
+  demselben Muster wie bei jedem anderen Plugin hier.
+- Welche Organisation innerhalb einer Verbindung welchem lokalen Kunden
+  entspricht (falls überhaupt), steht granular in
+  `Config::action1_org_mappings` (`Action1OrgMapping { connection_id,
+  organization_id, organization_name, customer_id }`). Eine nicht
+  zugeordnete Organisation liefert bei jeder Synchronisierung ihre
+  Endpunkte weiterhin (zur Ansicht), aber immer mit
+  `linked_system_id: None`.
+- `commands::action1::group_endpoints_by_organization` gruppiert Endpunkte
+  nach Organisation, strukturell analog zu
+  `commands::plugins::group_devices_by_organization` (NinjaOne). Der
+  entscheidende Unterschied zu `commands::tacticalrmm::group_agents_by_client`:
+  hier läuft der Join echt über eine ID (`endpoint.organization_id`), nicht
+  über einen Namen (siehe oben). Eine Organisation ohne Endpunkte erscheint
+  trotzdem als leere Gruppe, damit sie in der Oberfläche zur Zuordnung
+  angeboten werden kann. Endpunkte, deren `organization_id` zu keiner
+  bekannten Organisation passt (sollte normalerweise nicht vorkommen, ist
+  aber nicht ausgeschlossen, etwa eine zwischen Organisations- und
+  Endpunkt-Abruf im selben Synchronisierungslauf gelöschte Organisation),
+  werden nicht stillschweigend verworfen, sondern als eigene Restgruppe
+  angehängt, mit der rohen ID als synthetischer ID UND, mangels besserem
+  Namen, auch als Anzeigename.
+
+### Zwischenspeicher für Offline-Ansicht
+
+Dieselbe Konvention wie bei jedem anderen Plugin hier:
+`sync_action1_connection` schreibt das Ergebnis jedes Laufs zusätzlich als
+JSON nach `data_dir/plugin-cache/action1-<connection_id>.json`
+(`{"synced_at_utc": "...", "groups": [...]}`). `get_cached_action1_sync`
+liest ausschließlich diese Datei (kein Netzwerkzugriff), rejoint dabei aber
+`customer_id` je Gruppe live gegen die AKTUELLEN
+`Config::action1_org_mappings` (nicht den beim letzten Sync eingefrorenen
+Wert), genau wie `commands::tacticalrmm::get_cached_tacticalrmm_sync`, und
+liefert `None`, wenn für eine Verbindung noch nie synchronisiert wurde.
+`remove_action1_connection` löscht diese Cache-Datei (bestes Bemühen) und
+alle `action1_org_mappings`-Zeilen der entfernten Verbindung gleich mit.
+
+### Tauri-Kommandos (`commands::action1`)
+
+`test_action1_connection`, `list_action1_connections`,
+`add_action1_connection`, `remove_action1_connection`,
+`list_action1_organizations`, `map_action1_organization`,
+`unmap_action1_organization`, `sync_action1_connection`,
+`get_cached_action1_sync`, `link_system_to_action1`,
+`unlink_system_from_action1`, `get_action1_system_details`, dünne Wrapper
+nach dem Muster von `commands::tacticalrmm`. Eine dokumentierte, notwendige
+Abweichung vom sonst identischen Kommando-Zuschnitt: `link_system_to_action1`
+und `get_action1_system_details` nehmen zusätzlich `organization_id`
+entgegen, weil Action1s Einzelgerät-Detail-Aufruf beide IDs im URL-Pfad
+braucht (siehe oben) und die Oberfläche `group.organization_id` an dieser
+Stelle ohnehin bereits kennt; `unlink_system_from_action1` bleibt dagegen
+identisch zu `unlink_system_from_tacticalrmm` (rein lokale Löschung, kein
+API-Aufruf). `list_action1_organizations` liefert die Live-Organisationsliste
+einer Verbindung (analog zu `list_ninja_organizations`/
+`list_tacticalrmm_clients`), wird aber vom Frontend nicht aufgerufen,
+`Action1PluginSection.tsx` ist konsequent Cache-first
+(`get_cached_action1_sync` beim Öffnen, `sync_action1_connection` nur auf
+"Aktualisieren"); der Befehl bleibt für Symmetrie und einen möglichen
+künftigen Ersteinrichtungs-Anwendungsfall erhalten. Das Übernehmen eines
+extern gelieferten Werts in ein selbst gepflegtes Feld (`name`, `hostname`,
+`ip_address`, `notes` in `systems`) bleibt, wie bei jedem anderen Plugin
+hier, ausschließlich eine bewusste, manuelle Aktion über
+`get_action1_system_details` plus eine spätere UI-Aktion; kein Kommando
+hier schreibt automatisch in diese vier Felder.
+
+### Verknüpfungs-Vorschlag: welches Feld als Abgleichsschlüssel
+
+Ein Action1-Endpunkt hat kein eigenes, separates `hostname`-Feld im
+Frontend-DTO (siehe `plugin::action1`-Moduldokumentation): `name` bevorzugt
+bereits den echten `device_name` gegenüber dem separaten, vom Nutzer
+editierbaren `name`-Label. `Action1PluginSection.tsx`s `matchKeyForDevice`
+verwendet deshalb `device.name` als Abgleichsschlüssel für den "Mit
+bestehendem System verknüpfen"-Vorschlag, verglichen gegen das einzige
+freie Textfeld, das ein lokales System dafür hat, `System.hostname`.
+
+### Frontend (`Action1PluginSection.tsx`)
+
+Mechanisch an `TacticalRmmPluginSection.tsx`s Stand angelehnt (Organisationen
+eingeklappt mit Geräte-Anzahl-Zusammenfassung, Kunde-Zuordnungs-`<select>`
+inklusive "+ Neuen Kunden anlegen…", aufklappbare, filterbare,
+10-pro-Seite-paginierte Geräteliste mit `j`/`k`/`Enter`/`l`/`u`-
+Tastaturnavigation, Vergleichs-/Übernahme-Panel für verknüpfte Geräte). Der
+Verbindungs-Anlage-Dialog hat vier Felder (Label, Region als
+`<select>` über die vier festen Hosts, Client-ID, Client-Secret als
+`type="password"`), ein Client-ID/-Secret-Paar wie bei NinjaOne, nur mit
+Region statt freier Base-URL. `DeviceSummaryLine` zeigt zusätzlich einen
+Verbunden/Getrennt/Deinstallation-ausstehend-Statuspunkt und die Plattform,
+Anzeige-Kontext ohne eigenes Site-Konzept (Action1 kennt, anders als
+Tactical RMM, keine Unterebene zwischen Organisation und Endpunkt). Wie bei
+`TacticalRmmPluginSection.tsx` gibt es bewusst KEINEN "In Action1
+öffnen"-Link auf einer Geräte-Zeile (siehe oben, kein verifizierter
+Weboberflächen-Link). `PluginsView.tsx` bindet die Sektion alphabetisch vor
+`AbmPluginSection.tsx` ein ("Action1" kommt vor "Apple"), als erste Karte
+insgesamt.
