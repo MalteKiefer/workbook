@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type View = "customers" | "systems" | "journal" | "settings";
-export type SettingsTab = "general" | "backup" | "plugins" | "keymap";
+export type SettingsTab = "general" | "backup" | "plugins" | "keymap" | "update";
 
 interface AppState {
   view: View;
