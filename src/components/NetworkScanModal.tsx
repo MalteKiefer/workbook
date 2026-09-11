@@ -17,6 +17,14 @@ interface SnmpProbeResult {
   sys_up_time: string | null;
 }
 
+// Mirrors src-tauri/src/db/networks.rs::Network (only the fields this
+// modal's saved-network picker needs).
+interface Network {
+  id: number;
+  name: string;
+  cidr: string;
+}
+
 interface NetworkScanModalProps {
   customerId: number;
   onClose: () => void;
@@ -35,6 +43,8 @@ export default function NetworkScanModal({ customerId, onClose, onSystemCreated 
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [results, setResults] = useState<HostScanResult[]>([]);
+
+  const [networks, setNetworks] = useState<Network[]>([]);
 
   const [creatingIp, setCreatingIp] = useState<string | null>(null);
   const [createdIps, setCreatedIps] = useState<Set<string>>(new Set());
@@ -57,6 +67,12 @@ export default function NetworkScanModal({ customerId, onClose, onSystemCreated 
       .then(setNmapAvailable)
       .catch(() => setNmapAvailable(false));
   }, []);
+
+  useEffect(() => {
+    invoke<Network[]>("list_networks_for_customer", { customerId })
+      .then(setNetworks)
+      .catch(() => setNetworks([]));
+  }, [customerId]);
 
   async function handleScan() {
     setScanError(null);
@@ -149,6 +165,28 @@ export default function NetworkScanModal({ customerId, onClose, onSystemCreated 
           <h2 style={{ margin: 0, fontSize: "1rem" }}>Netzwerk scannen</h2>
           <button onClick={onClose}>Schließen</button>
         </div>
+
+        {networks.length > 0 && (
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            Gespeichertes Netzwerk
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value === "") return;
+                const network = networks.find((n) => String(n.id) === e.target.value);
+                if (network) setCidr(network.cidr);
+                e.target.value = "";
+              }}
+            >
+              <option value="">Netzwerk wählen…</option>
+              {networks.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name} ({n.cidr})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <div style={{ display: "flex", gap: "0.4rem", alignItems: "flex-end" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1 }}>
