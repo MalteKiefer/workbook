@@ -15,7 +15,7 @@ interface AttachmentListProps {
   attachments: Attachment[];
   onOpen: (attachmentId: number) => void;
   onExport: (attachmentId: number) => void;
-  onRemove: (attachmentId: number) => void;
+  onRemove?: (attachmentId: number) => void;
   resolveImageUrl: (attachment: Attachment) => Promise<string>;
 }
 
@@ -27,6 +27,10 @@ function formatSize(bytes: number): string {
 
 function isImage(attachment: Attachment): boolean {
   return attachment.mime_type.startsWith("image/");
+}
+
+function isPdf(attachment: Attachment): boolean {
+  return attachment.mime_type === "application/pdf";
 }
 
 // Resolves and renders one image attachment as a bounded-height thumbnail. Only
@@ -90,6 +94,71 @@ function ImageThumbnail({
   );
 }
 
+// Resolves and renders one PDF attachment as an inline preview, click-to-toggle
+// rather than eager — a PDF can be much larger than a typical screenshot, and
+// this list can show several attachments at once, so the full base64 data URL
+// is only resolved once the admin explicitly asks to see it. Collapsing again
+// drops the loaded data URL, freeing the memory.
+function PdfPreview({
+  attachment,
+  resolveImageUrl,
+}: {
+  attachment: Attachment;
+  resolveImageUrl: AttachmentListProps["resolveImageUrl"];
+}) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  function toggle() {
+    if (open) {
+      setOpen(false);
+      setUrl(null);
+      return;
+    }
+    setOpen(true);
+    setError(false);
+    setLoading(true);
+    resolveImageUrl(attachment)
+      .then((resolved) => setUrl(resolved))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }
+
+  return (
+    <div style={{ marginBottom: "0.3rem" }}>
+      <button type="button" onClick={toggle} style={{ fontSize: "0.8rem" }}>
+        {open ? "Vorschau schließen" : "Vorschau anzeigen"}
+      </button>
+      {open && loading && (
+        <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: "0.3rem 0 0" }}>
+          Lade {attachment.original_filename}…
+        </p>
+      )}
+      {open && error && (
+        <p style={{ color: "var(--danger)", fontSize: "0.85rem", margin: "0.3rem 0 0" }}>
+          Vorschau konnte nicht geladen werden: {attachment.original_filename}
+        </p>
+      )}
+      {open && url && (
+        <iframe
+          src={url}
+          title={attachment.original_filename}
+          style={{
+            display: "block",
+            width: "100%",
+            height: "24rem",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: "4px",
+            marginTop: "0.3rem",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 // Generic, presentational attachment list for one entry. Receives already-fetched
 // data and callbacks only — no Tauri `invoke` calls here, see the plan doc
 // (docs/superpowers/plans/2026-09-07-wartungsdoku-plan-phase5-attachment-list.md)
@@ -111,6 +180,7 @@ export default function AttachmentList({ attachments, onOpen, onExport, onRemove
           }}
         >
           {isImage(a) && <ImageThumbnail attachment={a} resolveImageUrl={resolveImageUrl} />}
+          {isPdf(a) && <PdfPreview attachment={a} resolveImageUrl={resolveImageUrl} />}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
             <span
               style={{
@@ -130,9 +200,11 @@ export default function AttachmentList({ attachments, onOpen, onExport, onRemove
               <button type="button" onClick={() => onExport(a.id)}>
                 Exportieren
               </button>
-              <button type="button" onClick={() => onRemove(a.id)}>
-                Entfernen
-              </button>
+              {onRemove && (
+                <button type="button" onClick={() => onRemove(a.id)}>
+                  Entfernen
+                </button>
+              )}
             </span>
           </div>
         </li>

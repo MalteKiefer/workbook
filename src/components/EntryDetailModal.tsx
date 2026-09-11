@@ -7,6 +7,7 @@ import { formatInvokeError } from "../lib/errors";
 import { isLateEntry, useLateEntryThreshold } from "../lib/lateEntry";
 import Modal from "./Modal";
 import { TagChipList } from "./TagChip";
+import AttachmentList from "./AttachmentList";
 
 interface Entry {
   id: number;
@@ -24,9 +25,13 @@ interface Entry {
 
 interface Attachment {
   id: number;
+  entry_id: number;
+  sha256: string;
   original_filename: string;
   mime_type: string;
   size_bytes: number;
+  created_at_utc: string;
+  created_at_tz: string;
 }
 
 interface Customer {
@@ -101,12 +106,6 @@ function renderBody(bodyMd: string): ReactNode[] {
     parts.push(<span key={key}>{bodyMd.slice(lastIndex)}</span>);
   }
   return parts;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 // Read-only view of an entry, reachable by double-clicking a row in
@@ -258,33 +257,17 @@ export default function EntryDetailModal() {
             {attachments.length > 0 && (
               <div>
                 <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)", fontWeight: 500 }}>Anhänge</span>
-                <ul style={{ listStyle: "none", padding: 0, margin: "0.3rem 0 0" }}>
-                  {attachments.map((a) => (
-                    <li
-                      key={a.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        padding: "0.3rem 0",
-                        borderTop: "1px solid var(--border-subtle)",
-                      }}
-                    >
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.82rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {a.original_filename} <span style={{ color: "var(--text-muted)" }}>({formatSize(a.size_bytes)})</span>
-                      </span>
-                      <span style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
-                        <button type="button" onClick={() => handleOpenAttachment(a.id)}>
-                          Öffnen
-                        </button>
-                        <button type="button" onClick={() => handleExportAttachment(a.id, a.original_filename)}>
-                          Exportieren
-                        </button>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div style={{ marginTop: "0.3rem" }}>
+                  <AttachmentList
+                    attachments={attachments}
+                    onOpen={handleOpenAttachment}
+                    onExport={(id) => {
+                      const attachment = attachments.find((a) => a.id === id);
+                      void handleExportAttachment(id, attachment?.original_filename ?? "Anhang");
+                    }}
+                    resolveImageUrl={(attachment) => invoke<string>("read_attachment_data_url", { attachmentId: attachment.id })}
+                  />
+                </div>
               </div>
             )}
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.25rem" }}>
