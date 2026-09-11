@@ -3,6 +3,7 @@ pub mod audit_log;
 pub mod customers;
 pub mod entries;
 pub mod entry_templates;
+pub mod expiring_items;
 pub mod external_refs;
 pub mod migrations;
 pub mod pool;
