@@ -9,6 +9,7 @@ pub mod pool;
 pub mod search;
 pub mod systems;
 pub mod tags;
+pub mod vault;
 
 #[cfg(test)]
 pub mod test_support;
