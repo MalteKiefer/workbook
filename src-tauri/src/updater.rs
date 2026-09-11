@@ -49,7 +49,7 @@ pub fn apply_update_check_result(app: &AppHandle, available_version: Option<Stri
         }
     }
 
-    tray::sync_update_indicator(app, available_version.as_deref());
+    tray::sync_tray_tooltip(app);
 
     if let Err(e) = app.emit("update-check-completed", &available_version) {
         eprintln!("Update-Suche: Ereignis konnte nicht gesendet werden: {e}");
