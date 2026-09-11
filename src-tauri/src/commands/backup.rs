@@ -23,7 +23,7 @@ pub fn create_backup(state: State<AppState>, dest_path: String) -> Result<(), Ap
     };
     let dest_path = Path::new(&dest_path);
 
-    if encryption_enabled {
+    let result = if encryption_enabled {
         let passphrase = secrets::load_secret(crypto::SECRET_ID)?.ok_or_else(|| {
             AppError::Backup(
                 "Verschlüsselung ist aktiviert, aber es ist noch kein Passwort gesetzt. In den Einstellungen unter Backup ein Passwort festlegen.".to_string(),
@@ -32,6 +32,45 @@ pub fn create_backup(state: State<AppState>, dest_path: String) -> Result<(), Ap
         backup::create_backup_encrypted(&conn, &data_dir, dest_path, &passphrase)
     } else {
         backup::create_backup(&conn, &data_dir, dest_path)
+    };
+    drop(conn);
+
+    if result.is_ok() {
+        upload_backup_to_cloud_if_enabled(&state, dest_path);
+    }
+    result
+}
+
+/// Best-effort: uploads `dest_path` to the configured cloud bucket if
+/// `cloud_storage_enabled` and fully configured. Never fails the caller
+/// -- the local backup that was just created is already safe on disk;
+/// a cloud-upload problem (network, bad credentials, misconfigured
+/// bucket) is logged and otherwise ignored, same convention every other
+/// background/best-effort operation in this codebase already follows
+/// (see e.g. `plugin_cache` write failures, audit-log write failures).
+pub(crate) fn upload_backup_to_cloud_if_enabled(state: &State<AppState>, local_path: &Path) {
+    let enabled = state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .cloud_storage_enabled;
+    if !enabled {
+        return;
+    }
+    let (settings, secret_key) = match crate::commands::cloud_storage::current_cloud_storage_settings(state) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Cloud-Backup übersprungen (Konfiguration unvollständig): {e}");
+            return;
+        }
+    };
+    let Some(file_name) = local_path.file_name().and_then(|n| n.to_str()) else {
+        eprintln!("Cloud-Backup übersprungen: ungültiger Dateiname");
+        return;
+    };
+    let key = format!("backups/{file_name}");
+    if let Err(e) = crate::cloud_storage::upload_file(&settings, &secret_key, local_path, &key) {
+        eprintln!("Cloud-Backup fehlgeschlagen: {e}");
     }
 }
 

@@ -511,6 +511,8 @@ fn run_auto_backup_if_due(app: &tauri::AppHandle) {
             if let Err(e) = config.save(&config_path) {
                 eprintln!("Automatisches Backup: Zeitstempel konnte nicht gespeichert werden: {e}");
             }
+            drop(config);
+            commands::backup::upload_backup_to_cloud_if_enabled(&state, &dest_path);
         }
         Err(e) => eprintln!("Automatisches Backup fehlgeschlagen: {e}"),
     }
