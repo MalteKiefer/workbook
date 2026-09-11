@@ -73,7 +73,11 @@ fn validate_name(name: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-pub fn create(conn: &Connection, input: NewEntryTemplate, tz: &Tz) -> Result<EntryTemplate, AppError> {
+pub fn create(
+    conn: &Connection,
+    input: NewEntryTemplate,
+    tz: &Tz,
+) -> Result<EntryTemplate, AppError> {
     validate_name(&input.name)?;
     let (now_utc, now_tz) = now_with_tz(tz);
     conn.execute(

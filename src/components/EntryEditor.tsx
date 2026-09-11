@@ -55,6 +55,16 @@ interface Attachment {
   created_at_tz: string;
 }
 
+interface EntryTemplate {
+  id: number;
+  name: string;
+  system_type: string;
+  title: string;
+  body_md: string;
+  category: string;
+  tags_csv: string;
+}
+
 interface PendingAttachment {
   token: string;
   bytesBase64: string;
@@ -204,6 +214,7 @@ export default function EntryEditor() {
   const [category, setCategory] = useState("wartung");
   const [tagsInput, setTagsInput] = useState("");
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [templates, setTemplates] = useState<EntryTemplate[]>([]);
   const [tagSuggestionsOpen, setTagSuggestionsOpen] = useState(false);
   const [tagHighlightIndex, setTagHighlightIndex] = useState(0);
   const [performedAtInput, setPerformedAtInput] = useState("");
@@ -227,6 +238,12 @@ export default function EntryEditor() {
   // All tag names ever used, once — powers the Tags field's autocomplete.
   useEffect(() => {
     invoke<string[]>("list_tags").then(setAllTags).catch(() => setAllTags([]));
+  }, []);
+
+  // All entry templates, once -- powers the "Vorlage anwenden" select in
+  // new-entry mode (Task 8 of the journal-templates feature).
+  useEffect(() => {
+    invoke<EntryTemplate[]>("list_entry_templates").then(setTemplates).catch(() => setTemplates([]));
   }, []);
 
   // The comma-separated Tags input's suggestions are scoped to whatever the
@@ -261,6 +278,15 @@ export default function EntryEditor() {
     setTagHighlightIndex(0);
     setTagSuggestionsOpen(tagSuggestions.length > 0);
   }, [tagSuggestions]);
+
+  function applyTemplate(templateId: number) {
+    const template = templates.find((t) => t.id === templateId);
+    if (!template) return;
+    setTitle(template.title);
+    setBodyMd(template.body_md);
+    setCategory(template.category);
+    setTagsInput(template.tags_csv);
+  }
 
   function handleTagsKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (!tagSuggestionsOpen || tagSuggestions.length === 0) return;
@@ -738,6 +764,28 @@ export default function EntryEditor() {
         }}
       >
         <h2 style={{ margin: 0, fontSize: "1rem" }}>{isEditMode ? "Eintrag bearbeiten" : "Neuer Eintrag"}</h2>
+
+        {!isEditMode && templates.length > 0 && (
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            Vorlage anwenden (optional)
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value === "") return;
+                applyTemplate(Number(e.target.value));
+                e.target.value = "";
+              }}
+            >
+              <option value="">Vorlage wählen…</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                  {t.system_type ? ` (${t.system_type})` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
           Titel
