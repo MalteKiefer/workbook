@@ -35,6 +35,12 @@ interface BulkArchiveSummary {
   errors: string[];
 }
 
+// Kept in sync with src-tauri/src/commands/systems.rs::BulkUpdateSummary.
+interface BulkUpdateSummary {
+  updated: number;
+  errors: string[];
+}
+
 // Same synchronous de-DE formatting already used for other system-generated
 // timestamps shown as plain text (BackupView.tsx, UpdateSettingsView.tsx) --
 // simpler than the async format_timestamp_for_display command, which exists
@@ -62,6 +68,8 @@ export default function SystemListView() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkArchiveBusy, setBulkArchiveBusy] = useState(false);
   const [bulkArchiveErrors, setBulkArchiveErrors] = useState<string[] | null>(null);
+  const [bulkIntervalBusy, setBulkIntervalBusy] = useState(false);
+  const [bulkIntervalErrors, setBulkIntervalErrors] = useState<string[] | null>(null);
 
   const reload = useCallback(() => {
     if (selectedCustomerId === null) return;
@@ -157,6 +165,39 @@ export default function SystemListView() {
     }
   }
 
+  async function handleBulkSetInterval() {
+    const input = window.prompt(
+      `Wartungsintervall in Tagen für ${selectedIds.size} System(e) (leer lassen, um das Intervall zu entfernen):`,
+    );
+    if (input === null) return; // cancelled
+    const trimmed = input.trim();
+    let days: number | null;
+    if (trimmed === "") {
+      days = null;
+    } else {
+      const parsed = Number(trimmed);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        setBulkIntervalErrors([`"${input}" ist keine gültige Anzahl Tage (positive ganze Zahl, oder leer für "kein Intervall").`]);
+        return;
+      }
+      days = parsed;
+    }
+
+    setBulkIntervalErrors(null);
+    setBulkIntervalBusy(true);
+    try {
+      const summary = await invoke<BulkUpdateSummary>("bulk_set_maintenance_interval", {
+        ids: Array.from(selectedIds),
+        maintenanceIntervalDays: days,
+      });
+      setSelectedIds(new Set());
+      reload();
+      if (summary.errors.length > 0) setBulkIntervalErrors(summary.errors);
+    } finally {
+      setBulkIntervalBusy(false);
+    }
+  }
+
   async function handleImportCsv() {
     if (selectedCustomerId === null) return;
     setImportError(null);
@@ -231,9 +272,14 @@ export default function SystemListView() {
           }}
         >
           <span style={{ fontSize: "0.85rem" }}>{selectedIds.size} ausgewählt</span>
-          <button disabled={bulkArchiveBusy} onClick={() => void handleBulkArchive()}>
-            Archivieren
-          </button>
+          <span style={{ display: "flex", gap: "0.4rem" }}>
+            <button disabled={bulkArchiveBusy} onClick={() => void handleBulkArchive()}>
+              Archivieren
+            </button>
+            <button disabled={bulkIntervalBusy} onClick={() => void handleBulkSetInterval()}>
+              Wartungsintervall setzen…
+            </button>
+          </span>
         </div>
       )}
       {bulkArchiveErrors && bulkArchiveErrors.length > 0 && (
@@ -257,6 +303,32 @@ export default function SystemListView() {
           </div>
           <ul style={{ margin: 0, padding: "0 0 0 1.1rem", fontSize: "0.8rem", color: "var(--text-secondary)", maxHeight: "8rem", overflow: "auto" }}>
             {bulkArchiveErrors.map((message, i) => (
+              <li key={i}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {bulkIntervalErrors && bulkIntervalErrors.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.4rem",
+            padding: "0.75rem",
+            marginBottom: "0.75rem",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--bg-surface)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              <strong style={{ color: "var(--danger)" }}>{bulkIntervalErrors.length}</strong> Fehler beim Setzen des Wartungsintervalls
+            </p>
+            <button onClick={() => setBulkIntervalErrors(null)}>Schließen</button>
+          </div>
+          <ul style={{ margin: 0, padding: "0 0 0 1.1rem", fontSize: "0.8rem", color: "var(--text-secondary)", maxHeight: "8rem", overflow: "auto" }}>
+            {bulkIntervalErrors.map((message, i) => (
               <li key={i}>{message}</li>
             ))}
           </ul>
