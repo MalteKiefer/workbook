@@ -16,6 +16,7 @@ pub mod quickcapture;
 pub mod time;
 pub mod tray;
 pub mod updater;
+pub mod vault;
 pub mod window;
 
 pub use error::AppError;
@@ -38,6 +39,12 @@ pub struct AppState {
     /// `config.toml` -- it's cheap to recompute on every launch, and there's no
     /// reason to serialize it.
     pub overdue_systems_count: Mutex<usize>,
+    /// The vault's derived AES-256 key, held ONLY in memory for as long as
+    /// the app process runs -- `None` means locked (either never unlocked
+    /// this session, or explicitly locked again via
+    /// `commands::vault::lock_vault`). Never written to disk; the app
+    /// restarting always starts locked.
+    pub vault_key: std::sync::Mutex<Option<[u8; 32]>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -86,6 +93,7 @@ pub fn run() {
             config: Mutex::new(app_config),
             previous_foreground: Mutex::new(None),
             overdue_systems_count: Mutex::new(0),
+            vault_key: std::sync::Mutex::new(None),
         })
         .setup(move |app| {
             window::install_hide_on_close(app.handle());
@@ -174,6 +182,15 @@ pub fn run() {
             commands::expiring_items::create_expiring_item,
             commands::expiring_items::update_expiring_item,
             commands::expiring_items::delete_expiring_item,
+            commands::vault::has_vault_passphrase,
+            commands::vault::is_vault_unlocked,
+            commands::vault::set_vault_passphrase,
+            commands::vault::unlock_vault,
+            commands::vault::lock_vault,
+            commands::vault::list_vault_entries_for_customer,
+            commands::vault::create_vault_entry,
+            commands::vault::update_vault_entry,
+            commands::vault::delete_vault_entry,
             commands::settings::get_theme_preference,
             commands::settings::set_theme_preference,
             commands::settings::get_late_entry_threshold_hours,
