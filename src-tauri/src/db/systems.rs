@@ -31,6 +31,12 @@ pub struct NewSystem {
     pub hostname: String,
     pub ip_address: String,
     pub notes: String,
+    /// `#[serde(default)]` -- every call site that constructs this from
+    /// JavaScript before this field existed (all 17 plugin sections'
+    /// create-and-link/adopt flows, both Journal pickers) omits the key
+    /// entirely rather than sending `null`; without this, serde treats an
+    /// absent `Option<T>` key as a hard deserialize error, not `None`.
+    #[serde(default)]
     pub maintenance_interval_days: Option<i64>,
 }
 
@@ -41,6 +47,12 @@ pub struct UpdateSystem {
     pub hostname: String,
     pub ip_address: String,
     pub notes: String,
+    /// `#[serde(default)]` -- every call site that constructs this from
+    /// JavaScript before this field existed (all 17 plugin sections'
+    /// create-and-link/adopt flows, both Journal pickers) omits the key
+    /// entirely rather than sending `null`; without this, serde treats an
+    /// absent `Option<T>` key as a hard deserialize error, not `None`.
+    #[serde(default)]
     pub maintenance_interval_days: Option<i64>,
 }
 
@@ -185,6 +197,39 @@ mod tests {
 
     fn berlin() -> Tz {
         "Europe/Berlin".parse().unwrap()
+    }
+
+    // Regression test: every plugin section's create-and-link/adopt flow
+    // (17 plugins) and both Journal pickers build this JSON payload without
+    // a `maintenance_interval_days` key at all -- they predate the field
+    // and were never updated. Without `#[serde(default)]` on the field,
+    // this fails to deserialize with "missing field
+    // `maintenance_interval_days`" instead of defaulting to `None`.
+    #[test]
+    fn new_system_deserializes_without_maintenance_interval_days_key() {
+        let json = r#"{
+            "customer_id": 1,
+            "name": "web-01",
+            "system_type": "",
+            "hostname": "",
+            "ip_address": "",
+            "notes": ""
+        }"#;
+        let parsed: NewSystem = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.maintenance_interval_days, None);
+    }
+
+    #[test]
+    fn update_system_deserializes_without_maintenance_interval_days_key() {
+        let json = r#"{
+            "name": "web-01",
+            "system_type": "",
+            "hostname": "",
+            "ip_address": "",
+            "notes": ""
+        }"#;
+        let parsed: UpdateSystem = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.maintenance_interval_days, None);
     }
 
     fn seed_customer(conn: &Connection) -> i64 {
