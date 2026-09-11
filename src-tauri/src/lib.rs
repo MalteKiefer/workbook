@@ -140,6 +140,7 @@ pub fn run() {
             commands::systems::update_system,
             commands::systems::archive_system,
             commands::systems::archive_systems,
+            commands::systems::bulk_set_maintenance_interval,
             commands::systems::list_systems_with_maintenance_status,
             commands::systems::list_overdue_systems,
             commands::systems::import_systems_from_csv,

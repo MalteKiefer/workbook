@@ -83,6 +83,41 @@ pub fn archive_systems(
     Ok(BulkArchiveSummary { archived, errors })
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct BulkUpdateSummary {
+    pub updated: usize,
+    pub errors: Vec<String>,
+}
+
+/// Sets the same `maintenance_interval_days` on every id in `ids`, one at a
+/// time. One id that fails (not found, or a rejected interval -- shouldn't
+/// happen here since the frontend validates before calling, but the same
+/// validation still runs server-side as the authority) is recorded in
+/// `errors` and does not stop the rest, same "one bad item doesn't abort
+/// the whole batch" philosophy as `archive_systems`/`import_systems_from_csv`.
+#[tauri::command]
+pub fn bulk_set_maintenance_interval(
+    state: State<AppState>,
+    ids: Vec<i64>,
+    maintenance_interval_days: Option<i64>,
+) -> Result<BulkUpdateSummary, AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let tz = time::system_timezone()?;
+
+    let mut updated = 0;
+    let mut errors = Vec::new();
+    for id in ids {
+        match systems::set_maintenance_interval(&conn, id, maintenance_interval_days, &tz) {
+            Ok(_) => updated += 1,
+            Err(e) => errors.push(format!("System #{id}: {e}")),
+        }
+    }
+    Ok(BulkUpdateSummary { updated, errors })
+}
+
 /// A `System` plus its computed maintenance status -- whether it's overdue
 /// per `maintenance::is_overdue` and the timestamp that status was
 /// computed from (`None` if it has never had an entry). An ADDITIONAL
