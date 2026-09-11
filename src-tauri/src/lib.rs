@@ -563,7 +563,10 @@ fn run_maintenance_check(app: &tauri::AppHandle) {
             return;
         }
     };
-    *state.overdue_systems_count.lock().expect("Overdue-Mutex vergiftet") = overdue;
+    *state
+        .overdue_systems_count
+        .lock()
+        .expect("Overdue-Mutex vergiftet") = overdue;
 
     tray::sync_tray_tooltip(app);
 

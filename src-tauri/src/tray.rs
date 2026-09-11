@@ -174,12 +174,18 @@ mod tests {
 
     #[test]
     fn compose_tooltip_with_only_overdue_singular() {
-        assert_eq!(compose_tooltip(None, 1), "Wartungsdoku — 1 System überfällig");
+        assert_eq!(
+            compose_tooltip(None, 1),
+            "Wartungsdoku — 1 System überfällig"
+        );
     }
 
     #[test]
     fn compose_tooltip_with_only_overdue_plural() {
-        assert_eq!(compose_tooltip(None, 3), "Wartungsdoku — 3 Systeme überfällig");
+        assert_eq!(
+            compose_tooltip(None, 3),
+            "Wartungsdoku — 3 Systeme überfällig"
+        );
     }
 
     #[test]
