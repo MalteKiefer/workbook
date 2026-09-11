@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
-export type View = "dashboard" | "customers" | "systems" | "journal" | "settings";
+export type View = "dashboard" | "customers" | "customer-detail" | "journal" | "settings";
+export type CustomerDetailTab = "uebersicht" | "systeme" | "standorte" | "ablauf" | "zugangsdaten" | "verlauf";
 export type SettingsTab = "general" | "backup" | "plugins" | "keymap" | "update" | "templates";
 
 interface AppState {
@@ -8,6 +9,7 @@ interface AppState {
   settingsTab: SettingsTab;
   selectedCustomerId: number | null;
   selectedSystemId: number | null;
+  customerDetailTab: CustomerDetailTab;
   formOpen: boolean;
   editorTarget: "new" | number | null;
   viewingEntryId: number | null;
@@ -21,7 +23,8 @@ interface AppState {
   pendingAction: string | null;
   goToDashboard: () => void;
   goToCustomers: () => void;
-  goToSystems: (customerId?: number) => void;
+  goToCustomerDetail: (customerId?: number, tab?: CustomerDetailTab) => void;
+  setCustomerDetailTab: (tab: CustomerDetailTab) => void;
   goToJournal: () => void;
   goToSettings: (tab?: SettingsTab) => void;
   setSettingsTab: (tab: SettingsTab) => void;
@@ -51,6 +54,7 @@ export const useAppStore = create<AppState>((set) => ({
   settingsTab: "general",
   selectedCustomerId: null,
   selectedSystemId: null,
+  customerDetailTab: "systeme",
   formOpen: false,
   editorTarget: null,
   viewingEntryId: null,
@@ -64,11 +68,13 @@ export const useAppStore = create<AppState>((set) => ({
   pendingAction: null,
   goToDashboard: () => set({ view: "dashboard" }),
   goToCustomers: () => set({ view: "customers" }),
-  goToSystems: (customerId) =>
+  goToCustomerDetail: (customerId, tab) =>
     set((state) => ({
-      view: "systems",
+      view: "customer-detail",
       selectedCustomerId: customerId ?? state.selectedCustomerId,
+      customerDetailTab: tab ?? "systeme",
     })),
+  setCustomerDetailTab: (tab) => set({ customerDetailTab: tab }),
   goToJournal: () => set({ view: "journal" }),
   goToSettings: (tab) => set((state) => ({ view: "settings", settingsTab: tab ?? state.settingsTab })),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
