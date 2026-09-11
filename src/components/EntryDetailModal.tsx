@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
 import { formatInvokeError } from "../lib/errors";
+import { isLateEntry, useLateEntryThreshold } from "../lib/lateEntry";
 import Modal from "./Modal";
 import { TagChipList } from "./TagChip";
 
@@ -126,7 +127,10 @@ export default function EntryDetailModal() {
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [systemName, setSystemName] = useState<string | null>(null);
   const [performedAtDisplay, setPerformedAtDisplay] = useState("");
+  const [createdAtDisplay, setCreatedAtDisplay] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const lateThresholdHours = useLateEntryThreshold();
 
   useEffect(() => {
     if (viewingEntryId === null) return;
@@ -135,15 +139,20 @@ export default function EntryDetailModal() {
     invoke<Entry>("get_entry", { id: viewingEntryId })
       .then(async (loaded) => {
         setEntry(loaded);
-        const [customers, display] = await Promise.all([
+        const [customers, display, createdDisplay] = await Promise.all([
           invoke<Customer[]>("list_customers", { includeArchived: true }),
           invoke<string>("format_timestamp_for_display", {
             utc: loaded.performed_at_utc,
             tz: loaded.performed_at_tz,
           }),
+          invoke<string>("format_timestamp_for_display", {
+            utc: loaded.created_at_utc,
+            tz: loaded.created_at_tz,
+          }),
         ]);
         setCustomerName(customers.find((c) => c.id === loaded.customer_id)?.name ?? null);
         setPerformedAtDisplay(display);
+        setCreatedAtDisplay(createdDisplay);
         if (loaded.system_id !== null) {
           const systems = await invoke<System[]>("list_systems", { customerId: loaded.customer_id, includeArchived: true });
           setSystemName(systems.find((s) => s.id === loaded.system_id)?.name ?? null);
@@ -222,6 +231,11 @@ export default function EntryDetailModal() {
                 {performedAtDisplay}
               </span>
             </div>
+            {lateThresholdHours !== null && isLateEntry(entry.performed_at_utc, entry.created_at_utc, lateThresholdHours) && (
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+                Nachträglich erfasst: {createdAtDisplay}
+              </p>
+            )}
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", fontSize: "0.8rem", color: "var(--text-muted)" }}>
               <span>{customerName ?? `Kunde #${entry.customer_id}`}</span>
               {systemName && <span>· {systemName}</span>}

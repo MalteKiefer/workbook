@@ -37,3 +37,18 @@ pub fn set_theme_preference(
 
     Ok(())
 }
+
+/// Read-only mirror of `Config::late_entry_threshold_hours` for the
+/// frontend -- lets JournalView.tsx/EntryDetailModal.tsx flag a late entry
+/// live (see `src/lib/lateEntry.ts`), the same threshold the PDF export
+/// path (`commands::export::to_pdf_entry`) already used for its
+/// "Nachträglich erfasst" note. Deliberately no `set_` counterpart: this
+/// value is still only configurable by hand-editing config.toml.
+#[tauri::command]
+pub fn get_late_entry_threshold_hours(state: State<AppState>) -> i64 {
+    state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .late_entry_threshold_hours
+}

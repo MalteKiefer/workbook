@@ -163,6 +163,7 @@ pub fn run() {
             commands::entries::format_timestamp_for_display,
             commands::settings::get_theme_preference,
             commands::settings::set_theme_preference,
+            commands::settings::get_late_entry_threshold_hours,
             commands::keymap::get_keymap,
             commands::keymap::set_keymap,
             commands::keymap::get_hotkeys,
