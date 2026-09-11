@@ -121,14 +121,18 @@ fn category_label(category: entries::Category) -> &'static str {
 
 /// `None` if the entry was recorded promptly; otherwise a German-language
 /// note text with formatted `created_at`, once the difference between
-/// `created_at_utc` and `performed_at_utc` reaches or exceeds the threshold.
+/// `created_at_utc` and `performed_at_utc` exceeds the threshold. Mirrors
+/// `commands::export::to_pdf_entry` exactly (`.abs()` + strict `>`) so the
+/// Markdown and PDF exports never disagree on whether the same entry is
+/// "late" -- see that function's own comment for why `.abs()` matters
+/// (created_at can predate performed_at for a manually backdated entry).
 fn late_entry_note(entry: &Entry, threshold_hours: i64) -> Result<Option<String>, AppError> {
     let performed = DateTime::parse_from_rfc3339(&entry.performed_at_utc)
         .map_err(|e| AppError::InvalidTimestamp(format!("{}: {e}", entry.performed_at_utc)))?;
     let created = DateTime::parse_from_rfc3339(&entry.created_at_utc)
         .map_err(|e| AppError::InvalidTimestamp(format!("{}: {e}", entry.created_at_utc)))?;
-    let diff_hours = (created - performed).num_hours();
-    if diff_hours >= threshold_hours {
+    let diff_hours = (created - performed).num_hours().abs();
+    if diff_hours > threshold_hours {
         let display =
             time::format_timestamp_for_display(&entry.created_at_utc, &entry.created_at_tz)?;
         Ok(Some(format!("Nachträglich erfasst: {display}")))
@@ -370,6 +374,56 @@ mod tests {
             created_at_utc: "2026-09-03T10:00:00.000Z".into(), // +48h
             created_at_tz: "Europe/Berlin".into(),
             updated_at_utc: "2026-09-03T10:00:00.000Z".into(),
+            updated_at_tz: "Europe/Berlin".into(),
+            tags: vec![],
+        };
+
+        let note = late_entry_note(&entry, 24).unwrap();
+        assert!(note.is_some());
+        assert!(note.unwrap().starts_with("Nachträglich erfasst:"));
+    }
+
+    #[test]
+    fn late_entry_note_is_none_at_exact_threshold() {
+        // A gap of exactly `threshold_hours` is NOT late -- the comparison
+        // is strict `>`, matching commands::export::to_pdf_entry, so the
+        // two exports never disagree at this boundary.
+        let entry = Entry {
+            id: 1,
+            customer_id: 1,
+            system_id: None,
+            title: "Grenzfall".into(),
+            body_md: "".into(),
+            category: Category::Wartung,
+            performed_at_utc: "2026-09-01T10:00:00.000Z".into(),
+            performed_at_tz: "Europe/Berlin".into(),
+            created_at_utc: "2026-09-02T10:00:00.000Z".into(), // exactly +24h
+            created_at_tz: "Europe/Berlin".into(),
+            updated_at_utc: "2026-09-02T10:00:00.000Z".into(),
+            updated_at_tz: "Europe/Berlin".into(),
+            tags: vec![],
+        };
+
+        assert_eq!(late_entry_note(&entry, 24).unwrap(), None);
+    }
+
+    #[test]
+    fn late_entry_note_uses_absolute_difference_for_backdated_entries() {
+        // created_at before performed_at (a manually backdated entry) must
+        // still be flagged as late by its absolute gap, not silently pass
+        // because the raw (unsigned) difference is negative.
+        let entry = Entry {
+            id: 1,
+            customer_id: 1,
+            system_id: None,
+            title: "Rückdatiert".into(),
+            body_md: "".into(),
+            category: Category::Wartung,
+            performed_at_utc: "2026-09-03T10:00:00.000Z".into(),
+            performed_at_tz: "Europe/Berlin".into(),
+            created_at_utc: "2026-09-01T10:00:00.000Z".into(), // -48h
+            created_at_tz: "Europe/Berlin".into(),
+            updated_at_utc: "2026-09-01T10:00:00.000Z".into(),
             updated_at_tz: "Europe/Berlin".into(),
             tags: vec![],
         };
