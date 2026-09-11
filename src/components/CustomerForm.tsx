@@ -3,22 +3,20 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
-import AuditLogPanel from "./AuditLogPanel";
-import LocationsPanel from "./LocationsPanel";
-import ExpiringItemsPanel from "./ExpiringItemsPanel";
-import VaultPanel from "./VaultPanel";
-
-interface Customer {
-  id: number;
-  name: string;
-  short_code: string;
-  notes: string;
-}
 
 // Globally mounted (see App.tsx), same pattern as EntryEditor.tsx/ExportDialog.tsx:
 // driven entirely by the store's customerEditorTarget rather than local per-view
 // state, so it can be opened from anywhere (list row, keyboard shortcut, Command
 // Palette) regardless of which view is currently active.
+//
+// Create-only: editing an existing customer's core fields now happens on the
+// Übersicht tab of CustomerDetailView.tsx, and its Standorte/Ablauf/Zugangsdaten/
+// Verlauf tabs replaced the panels this modal used to stack underneath the
+// fields. `customerEditorTarget` can still technically be a number (the store's
+// type is unchanged), but nothing in this codebase sets it to one anymore --
+// every call site that used to open this modal in edit mode now calls
+// goToCustomerDetail(id, "uebersicht") or goToCustomerDetail(id, "verlauf")
+// instead.
 export default function CustomerForm() {
   const customerEditorTarget = useAppStore((s) => s.customerEditorTarget);
   const closeCustomerEditor = useAppStore((s) => s.closeCustomerEditor);
@@ -32,33 +30,15 @@ export default function CustomerForm() {
   const [error, setError] = useState<string | null>(null);
   const [shortCodeTouched, setShortCodeTouched] = useState(false);
 
-  const isEditMode = typeof customerEditorTarget === "number";
-
-  // Load/init whenever the editor is opened (or switched to a different target) —
-  // same convention as EntryEditor.tsx's load/init effect.
+  // Reset the form whenever the modal opens -- always create mode now, see
+  // the module doc comment above.
   useEffect(() => {
     if (customerEditorTarget === null) return;
     setError(null);
-
-    if (customerEditorTarget === "new") {
-      setName("");
-      setShortCode("");
-      setNotes("");
-      setShortCodeTouched(false);
-      return;
-    }
-
-    invoke<Customer[]>("list_customers", { includeArchived: true })
-      .then((list) => {
-        const match = list.find((c) => c.id === customerEditorTarget);
-        if (match) {
-          setName(match.name);
-          setShortCode(match.short_code);
-          setNotes(match.notes);
-          setShortCodeTouched(true);
-        }
-      })
-      .catch((e) => setError(formatInvokeError(e)));
+    setName("");
+    setShortCode("");
+    setNotes("");
+    setShortCodeTouched(false);
   }, [customerEditorTarget]);
 
   // Engage the global Esc-closing convention whenever the editor is open, and
@@ -107,11 +87,7 @@ export default function CustomerForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      if (isEditMode) {
-        await invoke("update_customer", { id: customerEditorTarget, input: { name, short_code: shortCode, notes } });
-      } else {
-        await invoke("create_customer", { input: { name, short_code: shortCode, notes } });
-      }
+      await invoke("create_customer", { input: { name, short_code: shortCode, notes } });
       closeForm();
       closeCustomerEditor();
     } catch (err) {
@@ -124,7 +100,7 @@ export default function CustomerForm() {
   return (
     <Modal onClose={cancel}>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.5rem", minWidth: "20rem" }}>
-        <h2 style={{ margin: 0, fontSize: "1rem" }}>{isEditMode ? "Kunde bearbeiten" : "Neuer Kunde"}</h2>
+        <h2 style={{ margin: 0, fontSize: "1rem" }}>Neuer Kunde</h2>
         <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
           Name
           <input
@@ -157,10 +133,6 @@ export default function CustomerForm() {
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
         </label>
         {error && <p style={{ color: "var(--danger)", fontSize: "0.82rem", margin: 0 }}>Fehler: {error}</p>}
-        {typeof customerEditorTarget === "number" && <LocationsPanel customerId={customerEditorTarget} />}
-        {typeof customerEditorTarget === "number" && <ExpiringItemsPanel customerId={customerEditorTarget} />}
-        {typeof customerEditorTarget === "number" && <VaultPanel customerId={customerEditorTarget} />}
-        {typeof customerEditorTarget === "number" && <AuditLogPanel entityType="customer" entityId={customerEditorTarget} />}
         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.25rem" }}>
           <button type="button" onClick={cancel}>
             Abbrechen
