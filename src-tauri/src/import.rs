@@ -16,6 +16,26 @@
 
 use crate::db::customers::NewCustomer;
 use crate::db::systems::NewSystem;
+use crate::error::AppError;
+
+/// A CSV file above this size is almost certainly the wrong file (picked
+/// by mistake via the native file dialog) rather than a genuine
+/// customer/system list -- reject it with a clear error before loading the
+/// whole thing into memory, instead of `std::fs::read_to_string` silently
+/// spiking memory usage on an arbitrarily large file.
+const MAX_CSV_FILE_SIZE_BYTES: u64 = 20 * 1024 * 1024;
+
+pub fn read_csv_file(path: &str) -> Result<String, AppError> {
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_CSV_FILE_SIZE_BYTES {
+        return Err(AppError::Validation(format!(
+            "Datei ist zu groß ({} MB, Limit {} MB) -- ist das wirklich eine CSV-Liste?",
+            metadata.len() / (1024 * 1024),
+            MAX_CSV_FILE_SIZE_BYTES / (1024 * 1024)
+        )));
+    }
+    std::fs::read_to_string(path).map_err(AppError::from)
+}
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ImportRowError {
@@ -166,6 +186,31 @@ pub fn parse_systems_csv(content: &str, customer_id: i64) -> ParsedRows<NewSyste
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_csv_file_rejects_files_above_the_size_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("huge.csv");
+        // One byte over the limit is enough to exercise the check without
+        // actually allocating a 20 MB string in the test.
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_CSV_FILE_SIZE_BYTES + 1).unwrap();
+
+        let result = read_csv_file(path.to_str().unwrap());
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn read_csv_file_accepts_a_normal_sized_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("customers.csv");
+        std::fs::write(&path, "name,short_code\nACME GmbH,ACME\n").unwrap();
+
+        let content = read_csv_file(path.to_str().unwrap()).unwrap();
+
+        assert!(content.contains("ACME GmbH"));
+    }
 
     #[test]
     fn parses_customers_with_exact_header_names() {

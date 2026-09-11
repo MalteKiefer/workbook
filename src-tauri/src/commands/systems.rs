@@ -193,7 +193,7 @@ pub fn import_systems_from_csv(
     customer_id: i64,
     csv_path: String,
 ) -> Result<ImportSummary, AppError> {
-    let content = std::fs::read_to_string(&csv_path)?;
+    let content = import::read_csv_file(&csv_path)?;
     let rows = import::parse_systems_csv(&content, customer_id).map_err(AppError::Import)?;
 
     let conn = state

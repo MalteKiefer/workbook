@@ -93,7 +93,7 @@ pub fn import_customers_from_csv(
     state: State<AppState>,
     csv_path: String,
 ) -> Result<ImportSummary, AppError> {
-    let content = std::fs::read_to_string(&csv_path)?;
+    let content = import::read_csv_file(&csv_path)?;
     let rows = import::parse_customers_csv(&content).map_err(AppError::Import)?;
 
     let conn = state

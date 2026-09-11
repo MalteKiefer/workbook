@@ -295,6 +295,13 @@ export default function BackupView() {
               </button>
             </div>
 
+            {settings.auto_backup_enabled && settings.auto_backup_dir !== null && !settings.encryption_enabled && (
+              <p style={{ margin: 0, color: "var(--accent)", fontSize: "0.82rem" }}>
+                Automatische Backups landen unverschlüsselt in diesem Ordner. Verschlüsselung unten aktivieren, falls
+                der Ordner synchronisiert wird oder auf einem externen Laufwerk liegt.
+              </p>
+            )}
+
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem" }}>
               Häufigkeit:
               <select

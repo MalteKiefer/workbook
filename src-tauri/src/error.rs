@@ -22,6 +22,8 @@ pub enum AppError {
     Plugin(String),
     #[error("CSV-Import-Fehler: {0}")]
     Import(String),
+    #[error("Ungültige Eingabe: {0}")]
+    Validation(String),
 }
 
 impl AppError {
@@ -37,6 +39,7 @@ impl AppError {
             AppError::Backup(_) => "backup",
             AppError::Plugin(_) => "plugin",
             AppError::Import(_) => "import",
+            AppError::Validation(_) => "validation",
         }
     }
 }

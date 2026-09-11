@@ -75,7 +75,21 @@ fn row_to_system(row: &Row) -> rusqlite::Result<System> {
     })
 }
 
+/// A non-positive interval would make `maintenance::is_overdue` treat the
+/// system as permanently overdue (any elapsed time satisfies `>= 0` or
+/// `>= negative days`), silently, with no error surfaced anywhere -- reject
+/// it here instead of leaving that as a confusing dashboard artifact.
+fn validate_maintenance_interval(days: Option<i64>) -> Result<(), AppError> {
+    match days {
+        Some(n) if n <= 0 => Err(AppError::Validation(format!(
+            "Wartungsintervall muss positiv sein, nicht {n} Tage."
+        ))),
+        _ => Ok(()),
+    }
+}
+
 pub fn create(conn: &Connection, input: NewSystem, tz: &Tz) -> Result<System, AppError> {
+    validate_maintenance_interval(input.maintenance_interval_days)?;
     let (now_utc, now_tz) = now_with_tz(tz);
     conn.execute(
         "INSERT INTO systems (customer_id, name, system_type, hostname, ip_address, notes, maintenance_interval_days, created_at_utc, created_at_tz, updated_at_utc, updated_at_tz)
@@ -131,6 +145,7 @@ pub fn update(
     input: UpdateSystem,
     tz: &Tz,
 ) -> Result<System, AppError> {
+    validate_maintenance_interval(input.maintenance_interval_days)?;
     let (now_utc, now_tz) = now_with_tz(tz);
     let changed = conn.execute(
         "UPDATE systems SET name = ?1, system_type = ?2, hostname = ?3, ip_address = ?4, notes = ?5, maintenance_interval_days = ?6, updated_at_utc = ?7, updated_at_tz = ?8 WHERE id = ?9",
@@ -266,6 +281,65 @@ mod tests {
         .unwrap();
         assert_eq!(created.hostname, "fs01.acme.local");
         assert_eq!(get(&conn, created.id).unwrap(), created);
+    }
+
+    #[test]
+    fn create_rejects_zero_or_negative_maintenance_interval() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        for bad_interval in [0, -1, -30] {
+            let result = create(
+                &conn,
+                NewSystem {
+                    customer_id,
+                    name: "FS01".into(),
+                    system_type: "".into(),
+                    hostname: "".into(),
+                    ip_address: "".into(),
+                    notes: "".into(),
+                    maintenance_interval_days: Some(bad_interval),
+                },
+                &berlin(),
+            );
+            assert!(
+                result.is_err(),
+                "{bad_interval} Tage hätte abgelehnt werden müssen"
+            );
+        }
+    }
+
+    #[test]
+    fn update_rejects_zero_or_negative_maintenance_interval() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        let created = create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "FS01".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+                maintenance_interval_days: None,
+            },
+            &berlin(),
+        )
+        .unwrap();
+        let result = update(
+            &conn,
+            created.id,
+            UpdateSystem {
+                name: "FS01".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+                maintenance_interval_days: Some(-5),
+            },
+            &berlin(),
+        );
+        assert!(result.is_err());
     }
 
     #[test]

@@ -12,6 +12,34 @@ interface DirectoryHit {
   label: string;
 }
 
+// `snippet` comes from SQLite FTS5's snippet() (see db/search.rs), which
+// wraps only the matched term in "<mark>...</mark>" but does NOT escape the
+// surrounding text -- it's a highlighting convenience, not sanitized HTML.
+// The surrounding text is a journal entry's own title/body, i.e. genuinely
+// untrusted user input (an admin might paste logs, XML, or error dialogs
+// containing "<"/">" straight into a note). Rendering it as innerHTML would
+// execute that as live DOM/script the next time it surfaces as a search
+// hit. Split on the literal markers instead and let React's normal text
+// rendering escape everything outside them.
+function renderSnippet(snippet: string): ReactNode {
+  const parts = snippet.split(/(<mark>|<\/mark>)/);
+  const nodes: ReactNode[] = [];
+  let marking = false;
+  parts.forEach((part, i) => {
+    if (part === "<mark>") {
+      marking = true;
+      return;
+    }
+    if (part === "</mark>") {
+      marking = false;
+      return;
+    }
+    if (part === "") return;
+    nodes.push(marking ? <mark key={i}>{part}</mark> : <span key={i}>{part}</span>);
+  });
+  return nodes;
+}
+
 interface EntryHit {
   entry_id: number;
   customer_id: number;
@@ -287,12 +315,9 @@ export default function CommandPalette() {
         render: () => (
           <div>
             <div style={{ color: "var(--text-primary)" }}>{hit.title}</div>
-            <div
-              className="cp-snippet"
-              style={{ fontSize: "0.8em", color: "var(--text-secondary)", marginTop: "0.15rem" }}
-              // Own local SQLite full-text data, not untrusted web content — safe to render.
-              dangerouslySetInnerHTML={{ __html: hit.snippet }}
-            />
+            <div className="cp-snippet" style={{ fontSize: "0.8em", color: "var(--text-secondary)", marginTop: "0.15rem" }}>
+              {renderSnippet(hit.snippet)}
+            </div>
           </div>
         ),
         activate: () => {
