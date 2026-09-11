@@ -11,8 +11,11 @@ pub mod export;
 pub mod hotkeys;
 pub mod import;
 pub mod maintenance;
+pub mod network_scan;
+pub mod nmap;
 pub mod plugin;
 pub mod quickcapture;
+pub mod snmp_probe;
 pub mod time;
 pub mod tray;
 pub mod updater;
@@ -410,6 +413,10 @@ pub fn run() {
             commands::updater::get_update_check_settings,
             commands::updater::set_auto_update_check_settings,
             commands::updater::record_update_check_result,
+            commands::network_scan::scan_network,
+            commands::network_scan::probe_snmp,
+            commands::network_scan::is_nmap_available,
+            commands::network_scan::run_nmap_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
