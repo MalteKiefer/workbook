@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use tauri::State;
 
 use crate::db::attachments::{self, Attachment, AttachmentStorageSummary};
@@ -38,7 +40,7 @@ pub fn add_attachment_to_entry(
         .data_dir
         .clone();
     let tz = time::system_timezone()?;
-    crate::attachments::store::attach_bytes_to_entry(
+    let attachment = crate::attachments::store::attach_bytes_to_entry(
         &conn,
         &data_dir,
         entry_id,
@@ -46,7 +48,55 @@ pub fn add_attachment_to_entry(
         &original_filename,
         &mime_type,
         &tz,
-    )
+    )?;
+    upload_attachment_to_cloud_if_enabled(&state, &data_dir, &attachment);
+    Ok(attachment)
+}
+
+/// Best-effort: uploads one attachment to the configured cloud bucket if
+/// `cloud_storage_enabled` and fully configured. Never fails the caller
+/// -- the local attachment that was just saved is already safe on disk;
+/// a cloud-upload problem (network, bad credentials, misconfigured
+/// bucket) is logged and otherwise ignored, same convention
+/// `commands::backup::upload_backup_to_cloud_if_enabled` already
+/// follows for full backups. The S3 key reuses the exact same
+/// content-addressed relative path the local store already uses
+/// (`attachments/<sha256 prefix>/<sha256><ext>`, via
+/// `attachments::store::relative_path_for`), so a cloud bucket mirrors
+/// the same layout as the local `attachments/` folder.
+pub(crate) fn upload_attachment_to_cloud_if_enabled(
+    state: &State<AppState>,
+    data_dir: &Path,
+    attachment: &crate::db::attachments::Attachment,
+) {
+    let enabled = state
+        .config
+        .lock()
+        .expect("Config-Mutex vergiftet")
+        .cloud_storage_enabled;
+    if !enabled {
+        return;
+    }
+    let (settings, secret_key) =
+        match crate::commands::cloud_storage::current_cloud_storage_settings(state) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!(
+                    "Cloud-Upload für Anhang übersprungen (Konfiguration unvollständig): {e}"
+                );
+                return;
+            }
+        };
+    let relative_path = crate::attachments::store::relative_path_for(
+        &attachment.sha256,
+        &attachment.original_filename,
+    );
+    let local_path = data_dir.join(&relative_path);
+    if let Err(e) =
+        crate::cloud_storage::upload_file(&settings, &secret_key, &local_path, &relative_path)
+    {
+        eprintln!("Cloud-Upload für Anhang fehlgeschlagen: {e}");
+    }
 }
 
 #[tauri::command]
