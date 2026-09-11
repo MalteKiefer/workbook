@@ -29,7 +29,10 @@ pub struct CloudStorageSettings {
     pub access_key_id: String,
 }
 
-fn build_bucket(settings: &CloudStorageSettings, secret_access_key: &str) -> Result<Box<Bucket>, AppError> {
+fn build_bucket(
+    settings: &CloudStorageSettings,
+    secret_access_key: &str,
+) -> Result<Box<Bucket>, AppError> {
     let region = Region::Custom {
         region: settings.region.clone(),
         endpoint: settings.endpoint.clone(),
@@ -42,8 +45,11 @@ fn build_bucket(settings: &CloudStorageSettings, secret_access_key: &str) -> Res
         None,
     )
     .map_err(|e| AppError::Config(format!("Cloud-Zugangsdaten ungültig: {e}")))?;
-    Bucket::new(&settings.bucket, region, credentials)
-        .map_err(|e| AppError::Config(format!("Cloud-Bucket konnte nicht initialisiert werden: {e}")))
+    Bucket::new(&settings.bucket, region, credentials).map_err(|e| {
+        AppError::Config(format!(
+            "Cloud-Bucket konnte nicht initialisiert werden: {e}"
+        ))
+    })
 }
 
 /// Uploads the file at `local_path` to the configured bucket under `key`
@@ -78,7 +84,10 @@ pub fn upload_file(
 /// "Verbindung testen" button, so a typo in the endpoint or a wrong
 /// secret key is caught immediately instead of silently failing on the
 /// next real backup.
-pub fn test_connection(settings: &CloudStorageSettings, secret_access_key: &str) -> Result<(), AppError> {
+pub fn test_connection(
+    settings: &CloudStorageSettings,
+    secret_access_key: &str,
+) -> Result<(), AppError> {
     let bucket = build_bucket(settings, secret_access_key)?;
     bucket
         .list("".to_string(), Some("/".to_string()))

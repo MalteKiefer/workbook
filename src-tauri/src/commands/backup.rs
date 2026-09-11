@@ -57,13 +57,14 @@ pub(crate) fn upload_backup_to_cloud_if_enabled(state: &State<AppState>, local_p
     if !enabled {
         return;
     }
-    let (settings, secret_key) = match crate::commands::cloud_storage::current_cloud_storage_settings(state) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Cloud-Backup übersprungen (Konfiguration unvollständig): {e}");
-            return;
-        }
-    };
+    let (settings, secret_key) =
+        match crate::commands::cloud_storage::current_cloud_storage_settings(state) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("Cloud-Backup übersprungen (Konfiguration unvollständig): {e}");
+                return;
+            }
+        };
     let Some(file_name) = local_path.file_name().and_then(|n| n.to_str()) else {
         eprintln!("Cloud-Backup übersprungen: ungültiger Dateiname");
         return;

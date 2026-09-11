@@ -14,7 +14,9 @@ pub struct CloudStorageSettingsDto {
 }
 
 #[tauri::command]
-pub fn get_cloud_storage_settings(state: State<AppState>) -> Result<CloudStorageSettingsDto, AppError> {
+pub fn get_cloud_storage_settings(
+    state: State<AppState>,
+) -> Result<CloudStorageSettingsDto, AppError> {
     let config = state.config.lock().expect("Config-Mutex vergiftet");
     Ok(CloudStorageSettingsDto {
         enabled: config.cloud_storage_enabled,
