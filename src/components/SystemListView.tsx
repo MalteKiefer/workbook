@@ -7,7 +7,6 @@ import { getKeymap, matchesBinding } from "../lib/keymap";
 import { pickCsvFile, type ImportSummary } from "../lib/csvImport";
 import { formatInvokeError } from "../lib/errors";
 import ImportSummaryPanel from "./ImportSummaryPanel";
-import NetworkScanModal from "./NetworkScanModal";
 
 interface System {
   id: number;
@@ -66,8 +65,6 @@ export default function SystemListView() {
   const [bulkArchiveErrors, setBulkArchiveErrors] = useState<string[] | null>(null);
   const [bulkIntervalBusy, setBulkIntervalBusy] = useState(false);
   const [bulkIntervalErrors, setBulkIntervalErrors] = useState<string[] | null>(null);
-
-  const [scanModalOpen, setScanModalOpen] = useState(false);
 
   const reload = useCallback(() => {
     if (selectedCustomerId === null) return;
@@ -239,9 +236,6 @@ export default function SystemListView() {
           <button disabled={importBusy} onClick={() => void handleImportCsv()}>
             CSV importieren…
           </button>
-          <button onClick={() => setScanModalOpen(true)}>
-            Netzwerk scannen…
-          </button>
           <button className="btn-primary" onClick={() => openSystemEditor("new", selectedCustomerId)}>
             + Neues System
           </button>
@@ -379,13 +373,6 @@ export default function SystemListView() {
           </li>
         ))}
       </ul>
-      {scanModalOpen && (
-        <NetworkScanModal
-          customerId={selectedCustomerId}
-          onClose={() => setScanModalOpen(false)}
-          onSystemCreated={reload}
-        />
-      )}
     </div>
   );
 }
