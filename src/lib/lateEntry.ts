@@ -7,10 +7,19 @@ import { invoke } from "@tauri-apps/api/core";
 // only ever surfaced in the PDF export's "Nachträglich erfasst" note --
 // this is the same check, computed client-side so it can show live in the
 // Journal list and entry detail too.
+//
+// The Rust side computes `(created_at - performed_at).num_hours().abs()` --
+// chrono's `num_hours()` TRUNCATES the duration to a whole number of hours
+// (toward zero) before the threshold comparison, it does not use a
+// fractional-hour value. `Math.trunc(...)` here reproduces that truncation;
+// without it, e.g. a 24h54m gap against a 24h threshold would round up to
+// "24.9 > 24" (late) here while the PDF's own truncated-to-24 comparison
+// says "24 > 24" (not late) -- the exact live-vs-export disagreement this
+// feature exists to avoid.
 export function isLateEntry(performedAtUtc: string, createdAtUtc: string, thresholdHours: number): boolean {
   const performedAt = new Date(performedAtUtc).getTime();
   const createdAt = new Date(createdAtUtc).getTime();
-  const diffHours = Math.abs(createdAt - performedAt) / (1000 * 60 * 60);
+  const diffHours = Math.trunc(Math.abs(createdAt - performedAt) / (1000 * 60 * 60));
   return diffHours > thresholdHours;
 }
 
