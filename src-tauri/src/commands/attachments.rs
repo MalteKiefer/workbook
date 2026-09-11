@@ -1,6 +1,6 @@
 use tauri::State;
 
-use crate::db::attachments::{self, Attachment};
+use crate::db::attachments::{self, Attachment, AttachmentStorageSummary};
 use crate::{time, AppError, AppState};
 
 #[tauri::command]
@@ -149,6 +149,17 @@ pub fn cleanup_orphans(state: State<AppState>) -> Result<CleanupResult, AppError
         removed_count,
         removed_bytes,
     })
+}
+
+#[tauri::command]
+pub fn get_attachment_storage_summary(
+    state: State<AppState>,
+) -> Result<AttachmentStorageSummary, AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    attachments::storage_summary(&conn)
 }
 
 #[tauri::command]

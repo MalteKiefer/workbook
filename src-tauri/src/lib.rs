@@ -168,6 +168,7 @@ pub fn run() {
             commands::attachments::read_attachment_data_url,
             commands::attachments::copy_attachment_to,
             commands::attachments::cleanup_orphans,
+            commands::attachments::get_attachment_storage_summary,
             commands::attachments::open_attachment,
             commands::export::export_markdown,
             commands::export::export_pdf,
