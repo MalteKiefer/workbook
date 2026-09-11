@@ -8,6 +8,7 @@ pub mod backup;
 pub mod customers;
 pub mod dattormm;
 pub mod entries;
+pub mod entry_templates;
 pub mod export;
 pub mod external_directory;
 pub mod hetzner;

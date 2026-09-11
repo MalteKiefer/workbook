@@ -4,6 +4,7 @@ import BackupView from "./BackupView";
 import PluginsView from "./PluginsView";
 import KeymapSettingsView from "./KeymapSettingsView";
 import UpdateSettingsView from "./UpdateSettingsView";
+import TemplatesSettingsView from "./TemplatesSettingsView";
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -50,6 +51,9 @@ export default function SettingsView() {
         <TabButton active={settingsTab === "keymap"} onClick={() => setSettingsTab("keymap")}>
           Tastaturbelegung
         </TabButton>
+        <TabButton active={settingsTab === "templates"} onClick={() => setSettingsTab("templates")}>
+          Vorlagen
+        </TabButton>
         <TabButton active={settingsTab === "update"} onClick={() => setSettingsTab("update")}>
           Aktualisierung
           {updateAvailableVersion !== null && (
@@ -72,6 +76,7 @@ export default function SettingsView() {
       {settingsTab === "backup" && <BackupView />}
       {settingsTab === "plugins" && <PluginsView />}
       {settingsTab === "keymap" && <KeymapSettingsView />}
+      {settingsTab === "templates" && <TemplatesSettingsView />}
       {settingsTab === "update" && <UpdateSettingsView />}
     </div>
   );
