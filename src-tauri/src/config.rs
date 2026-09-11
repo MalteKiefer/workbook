@@ -449,6 +449,18 @@ pub struct Config {
     /// run yet). Drives the tray tooltip and the Settings-nav badge; never
     /// used to auto-install.
     pub auto_update_check_available_version: Option<String>,
+    /// Base64-encoded random salt for the credential vault's Argon2id key
+    /// derivation, generated once at vault setup (`vault::crypto::generate_salt`)
+    /// and never changed after. Not secret -- a salt's job is uniqueness,
+    /// not confidentiality -- so plain config.toml storage is fine, same
+    /// principle as any password-hashing salt.
+    pub vault_salt: Option<String>,
+    /// Base64-encoded AES-GCM ciphertext of a known fixed plaintext,
+    /// produced by `vault::crypto::encrypt_canary` at vault setup. Lets
+    /// `commands::vault::unlock_vault` tell "wrong passphrase" apart from
+    /// "vault never set up" without ever storing the passphrase or the
+    /// derived key here.
+    pub vault_canary: Option<String>,
 }
 
 impl Default for Config {
@@ -499,6 +511,8 @@ impl Default for Config {
             auto_update_check_frequency: AutoUpdateCheckFrequency::default(),
             auto_update_check_last_run_utc: None,
             auto_update_check_available_version: None,
+            vault_salt: None,
+            vault_canary: None,
         }
     }
 }
