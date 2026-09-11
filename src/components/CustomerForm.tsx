@@ -5,6 +5,7 @@ import { formatInvokeError } from "../lib/errors";
 import Modal from "./Modal";
 import AuditLogPanel from "./AuditLogPanel";
 import LocationsPanel from "./LocationsPanel";
+import ExpiringItemsPanel from "./ExpiringItemsPanel";
 
 interface Customer {
   id: number;
@@ -156,6 +157,7 @@ export default function CustomerForm() {
         </label>
         {error && <p style={{ color: "var(--danger)", fontSize: "0.82rem", margin: 0 }}>Fehler: {error}</p>}
         {typeof customerEditorTarget === "number" && <LocationsPanel customerId={customerEditorTarget} />}
+        {typeof customerEditorTarget === "number" && <ExpiringItemsPanel customerId={customerEditorTarget} />}
         {typeof customerEditorTarget === "number" && <AuditLogPanel entityType="customer" entityId={customerEditorTarget} />}
         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.25rem" }}>
           <button type="button" onClick={cancel}>

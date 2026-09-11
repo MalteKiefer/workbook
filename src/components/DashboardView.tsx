@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
 import { getKeymap, matchesBinding } from "../lib/keymap";
+import { EXPIRING_ITEM_KIND_LABELS, isExpiringSoon } from "../lib/expiry";
 
 interface Customer {
   id: number;
@@ -17,6 +18,17 @@ interface OverdueSystemDto {
   customer_id: number;
   customer_name: string;
   last_performed_at_utc: string | null;
+}
+
+// Kept in sync with src-tauri/src/db/expiring_items.rs::ExpiringItem.
+interface ExpiringItem {
+  id: number;
+  customer_id: number;
+  system_id: number | null;
+  kind: string;
+  label: string;
+  expires_on: string;
+  reminder_days_before: number;
 }
 
 // Local subset of the full Entry shape (src-tauri/src/db/entries.rs) --
@@ -65,17 +77,18 @@ const listRowStyle: CSSProperties = {
 // which section it belongs to) is reduced to a render() function and an
 // activate() callback, and every section's items get concatenated into one
 // flat, keyboard-navigable sequence walked by a single selectedIndex. Here
-// there are only two sections (overdue systems, recent entries) instead of
-// CommandPalette's several, but the shape is identical.
-type DashboardSection = "overdue" | "entries";
+// there are three sections (overdue systems, expiring items, recent entries)
+// instead of CommandPalette's several, but the shape is identical.
+type DashboardSection = "overdue" | "expiring" | "entries";
 
 interface FlatItem {
   key: string;
   section: DashboardSection;
   // Precomputed position in the FLATTENED items array (not a per-section
-  // index) so the two sections' independent <ul> renders can still share
-  // one running index for highlighting -- entryItems continues numbering
-  // where overdueItems left off (see its useMemo below).
+  // index) so the three sections' independent <ul> renders can still share
+  // one running index for highlighting -- expiringFlatItems continues
+  // numbering where overdueItems left off, and entryItems continues where
+  // expiringFlatItems left off (see their useMemo blocks below).
   globalIndex: number;
   render: () => ReactNode;
   activate: () => void;
@@ -92,6 +105,7 @@ export default function DashboardView() {
 
   const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [overdueSystems, setOverdueSystems] = useState<OverdueSystemDto[] | null>(null);
+  const [expiringItems, setExpiringItems] = useState<ExpiringItem[] | null>(null);
   const [recentEntries, setRecentEntries] = useState<Entry[] | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -101,6 +115,10 @@ export default function DashboardView() {
 
   useEffect(() => {
     invoke<OverdueSystemDto[]>("list_overdue_systems").then(setOverdueSystems);
+  }, []);
+
+  useEffect(() => {
+    invoke<ExpiringItem[]>("list_expiring_items").then(setExpiringItems);
   }, []);
 
   useEffect(() => {
@@ -157,15 +175,51 @@ export default function DashboardView() {
     [overdueSystems, openCustomerSystems],
   );
 
+  // Only the items actually inside their reminder window (maintenance.rs::is_expiring_soon's
+  // frontend mirror) -- list_expiring_items itself returns every tracked item
+  // regardless of date, same "backend returns everything, frontend narrows"
+  // shape as recentEntriesToShow slicing list_entries' full result.
+  const dueExpiringItems = useMemo(
+    () =>
+      (expiringItems ?? []).filter((item) => isExpiringSoon(item.expires_on, item.reminder_days_before)),
+    [expiringItems],
+  );
+
+  const expiringFlatItems = useMemo<FlatItem[]>(
+    () =>
+      dueExpiringItems.map((item, i) => ({
+        key: `expiring-${item.id}`,
+        section: "expiring",
+        // Continues numbering right after overdueItems, same convention
+        // entryItems's own globalIndex uses below.
+        globalIndex: overdueItems.length + i,
+        render: () => (
+          <>
+            <span>
+              {item.label}{" "}
+              <span style={{ color: "var(--text-muted)" }}>
+                ({EXPIRING_ITEM_KIND_LABELS[item.kind] ?? item.kind})
+              </span>
+            </span>
+            <span style={{ fontSize: "0.8rem", color: "var(--danger)", whiteSpace: "nowrap" }}>
+              {new Date(item.expires_on).toLocaleDateString("de-DE")}
+            </span>
+          </>
+        ),
+        activate: () => openCustomerSystems(item.customer_id),
+      })),
+    [dueExpiringItems, overdueItems.length, openCustomerSystems],
+  );
+
   const entryItems = useMemo<FlatItem[]>(
     () =>
       recentEntriesToShow.map((entry, i) => ({
         key: `entry-${entry.id}`,
         section: "entries",
-        // Continues numbering right after overdueItems so both sections
-        // form one continuous j/k sequence instead of two independent
-        // per-section selections.
-        globalIndex: overdueItems.length + i,
+        // Continues numbering right after overdueItems AND expiringFlatItems
+        // so all three sections form one continuous j/k sequence instead of
+        // independent per-section selections.
+        globalIndex: overdueItems.length + expiringFlatItems.length + i,
         render: () => (
           <>
             <span>
@@ -181,10 +235,13 @@ export default function DashboardView() {
         ),
         activate: () => openCustomerSystems(entry.customer_id),
       })),
-    [recentEntriesToShow, overdueItems.length, customerNameById, openCustomerSystems],
+    [recentEntriesToShow, overdueItems.length, expiringFlatItems.length, customerNameById, openCustomerSystems],
   );
 
-  const items = useMemo<FlatItem[]>(() => [...overdueItems, ...entryItems], [overdueItems, entryItems]);
+  const items = useMemo<FlatItem[]>(
+    () => [...overdueItems, ...expiringFlatItems, ...entryItems],
+    [overdueItems, expiringFlatItems, entryItems],
+  );
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -217,9 +274,9 @@ export default function DashboardView() {
     <div>
       <h1 style={{ fontSize: "1.1rem" }}>Dashboard</h1>
       <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", marginTop: "0.25rem" }}>
-        {customers === null || overdueSystems === null
+        {customers === null || overdueSystems === null || expiringItems === null
           ? "Lade…"
-          : `${customers.length} aktive Kunden · ${overdueSystems.length} Systeme überfällig`}
+          : `${customers.length} aktive Kunden · ${overdueSystems.length} Systeme überfällig · ${dueExpiringItems.length} bald ablaufend`}
       </p>
 
       <section style={{ marginTop: "1.5rem" }}>
@@ -231,6 +288,32 @@ export default function DashboardView() {
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {overdueItems.map((item) => (
+              <li
+                key={item.key}
+                className="list-row"
+                onClick={item.activate}
+                title="Systeme dieses Kunden öffnen"
+                style={{
+                  ...listRowStyle,
+                  background: item.globalIndex === selectedIndex ? "var(--bg-selected)" : "transparent",
+                }}
+              >
+                {item.render()}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section style={{ marginTop: "1.5rem" }}>
+        <h2 style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>Bald ablaufend</h2>
+        {expiringItems === null ? (
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>Lade…</p>
+        ) : expiringFlatItems.length === 0 ? (
+          <p style={{ color: "var(--success)", fontSize: "0.85rem" }}>Nichts läuft demnächst ab.</p>
+        ) : (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {expiringFlatItems.map((item) => (
               <li
                 key={item.key}
                 className="list-row"

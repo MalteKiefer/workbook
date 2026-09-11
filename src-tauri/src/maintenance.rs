@@ -29,6 +29,25 @@ pub fn is_overdue(
     now.signed_duration_since(baseline) >= chrono::Duration::days(interval_days)
 }
 
+/// Whether an expiring item (SSL cert, domain, license, ...) is inside
+/// its reminder window -- `today` is on or after
+/// `expires_on - reminder_days_before` days. Unlike `is_overdue`, this
+/// does not treat "already expired" specially -- an item overdue by 400
+/// days is still simply "due" (the UI distinguishes "expired" from
+/// "expiring soon" by comparing `expires_on` to today directly, this
+/// function only answers "should it show up in the warning list at
+/// all").
+pub fn is_expiring_soon(
+    expires_on: &str,
+    reminder_days_before: i64,
+    today: chrono::NaiveDate,
+) -> bool {
+    let Ok(expires) = chrono::NaiveDate::parse_from_str(expires_on, "%Y-%m-%d") else {
+        return true; // unparseable date -- fail-safe, same convention as is_overdue
+    };
+    today >= expires - chrono::Duration::days(reminder_days_before)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +121,40 @@ mod tests {
             "also not one",
             now
         ));
+    }
+}
+
+#[cfg(test)]
+mod expiring_soon_tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    fn date(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    #[test]
+    fn not_expiring_when_far_in_the_future() {
+        assert!(!is_expiring_soon("2027-12-31", 30, date("2026-09-11")));
+    }
+
+    #[test]
+    fn expiring_when_inside_reminder_window() {
+        assert!(is_expiring_soon("2026-09-30", 30, date("2026-09-11")));
+    }
+
+    #[test]
+    fn expiring_when_already_past() {
+        assert!(is_expiring_soon("2026-01-01", 30, date("2026-09-11")));
+    }
+
+    #[test]
+    fn expiring_exactly_at_the_reminder_boundary() {
+        assert!(is_expiring_soon("2026-10-11", 30, date("2026-09-11")));
+    }
+
+    #[test]
+    fn unparseable_date_is_treated_as_expiring() {
+        assert!(is_expiring_soon("not-a-date", 30, date("2026-09-11")));
     }
 }
