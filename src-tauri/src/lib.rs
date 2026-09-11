@@ -2,6 +2,7 @@ pub mod attachments;
 pub mod backup;
 pub mod cli;
 pub mod clipboard;
+pub mod cloud_storage;
 pub mod commands;
 pub mod config;
 pub mod context_capture;
@@ -222,6 +223,10 @@ pub fn run() {
             commands::backup::set_auto_backup_settings,
             commands::backup::set_backup_encryption_enabled,
             commands::backup::set_backup_encryption_passphrase,
+            commands::cloud_storage::get_cloud_storage_settings,
+            commands::cloud_storage::set_cloud_storage_settings,
+            commands::cloud_storage::set_cloud_storage_secret_key,
+            commands::cloud_storage::test_cloud_storage_connection,
             commands::audit_log::list_audit_log_for_entity,
             commands::plugins::test_ninja_connection,
             commands::plugins::list_ninja_connections,

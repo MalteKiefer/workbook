@@ -5,6 +5,7 @@ pub mod atera;
 pub mod attachments;
 pub mod audit_log;
 pub mod backup;
+pub mod cloud_storage;
 pub mod customers;
 pub mod dattormm;
 pub mod entries;

@@ -461,6 +461,24 @@ pub struct Config {
     /// "vault never set up" without ever storing the passphrase or the
     /// derived key here.
     pub vault_canary: Option<String>,
+    /// Whether backups (manual or automatic) should also be uploaded to
+    /// the configured S3-compatible bucket after completing locally. The
+    /// local file is always written first regardless of this setting --
+    /// this only controls the additional best-effort cloud copy.
+    pub cloud_storage_enabled: bool,
+    /// S3-compatible endpoint URL, e.g. "https://s3.us-west-002.backblazeb2.com"
+    /// for Backblaze B2, or an AWS S3 regional endpoint. Not secret.
+    pub cloud_storage_endpoint: Option<String>,
+    /// Region identifier the endpoint expects, e.g. "us-west-002" (B2) or
+    /// "eu-central-1" (AWS). Not secret.
+    pub cloud_storage_region: Option<String>,
+    pub cloud_storage_bucket: Option<String>,
+    /// Access key ID -- the public half of the credential pair. Not
+    /// secret on its own (mirrors how an AWS access key ID is routinely
+    /// shown in dashboards); the SECRET access key is never stored here,
+    /// only in the OS keychain, see `cloud_storage::SECRET_ID` usage in
+    /// Task 4.
+    pub cloud_storage_access_key_id: Option<String>,
 }
 
 impl Default for Config {
@@ -513,6 +531,11 @@ impl Default for Config {
             auto_update_check_available_version: None,
             vault_salt: None,
             vault_canary: None,
+            cloud_storage_enabled: false,
+            cloud_storage_endpoint: None,
+            cloud_storage_region: None,
+            cloud_storage_bucket: None,
+            cloud_storage_access_key_id: None,
         }
     }
 }
