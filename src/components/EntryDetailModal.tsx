@@ -5,6 +5,7 @@ import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
 import { formatInvokeError } from "../lib/errors";
 import { isLateEntry, useLateEntryThreshold } from "../lib/lateEntry";
+import { diffLines } from "../lib/lineDiff";
 import Modal from "./Modal";
 import { TagChipList } from "./TagChip";
 import AttachmentList from "./AttachmentList";
@@ -32,6 +33,16 @@ interface Attachment {
   size_bytes: number;
   created_at_utc: string;
   created_at_tz: string;
+}
+
+interface EntryRevision {
+  id: number;
+  entry_id: number;
+  title: string;
+  body_md: string;
+  category: string;
+  revised_at_utc: string;
+  revised_at_tz: string;
 }
 
 interface Customer {
@@ -108,6 +119,50 @@ function renderBody(bodyMd: string): ReactNode[] {
   return parts;
 }
 
+// Renders a line-level diff between two body_md revisions (`diffLines`,
+// src/lib/lineDiff.ts) as a compact block: removed lines get a subtle
+// red-tinted background and a "-" gutter marker, added lines a subtle
+// green-tinted background and a "+" gutter marker, unchanged lines are
+// left unstyled with a blank gutter.
+function DiffView({ before, after }: { before: string; after: string }) {
+  const lines = diffLines(before, after);
+  return (
+    <div
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "0.78rem",
+        border: "1px solid var(--border-subtle)",
+        borderRadius: "var(--radius-sm)",
+        overflow: "hidden",
+        marginTop: "0.3rem",
+      }}
+    >
+      {lines.map((line, idx) => (
+        <div
+          key={idx}
+          style={{
+            display: "flex",
+            gap: "0.5rem",
+            padding: "0 0.4rem",
+            whiteSpace: "pre-wrap",
+            background:
+              line.type === "removed"
+                ? "color-mix(in srgb, var(--danger) 15%, transparent)"
+                : line.type === "added"
+                  ? "color-mix(in srgb, var(--success) 15%, transparent)"
+                  : "transparent",
+          }}
+        >
+          <span style={{ color: "var(--text-muted)", userSelect: "none", flexShrink: 0 }}>
+            {line.type === "removed" ? "-" : line.type === "added" ? "+" : " "}
+          </span>
+          <span>{line.text.length === 0 ? " " : line.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Read-only view of an entry, reachable by double-clicking a row in
 // JournalView.tsx. Deliberately separate from EntryEditor.tsx rather than
 // just opening the edit form directly — the user asked for a view step
@@ -123,6 +178,8 @@ export default function EntryDetailModal() {
 
   const [entry, setEntry] = useState<Entry | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [revisions, setRevisions] = useState<EntryRevision[]>([]);
+  const [revisionDisplays, setRevisionDisplays] = useState<Record<number, string>>({});
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [systemName, setSystemName] = useState<string | null>(null);
   const [performedAtDisplay, setPerformedAtDisplay] = useState("");
@@ -163,6 +220,24 @@ export default function EntryDetailModal() {
     invoke<Attachment[]>("list_attachments_for_entry", { entryId: viewingEntryId })
       .then(setAttachments)
       .catch(() => setAttachments([]));
+    invoke<EntryRevision[]>("list_entry_revisions", { entryId: viewingEntryId })
+      .then(async (loaded) => {
+        setRevisions(loaded);
+        const displays = await Promise.all(
+          loaded.map((r) =>
+            invoke<string>("format_timestamp_for_display", {
+              utc: r.revised_at_utc,
+              tz: r.revised_at_tz,
+            }),
+          ),
+        );
+        const displayById: Record<number, string> = {};
+        loaded.forEach((r, idx) => {
+          displayById[r.id] = displays[idx];
+        });
+        setRevisionDisplays(displayById);
+      })
+      .catch(() => setRevisions([]));
   }, [viewingEntryId]);
 
   useEffect(() => {
@@ -269,6 +344,45 @@ export default function EntryDetailModal() {
                   />
                 </div>
               </div>
+            )}
+            {revisions.length > 0 && (
+              <details>
+                <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                  Verlauf ({revisions.length})
+                </summary>
+                <ul style={{ listStyle: "none", padding: 0, margin: "0.4rem 0 0", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                  {revisions.map((revision, i) => {
+                    const afterTitle = i === 0 ? entry.title : revisions[i - 1].title;
+                    const afterCategory = i === 0 ? entry.category : revisions[i - 1].category;
+                    const afterBody = i === 0 ? entry.body_md : revisions[i - 1].body_md;
+                    return (
+                      <li
+                        key={revision.id}
+                        style={{ padding: "0.35rem 0", borderTop: "1px solid var(--border-subtle)" }}
+                      >
+                        <div style={{ fontFamily: "var(--font-mono)" }}>
+                          {revisionDisplays[revision.id] ?? "…"}
+                        </div>
+                        {revision.title !== afterTitle && (
+                          <div>
+                            Titel: {revision.title} → {afterTitle}
+                          </div>
+                        )}
+                        {revision.category !== afterCategory && (
+                          <div>
+                            Kategorie: {CATEGORY_LABELS[revision.category] ?? revision.category} →{" "}
+                            {CATEGORY_LABELS[afterCategory] ?? afterCategory}
+                          </div>
+                        )}
+                        <details>
+                          <summary style={{ cursor: "pointer" }}>Diff anzeigen</summary>
+                          <DiffView before={revision.body_md} after={afterBody} />
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </details>
             )}
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.25rem" }}>
               <button type="button" onClick={closeEntryDetail}>
