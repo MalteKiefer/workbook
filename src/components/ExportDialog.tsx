@@ -56,6 +56,8 @@ export default function ExportDialog() {
   const openForm = useAppStore((s) => s.openForm);
   const closeForm = useAppStore((s) => s.closeForm);
   const closeExportDialog = useAppStore((s) => s.closeExportDialog);
+  const pendingAction = useAppStore((s) => s.pendingAction);
+  const setPendingAction = useAppStore((s) => s.setPendingAction);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [systems, setSystems] = useState<System[]>([]);
@@ -85,16 +87,26 @@ export default function ExportDialog() {
     invoke<System[]>("list_systems", { customerId, includeArchived: false }).then(setSystems);
   }, [customerId]);
 
-  // Seed fields from ambient store selection whenever the dialog opens.
+  // Seed fields from ambient store selection whenever the dialog opens. Also
+  // consumes the Command Palette's "Alle Kunden exportieren" pendingAction
+  // (set alongside openExportDialog() in CommandPalette.tsx) by pre-checking
+  // "Alle Kunden" here instead of leaving it at its normal false default --
+  // kept inside this same effect (rather than a second one) so it can't race
+  // the rest of the seeding above.
   useEffect(() => {
     if (!exportDialogOpen) return;
-    setAllCustomers(false);
     setCustomerId(selectedCustomerId ?? "");
     setSystemId(selectedSystemId ?? "");
     setFromInput("");
     setToInput("");
     setStatus(null);
     setError(null);
+    if (pendingAction === "export-all-customers") {
+      setAllCustomers(true);
+      setPendingAction(null);
+    } else {
+      setAllCustomers(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exportDialogOpen]);
 
