@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatInvokeError } from "../lib/errors";
 import type { ThemePreference } from "../lib/theme";
@@ -9,10 +9,26 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
 ];
 
+interface AttachmentStorageSummary {
+  distinct_file_count: number;
+  total_size_bytes: number;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
 export default function GeneralSettingsView() {
   const [theme, setTheme] = useState<ThemePreference | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [storageSummary, setStorageSummary] = useState<AttachmentStorageSummary | null>(null);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [cleanupStatus, setCleanupStatus] = useState<string | null>(null);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -27,6 +43,37 @@ export default function GeneralSettingsView() {
       cancelled = true;
     };
   }, []);
+
+  const fetchStorageSummary = useCallback(() => {
+    return invoke<AttachmentStorageSummary>("get_attachment_storage_summary")
+      .then((summary) => {
+        setStorageSummary(summary);
+      })
+      .catch((e) => {
+        setCleanupError(formatInvokeError(e));
+      });
+  }, []);
+
+  useEffect(() => {
+    void fetchStorageSummary();
+  }, [fetchStorageSummary]);
+
+  async function handleCleanup() {
+    if (cleanupBusy) return;
+    setCleanupBusy(true);
+    setCleanupError(null);
+    setCleanupStatus(null);
+    try {
+      const result = await invoke<{ removed_count: number; removed_bytes: number }>("cleanup_orphans");
+      const kb = (result.removed_bytes / 1024).toFixed(1);
+      setCleanupStatus(`${result.removed_count} verwaiste Datei(en) entfernt (${kb} KB freigegeben).`);
+      await fetchStorageSummary();
+    } catch (e) {
+      setCleanupError(formatInvokeError(e));
+    } finally {
+      setCleanupBusy(false);
+    }
+  }
 
   async function handleSelect(preference: ThemePreference) {
     if (preference === theme || busy) return;
@@ -90,6 +137,34 @@ export default function GeneralSettingsView() {
           })}
         </div>
         {error && <p style={{ color: "var(--danger)", fontSize: "0.82rem", margin: 0 }}>Fehler: {error}</p>}
+      </section>
+
+      <section
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.5rem",
+          padding: "1rem",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-sm)",
+          background: "var(--bg-surface)",
+        }}
+      >
+        <h2 style={{ margin: 0, fontSize: "1rem" }}>Anhänge</h2>
+        {storageSummary === null ? (
+          <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: "0.85rem" }}>Lade…</p>
+        ) : (
+          <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+            {storageSummary.distinct_file_count} Datei(en), {formatBytes(storageSummary.total_size_bytes)} insgesamt.
+          </p>
+        )}
+        <div>
+          <button type="button" disabled={cleanupBusy} onClick={() => void handleCleanup()}>
+            Verwaiste Anhänge bereinigen…
+          </button>
+        </div>
+        {cleanupStatus && <p style={{ margin: 0, color: "var(--success)", fontSize: "0.82rem" }}>{cleanupStatus}</p>}
+        {cleanupError && <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.82rem" }}>Fehler: {cleanupError}</p>}
       </section>
     </div>
   );
