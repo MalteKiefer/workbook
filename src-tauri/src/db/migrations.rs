@@ -31,6 +31,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 5,
         sql: include_str!("../../migrations/0005_entry_revisions.sql"),
     },
+    Migration {
+        version: 6,
+        sql: include_str!("../../migrations/0006_locations.sql"),
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> Result<i64, AppError> {
@@ -103,7 +107,7 @@ mod tests {
 
         run_migrations(&mut conn, &db_path, &berlin()).unwrap();
 
-        assert_eq!(current_version(&conn).unwrap(), 5);
+        assert_eq!(current_version(&conn).unwrap(), 6);
 
         for table in [
             "customers",
@@ -117,6 +121,7 @@ mod tests {
             "audit_log",
             "entry_templates",
             "entry_revisions",
+            "locations",
         ] {
             let count: i64 = conn
                 .query_row(
