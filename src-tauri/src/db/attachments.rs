@@ -101,6 +101,40 @@ pub fn all_referenced_hashes(
     Ok(result)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct AttachmentStorageSummary {
+    /// Number of DISTINCT files on disk (by sha256), not the number of
+    /// attachment rows/links -- two entries sharing one screenshot count
+    /// as one file here, matching actual disk usage.
+    pub distinct_file_count: i64,
+    /// Total bytes across those distinct files -- see the module-level
+    /// note on this function about why a naive SUM(size_bytes) over every
+    /// row would overcount.
+    pub total_size_bytes: i64,
+}
+
+/// Distinct-file count and total disk size across all attachments,
+/// deduplicated by `sha256` exactly like `all_referenced_hashes` already
+/// does for orphan detection -- the same physical file can be linked from
+/// multiple attachment rows (one per entry it's attached to), and each row
+/// redundantly stores that file's own size, so grouping by `sha256` first
+/// is required to avoid counting a shared file's size more than once.
+pub fn storage_summary(conn: &Connection) -> Result<AttachmentStorageSummary, AppError> {
+    conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM (
+             SELECT sha256, size_bytes FROM attachments GROUP BY sha256
+         )",
+        [],
+        |row| {
+            Ok(AttachmentStorageSummary {
+                distinct_file_count: row.get(0)?,
+                total_size_bytes: row.get(1)?,
+            })
+        },
+    )
+    .map_err(Into::into)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,5 +331,90 @@ mod tests {
         assert_eq!(hashes.len(), 2);
         assert!(hashes.contains("hash-a"));
         assert!(hashes.contains("hash-b"));
+    }
+
+    #[test]
+    fn storage_summary_with_no_attachments_is_zero() {
+        let conn = migrated_connection();
+        let summary = storage_summary(&conn).unwrap();
+        assert_eq!(summary.distinct_file_count, 0);
+        assert_eq!(summary.total_size_bytes, 0);
+    }
+
+    #[test]
+    fn storage_summary_sums_distinct_files() {
+        let conn = migrated_connection();
+        let dir = tempfile::tempdir().unwrap();
+        let entry_id = seed_entry(&conn, dir.path());
+        create(
+            &conn,
+            entry_id,
+            "hash-a",
+            "a.png",
+            "image/png",
+            100,
+            &berlin(),
+        )
+        .unwrap();
+        create(
+            &conn,
+            entry_id,
+            "hash-b",
+            "b.png",
+            "image/png",
+            250,
+            &berlin(),
+        )
+        .unwrap();
+
+        let summary = storage_summary(&conn).unwrap();
+
+        assert_eq!(summary.distinct_file_count, 2);
+        assert_eq!(summary.total_size_bytes, 350);
+    }
+
+    /// Proves the dedup logic: the same physical file (same sha256) attached
+    /// to two different entries must be counted ONCE, not twice, both for
+    /// distinct_file_count and total_size_bytes -- see the module-level note
+    /// on `storage_summary` about why a naive SUM(size_bytes) over every row
+    /// would overcount actual disk usage.
+    #[test]
+    fn storage_summary_deduplicates_shared_file_across_rows() {
+        let conn = migrated_connection();
+        let dir = tempfile::tempdir().unwrap();
+        let entry_id = seed_entry(&conn, dir.path());
+        // Same sha256, attached via two separate attachment rows (e.g. the
+        // same screenshot attached to two different journal entries).
+        create(
+            &conn,
+            entry_id,
+            "shared-hash",
+            "shot.png",
+            "image/png",
+            777,
+            &berlin(),
+        )
+        .unwrap();
+        create(
+            &conn,
+            entry_id,
+            "shared-hash",
+            "shot-copy.png",
+            "image/png",
+            777,
+            &berlin(),
+        )
+        .unwrap();
+
+        let summary = storage_summary(&conn).unwrap();
+
+        assert_eq!(
+            summary.distinct_file_count, 1,
+            "shared file must be counted once, not once per attachment row"
+        );
+        assert_eq!(
+            summary.total_size_bytes, 777,
+            "shared file's size must not be double-counted"
+        );
     }
 }
