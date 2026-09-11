@@ -72,7 +72,9 @@ pub struct DirectoryHit {
 /// overwrites user-maintained fields" principle) still returns the same
 /// local `System` row/hit shape -- only the match path is wider, no new
 /// `DirectoryKind` is introduced, and the payload text itself is never
-/// exposed in the result.
+/// exposed in the result. Both `customers.notes` and `systems.notes` --
+/// free-text fields an admin edits directly -- are also matched, so
+/// something identifying written only in a Notes field is still findable.
 pub fn search_directory(
     conn: &Connection,
     query: &str,
@@ -83,13 +85,18 @@ pub fn search_directory(
     let mut stmt = conn.prepare(
         "SELECT 'customer' AS kind, id, id AS customer_id, name || ' (' || short_code || ')' AS label
          FROM customers
-         WHERE archived_at_utc IS NULL AND (name LIKE ?1 COLLATE NOCASE OR short_code LIKE ?1 COLLATE NOCASE)
+         WHERE archived_at_utc IS NULL AND (
+             name LIKE ?1 COLLATE NOCASE
+             OR short_code LIKE ?1 COLLATE NOCASE
+             OR notes LIKE ?1 COLLATE NOCASE
+         )
          UNION ALL
          SELECT 'system' AS kind, id, customer_id, name
          FROM systems
          WHERE archived_at_utc IS NULL AND (
              name LIKE ?1 COLLATE NOCASE
              OR hostname LIKE ?1 COLLATE NOCASE
+             OR notes LIKE ?1 COLLATE NOCASE
              OR EXISTS (
                  SELECT 1 FROM external_refs er
                  WHERE er.system_id = systems.id AND er.payload_json LIKE ?1 COLLATE NOCASE
@@ -217,6 +224,65 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].kind, DirectoryKind::System);
         assert_eq!(hits[0].id, 1);
+    }
+
+    #[test]
+    fn search_directory_finds_customer_by_notes_fragment() {
+        let conn = migrated_connection();
+        seed(&conn);
+        // "Vertragsnummer XK-9182" only appears in the customer's notes, never
+        // in name/short_code -- proves the new notes LIKE branch, not the
+        // existing name/short_code branches, is what matches here.
+        conn.execute(
+            "UPDATE customers SET notes = 'Vertragsnummer XK-9182' WHERE id = 1",
+            [],
+        )
+        .unwrap();
+
+        let hits = search_directory(&conn, "XK-9182", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].kind, DirectoryKind::Customer);
+        assert_eq!(hits[0].id, 1);
+    }
+
+    #[test]
+    fn search_directory_finds_system_by_notes_fragment() {
+        let conn = migrated_connection();
+        seed(&conn);
+        // "Serverraum hinter Empfang" only appears in the system's notes,
+        // never in name/hostname/plugin payloads -- proves the new notes
+        // LIKE branch, not the existing name/hostname branches, is what
+        // matches here.
+        conn.execute(
+            "UPDATE systems SET notes = 'Serverraum hinter Empfang' WHERE id = 1",
+            [],
+        )
+        .unwrap();
+
+        let hits = search_directory(&conn, "Empfang", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].kind, DirectoryKind::System);
+        assert_eq!(hits[0].id, 1);
+    }
+
+    #[test]
+    fn search_directory_excludes_archived_customers_notes() {
+        let conn = migrated_connection();
+        seed(&conn);
+        // Customer id 2 (Beispiel AG) is archived by seed(). Give it
+        // distinctive notes text and confirm the archived_at_utc IS NULL
+        // guard still excludes it even though the new notes OR-branch
+        // would otherwise match -- guards against the parentheses around
+        // the notes/name/short_code ORs being misplaced relative to the
+        // archived_at_utc AND.
+        conn.execute(
+            "UPDATE customers SET notes = 'Vertragsnummer ZZ-0007' WHERE id = 2",
+            [],
+        )
+        .unwrap();
+
+        let hits = search_directory(&conn, "ZZ-0007", 10).unwrap();
+        assert!(hits.is_empty());
     }
 
     #[test]
