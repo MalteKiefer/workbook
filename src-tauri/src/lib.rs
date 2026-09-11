@@ -161,6 +161,7 @@ pub fn run() {
             commands::entries::update_entry,
             commands::entries::parse_temporal_input,
             commands::entries::format_timestamp_for_display,
+            commands::entry_revisions::list_entry_revisions,
             commands::entry_templates::list_entry_templates,
             commands::entry_templates::create_entry_template,
             commands::entry_templates::update_entry_template,

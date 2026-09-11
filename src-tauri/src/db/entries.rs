@@ -180,6 +180,16 @@ pub fn update(
     input: UpdateEntry,
     tz: &Tz,
 ) -> Result<Entry, AppError> {
+    let previous = get(conn, id)?;
+    crate::db::entry_revisions::create(
+        conn,
+        id,
+        &previous.title,
+        &previous.body_md,
+        previous.category,
+        tz,
+    )?;
+
     let (now_utc, now_tz) = now_with_tz(tz);
     let changed = conn.execute(
         "UPDATE entries SET system_id = ?1, title = ?2, body_md = ?3, category = ?4, performed_at_utc = ?5, performed_at_tz = ?6, updated_at_utc = ?7, updated_at_tz = ?8 WHERE id = ?9",
