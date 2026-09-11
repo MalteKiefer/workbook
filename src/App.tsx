@@ -6,7 +6,7 @@ import { getUpdateCheckSettings, listenForOpenUpdateSettings, listenForUpdateChe
 import { listenForMaintenanceCheckCompleted } from "./lib/maintenanceCheck";
 import DashboardView from "./components/DashboardView";
 import CustomerListView from "./components/CustomerListView";
-import SystemListView from "./components/SystemListView";
+import CustomerDetailView from "./components/CustomerDetailView";
 import JournalView from "./components/JournalView";
 import SettingsView from "./components/SettingsView";
 import CommandPalette from "./components/CommandPalette";
@@ -116,7 +116,7 @@ export default function App() {
             />
           )}
         </NavLink>
-        <NavLink active={view === "customers" || view === "systems"} onClick={goToCustomers}>
+        <NavLink active={view === "customers" || view === "customer-detail"} onClick={goToCustomers}>
           Kunden
         </NavLink>
         <NavLink active={view === "journal"} onClick={goToJournal}>
@@ -160,7 +160,7 @@ export default function App() {
       <main style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "1.25rem" }}>
         {view === "dashboard" && <DashboardView />}
         {view === "customers" && <CustomerListView />}
-        {view === "systems" && <SystemListView />}
+        {view === "customer-detail" && <CustomerDetailView />}
         {view === "journal" && <JournalView />}
         {view === "settings" && <SettingsView />}
       </main>
