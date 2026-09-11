@@ -18,6 +18,7 @@ interface AppState {
   shortcutOverviewOpen: boolean;
   updateAvailableVersion: string | null;
   overdueSystemCount: number;
+  pendingAction: string | null;
   goToDashboard: () => void;
   goToCustomers: () => void;
   goToSystems: (customerId?: number) => void;
@@ -42,6 +43,7 @@ interface AppState {
   closeShortcutOverview: () => void;
   setUpdateAvailableVersion: (version: string | null) => void;
   setOverdueSystemCount: (count: number) => void;
+  setPendingAction: (action: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -59,6 +61,7 @@ export const useAppStore = create<AppState>((set) => ({
   shortcutOverviewOpen: false,
   updateAvailableVersion: null,
   overdueSystemCount: 0,
+  pendingAction: null,
   goToDashboard: () => set({ view: "dashboard" }),
   goToCustomers: () => set({ view: "customers" }),
   goToSystems: (customerId) =>
@@ -87,4 +90,5 @@ export const useAppStore = create<AppState>((set) => ({
   closeShortcutOverview: () => set({ shortcutOverviewOpen: false }),
   setUpdateAvailableVersion: (version) => set({ updateAvailableVersion: version }),
   setOverdueSystemCount: (count) => set({ overdueSystemCount: count }),
+  setPendingAction: (action) => set({ pendingAction: action }),
 }));

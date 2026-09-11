@@ -30,6 +30,8 @@ export default function CustomerListView() {
   const formOpen = useAppStore((s) => s.formOpen);
   const customerEditorTarget = useAppStore((s) => s.customerEditorTarget);
   const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
+  const pendingAction = useAppStore((s) => s.pendingAction);
+  const setPendingAction = useAppStore((s) => s.setPendingAction);
 
   const [importBusy, setImportBusy] = useState(false);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
@@ -42,6 +44,24 @@ export default function CustomerListView() {
   const reload = useCallback(() => {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
   }, []);
+
+  // Memoized (like `reload` above) so it has a stable identity to depend on
+  // from the pendingAction effect below without re-running on every render.
+  const handleImportCsv = useCallback(async () => {
+    setImportError(null);
+    try {
+      const csvPath = await pickCsvFile();
+      if (csvPath === null) return;
+      setImportBusy(true);
+      const summary = await invoke<ImportSummary>("import_customers_from_csv", { csvPath });
+      setImportSummary(summary);
+      reload();
+    } catch (e) {
+      setImportError(formatInvokeError(e));
+    } finally {
+      setImportBusy(false);
+    }
+  }, [reload]);
 
   useEffect(() => {
     reload();
@@ -86,6 +106,18 @@ export default function CustomerListView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [customers, selectedIndex, formOpen, selectCustomer, goToSystems, openCustomerEditor]);
 
+  // Consumes the Command Palette's "CSV-Import: Kunden" pendingAction (set in
+  // CommandPalette.tsx alongside goToCustomers()) by running this view's own
+  // existing CSV-import handler once it mounts. Clearing it immediately is
+  // essential -- otherwise it would silently re-fire on every unrelated
+  // re-mount of this view.
+  useEffect(() => {
+    if (pendingAction === "import-customers-csv") {
+      setPendingAction(null);
+      void handleImportCsv();
+    }
+  }, [pendingAction, setPendingAction, handleImportCsv]);
+
   async function archive(id: number) {
     await invoke("archive_customer", { id });
     reload();
@@ -122,22 +154,6 @@ export default function CustomerListView() {
       if (summary.errors.length > 0) setBulkArchiveErrors(summary.errors);
     } finally {
       setBulkArchiveBusy(false);
-    }
-  }
-
-  async function handleImportCsv() {
-    setImportError(null);
-    try {
-      const csvPath = await pickCsvFile();
-      if (csvPath === null) return;
-      setImportBusy(true);
-      const summary = await invoke<ImportSummary>("import_customers_from_csv", { csvPath });
-      setImportSummary(summary);
-      reload();
-    } catch (e) {
-      setImportError(formatInvokeError(e));
-    } finally {
-      setImportBusy(false);
     }
   }
 
