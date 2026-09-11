@@ -72,7 +72,9 @@ pub struct DirectoryHit {
 /// overwrites user-maintained fields" principle) still returns the same
 /// local `System` row/hit shape -- only the match path is wider, no new
 /// `DirectoryKind` is introduced, and the payload text itself is never
-/// exposed in the result.
+/// exposed in the result. Both `customers.notes` and `systems.notes` --
+/// free-text fields an admin edits directly -- are also matched, so
+/// something identifying written only in a Notes field is still findable.
 pub fn search_directory(
     conn: &Connection,
     query: &str,
@@ -83,13 +85,18 @@ pub fn search_directory(
     let mut stmt = conn.prepare(
         "SELECT 'customer' AS kind, id, id AS customer_id, name || ' (' || short_code || ')' AS label
          FROM customers
-         WHERE archived_at_utc IS NULL AND (name LIKE ?1 COLLATE NOCASE OR short_code LIKE ?1 COLLATE NOCASE)
+         WHERE archived_at_utc IS NULL AND (
+             name LIKE ?1 COLLATE NOCASE
+             OR short_code LIKE ?1 COLLATE NOCASE
+             OR notes LIKE ?1 COLLATE NOCASE
+         )
          UNION ALL
          SELECT 'system' AS kind, id, customer_id, name
          FROM systems
          WHERE archived_at_utc IS NULL AND (
              name LIKE ?1 COLLATE NOCASE
              OR hostname LIKE ?1 COLLATE NOCASE
+             OR notes LIKE ?1 COLLATE NOCASE
              OR EXISTS (
                  SELECT 1 FROM external_refs er
                  WHERE er.system_id = systems.id AND er.payload_json LIKE ?1 COLLATE NOCASE
