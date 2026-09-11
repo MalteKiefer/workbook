@@ -8,6 +8,7 @@ pub mod expiring_items;
 pub mod external_refs;
 pub mod locations;
 pub mod migrations;
+pub mod networks;
 pub mod pool;
 pub mod search;
 pub mod systems;
