@@ -1,7 +1,9 @@
 import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
 import { useAppStore } from "./state/appStore";
 import { getUpdateCheckSettings, listenForOpenUpdateSettings, listenForUpdateCheckCompleted } from "./lib/updateCheck";
+import { listenForMaintenanceCheckCompleted } from "./lib/maintenanceCheck";
 import DashboardView from "./components/DashboardView";
 import CustomerListView from "./components/CustomerListView";
 import SystemListView from "./components/SystemListView";
@@ -48,6 +50,8 @@ export default function App() {
   const goToSettings = useAppStore((s) => s.goToSettings);
   const updateAvailableVersion = useAppStore((s) => s.updateAvailableVersion);
   const setUpdateAvailableVersion = useAppStore((s) => s.setUpdateAvailableVersion);
+  const overdueSystemCount = useAppStore((s) => s.overdueSystemCount);
+  const setOverdueSystemCount = useAppStore((s) => s.setOverdueSystemCount);
 
   useEffect(() => {
     void getUpdateCheckSettings()
@@ -59,6 +63,16 @@ export default function App() {
     listenForUpdateCheckCompleted(setUpdateAvailableVersion);
     listenForOpenUpdateSettings(() => goToSettings("update"));
   }, [setUpdateAvailableVersion, goToSettings]);
+
+  useEffect(() => {
+    void invoke<unknown[]>("list_overdue_systems")
+      .then((list) => setOverdueSystemCount(list.length))
+      .catch(() => {
+        // No crash on startup because of a failed lookup -- the badge just
+        // stays hidden until the next successful background check.
+      });
+    listenForMaintenanceCheckCompleted(setOverdueSystemCount);
+  }, [setOverdueSystemCount]);
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
@@ -87,6 +101,20 @@ export default function App() {
         </div>
         <NavLink active={view === "dashboard"} onClick={goToDashboard}>
           Dashboard
+          {overdueSystemCount > 0 && (
+            <span
+              title={`${overdueSystemCount} System(e) überfällig`}
+              style={{
+                display: "inline-block",
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                background: "var(--danger)",
+                marginLeft: "0.4rem",
+                verticalAlign: "middle",
+              }}
+            />
+          )}
         </NavLink>
         <NavLink active={view === "customers" || view === "systems"} onClick={goToCustomers}>
           Kunden
