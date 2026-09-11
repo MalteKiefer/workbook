@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
 import { getKeymap, matchesBinding } from "../lib/keymap";
+import { isLateEntry, useLateEntryThreshold } from "../lib/lateEntry";
 import { TagChipList } from "./TagChip";
 import { TagCloud } from "./TagCloud";
 
@@ -81,7 +82,10 @@ export default function JournalView() {
 
   const [entries, setEntries] = useState<Entry[]>([]);
   const [timestamps, setTimestamps] = useState<Record<number, string>>({});
+  const [lateCreatedAtDisplays, setLateCreatedAtDisplays] = useState<Record<number, string>>({});
   const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const lateThresholdHours = useLateEntryThreshold();
 
   const formOpen = useAppStore((s) => s.formOpen);
   const openEntryEditor = useAppStore((s) => s.openEntryEditor);
@@ -146,6 +150,32 @@ export default function JournalView() {
       cancelled = true;
     };
   }, [entries]);
+
+  useEffect(() => {
+    // Only formats created_at for entries that are actually late -- the
+    // display string is only ever used in that badge's title tooltip, so
+    // there's no point invoking format_timestamp_for_display for every
+    // on-time entry too.
+    if (lateThresholdHours === null) return;
+    let cancelled = false;
+    const lateEntries = entries.filter((entry) =>
+      isLateEntry(entry.performed_at_utc, entry.created_at_utc, lateThresholdHours),
+    );
+    Promise.all(
+      lateEntries.map((entry) =>
+        invoke<string>("format_timestamp_for_display", {
+          utc: entry.created_at_utc,
+          tz: entry.created_at_tz,
+        }).then((display) => [entry.id, display] as const),
+      ),
+    ).then((pairs) => {
+      if (cancelled) return;
+      setLateCreatedAtDisplays(Object.fromEntries(pairs));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [entries, lateThresholdHours]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -268,7 +298,27 @@ export default function JournalView() {
               </span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--text-muted)" }}>
-              <span>{CATEGORY_LABELS[entry.category] ?? entry.category}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <span>{CATEGORY_LABELS[entry.category] ?? entry.category}</span>
+                {lateThresholdHours !== null &&
+                  isLateEntry(entry.performed_at_utc, entry.created_at_utc, lateThresholdHours) && (
+                    <span
+                      title={`Nachträglich erfasst: ${lateCreatedAtDisplays[entry.id] ?? ""}`}
+                      style={{
+                        display: "inline-block",
+                        padding: "0.05rem 0.5rem",
+                        borderRadius: "999px",
+                        border: "1px solid var(--border-subtle)",
+                        color: "var(--text-muted)",
+                        fontSize: "0.72rem",
+                        lineHeight: 1.6,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Nachträglich
+                    </span>
+                  )}
+              </span>
               <TagChipList names={entry.tags} />
             </div>
             <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{bodyPreview(entry.body_md)}</div>
