@@ -40,7 +40,12 @@ pub fn create_entry(state: State<AppState>, input: NewEntry) -> Result<Entry, Ap
         .expect("Config-Mutex vergiftet")
         .data_dir
         .clone();
+    let had_pending_attachments = !input.pending_attachments.is_empty();
     let entry = entries::create(&conn, &data_dir, input, &tz)?;
+
+    if had_pending_attachments {
+        upload_new_entry_attachments_to_cloud_if_enabled(&state, &conn, &data_dir, entry.id);
+    }
 
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
     config.last_customer_id = Some(entry.customer_id);
@@ -75,7 +80,46 @@ pub fn update_entry(
         .expect("Config-Mutex vergiftet")
         .data_dir
         .clone();
-    entries::update(&conn, &data_dir, id, input, &tz)
+    let had_pending_attachments = !input.pending_attachments.is_empty();
+    let entry = entries::update(&conn, &data_dir, id, input, &tz)?;
+    if had_pending_attachments {
+        upload_new_entry_attachments_to_cloud_if_enabled(&state, &conn, &data_dir, entry.id);
+    }
+    Ok(entry)
+}
+
+/// Best-effort cloud upload for every attachment currently on `entry_id`,
+/// called only right after a `create_entry`/`update_entry` call that
+/// actually submitted new pending attachments (checked by the caller via
+/// `had_pending_attachments`, before `input` was moved into
+/// `entries::create`/`entries::update`). Lists ALL of the entry's
+/// attachments rather than tracking exactly which ones were newly
+/// resolved this call -- simpler, and re-uploading an unchanged
+/// pre-existing attachment is harmless (same bytes, same content-addressed
+/// key, no-op overwrite on the bucket side) -- see
+/// `commands::attachments::upload_attachment_to_cloud_if_enabled`, reused
+/// here per-attachment, for the actual per-file upload/skip logic and the
+/// "never fails the caller" contract.
+fn upload_new_entry_attachments_to_cloud_if_enabled(
+    state: &State<AppState>,
+    conn: &rusqlite::Connection,
+    data_dir: &std::path::Path,
+    entry_id: i64,
+) {
+    let attachments = match crate::db::attachments::list_for_entry(conn, entry_id) {
+        Ok(list) => list,
+        Err(e) => {
+            eprintln!(
+                "Cloud-Upload für neue Anhänge übersprungen (Anhänge konnten nicht geladen werden): {e}"
+            );
+            return;
+        }
+    };
+    for attachment in &attachments {
+        crate::commands::attachments::upload_attachment_to_cloud_if_enabled(
+            state, data_dir, attachment,
+        );
+    }
 }
 
 #[tauri::command]
