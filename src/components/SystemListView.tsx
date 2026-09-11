@@ -50,6 +50,8 @@ export default function SystemListView() {
   const formOpen = useAppStore((s) => s.formOpen);
   const systemEditorTarget = useAppStore((s) => s.systemEditorTarget);
   const openSystemEditor = useAppStore((s) => s.openSystemEditor);
+  const pendingAction = useAppStore((s) => s.pendingAction);
+  const setPendingAction = useAppStore((s) => s.setPendingAction);
 
   const [systems, setSystems] = useState<System[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -70,6 +72,28 @@ export default function SystemListView() {
       includeArchived: false,
     }).then(setSystems);
   }, [selectedCustomerId]);
+
+  // Memoized (like `reload` above) so it has a stable identity to depend on
+  // from the pendingAction effect below without re-running on every render.
+  const handleImportCsv = useCallback(async () => {
+    if (selectedCustomerId === null) return;
+    setImportError(null);
+    try {
+      const csvPath = await pickCsvFile();
+      if (csvPath === null) return;
+      setImportBusy(true);
+      const summary = await invoke<ImportSummary>("import_systems_from_csv", {
+        customerId: selectedCustomerId,
+        csvPath,
+      });
+      setImportSummary(summary);
+      reload();
+    } catch (e) {
+      setImportError(formatInvokeError(e));
+    } finally {
+      setImportBusy(false);
+    }
+  }, [selectedCustomerId, reload]);
 
   useEffect(() => {
     reload();
@@ -118,6 +142,18 @@ export default function SystemListView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [systems, selectedIndex, formOpen, selectedCustomerId, openSystemEditor]);
 
+  // Consumes the Command Palette's "CSV-Import: Systeme" pendingAction (set in
+  // CommandPalette.tsx alongside goToSystems()) by running this view's own
+  // existing CSV-import handler once it mounts. Clearing it immediately is
+  // essential -- otherwise it would silently re-fire on every unrelated
+  // re-mount of this view.
+  useEffect(() => {
+    if (pendingAction === "import-systems-csv") {
+      setPendingAction(null);
+      void handleImportCsv();
+    }
+  }, [pendingAction, setPendingAction, handleImportCsv]);
+
   async function archive(id: number) {
     await invoke("archive_system", { id });
     reload();
@@ -154,26 +190,6 @@ export default function SystemListView() {
       if (summary.errors.length > 0) setBulkArchiveErrors(summary.errors);
     } finally {
       setBulkArchiveBusy(false);
-    }
-  }
-
-  async function handleImportCsv() {
-    if (selectedCustomerId === null) return;
-    setImportError(null);
-    try {
-      const csvPath = await pickCsvFile();
-      if (csvPath === null) return;
-      setImportBusy(true);
-      const summary = await invoke<ImportSummary>("import_systems_from_csv", {
-        customerId: selectedCustomerId,
-        csvPath,
-      });
-      setImportSummary(summary);
-      reload();
-    } catch (e) {
-      setImportError(formatInvokeError(e));
-    } finally {
-      setImportBusy(false);
     }
   }
 
