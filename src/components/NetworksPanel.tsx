@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatInvokeError } from "../lib/errors";
+import NetworkDetailPanel from "./NetworkDetailPanel";
 
 interface Network {
   id: number;
@@ -28,6 +29,7 @@ export default function NetworksPanel({ customerId }: { customerId: number }) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewingNetwork, setViewingNetwork] = useState<Network | null>(null);
 
   const reload = useCallback(() => {
     invoke<Network[]>("list_networks_for_customer", { customerId })
@@ -88,6 +90,10 @@ export default function NetworksPanel({ customerId }: { customerId: number }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (viewingNetwork !== null) {
+    return <NetworkDetailPanel network={viewingNetwork} onBack={() => setViewingNetwork(null)} />;
   }
 
   return (
@@ -163,6 +169,9 @@ export default function NetworksPanel({ customerId }: { customerId: number }) {
               {n.name} <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{n.cidr}</span>
             </span>
             <span style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
+              <button type="button" onClick={() => setViewingNetwork(n)} disabled={busy}>
+                Scannen
+              </button>
               <button type="button" onClick={() => startEdit(n)} disabled={busy}>
                 Bearbeiten
               </button>
