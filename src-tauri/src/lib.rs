@@ -422,6 +422,10 @@ pub fn run() {
             commands::network_scan::probe_snmp,
             commands::network_scan::is_nmap_available,
             commands::network_scan::run_nmap_scan,
+            commands::networks::list_networks_for_customer,
+            commands::networks::create_network,
+            commands::networks::update_network,
+            commands::networks::delete_network,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

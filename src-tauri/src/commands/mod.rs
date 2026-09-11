@@ -24,6 +24,7 @@ pub mod level;
 pub mod locations;
 pub mod netcup;
 pub mod network_scan;
+pub mod networks;
 pub mod plugins;
 pub mod pulseway;
 pub mod quickcapture;
