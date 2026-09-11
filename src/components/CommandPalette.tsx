@@ -90,6 +90,7 @@ export default function CommandPalette() {
 
   const selectedCustomerId = useAppStore((s) => s.selectedCustomerId);
   const selectedSystemId = useAppStore((s) => s.selectedSystemId);
+  const goToDashboard = useAppStore((s) => s.goToDashboard);
   const goToCustomers = useAppStore((s) => s.goToCustomers);
   const goToSystems = useAppStore((s) => s.goToSystems);
   const goToJournal = useAppStore((s) => s.goToJournal);
@@ -102,6 +103,7 @@ export default function CommandPalette() {
   const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
   const openSystemEditor = useAppStore((s) => s.openSystemEditor);
   const openShortcutOverview = useAppStore((s) => s.openShortcutOverview);
+  const setPendingAction = useAppStore((s) => s.setPendingAction);
   const keymap = useKeymap();
 
   const close = useCallback(() => {
@@ -146,9 +148,29 @@ export default function CommandPalette() {
           });
         },
       },
+      { id: "goto-dashboard", label: "Zum Dashboard", shortcut: "", run: goToDashboard },
       { id: "new-entry", label: "Neuer Eintrag (im Hauptfenster)", shortcut: "", run: () => openEntryEditor("new") },
       { id: "new-customer", label: "Neuer Kunde", shortcut: "", run: () => openCustomerEditor("new") },
       { id: "goto-customers", label: "Zu Kundenliste", shortcut: keymap.goto_customers, run: goToCustomers },
+      {
+        id: "import-customers-csv",
+        label: "CSV-Import: Kunden",
+        shortcut: "",
+        run: () => {
+          goToCustomers();
+          setPendingAction("import-customers-csv");
+        },
+      },
+      {
+        id: "export-all-customers",
+        label: "Alle Kunden exportieren",
+        shortcut: "",
+        run: () => {
+          selectSystem(null);
+          setPendingAction("export-all-customers");
+          openExportDialog();
+        },
+      },
       {
         id: "new-system",
         label: "Neues System",
@@ -185,6 +207,29 @@ export default function CommandPalette() {
           openExportDialog();
         },
       });
+      cmds.push({
+        id: "import-systems-csv",
+        label: "CSV-Import: Systeme",
+        shortcut: "",
+        run: () => {
+          goToSystems();
+          setPendingAction("import-systems-csv");
+        },
+      });
+      cmds.push({
+        id: "audit-log-customer",
+        label: "Verlauf des ausgewählten Kunden",
+        shortcut: "",
+        run: () => openCustomerEditor(selectedCustomerId),
+      });
+      if (selectedSystemId !== null) {
+        cmds.push({
+          id: "audit-log-system",
+          label: "Verlauf des ausgewählten Systems",
+          shortcut: "",
+          run: () => openSystemEditor(selectedSystemId, selectedCustomerId),
+        });
+      }
     }
     cmds.push({ id: "goto-journal", label: "Zum Journal", shortcut: keymap.goto_journal, run: goToJournal });
     cmds.push({ id: "goto-backup", label: "Zu Einstellungen → Backup", shortcut: "", run: () => goToSettings("backup") });
@@ -209,6 +254,7 @@ export default function CommandPalette() {
   }, [
     selectedCustomerId,
     selectedSystemId,
+    goToDashboard,
     goToCustomers,
     goToSystems,
     goToJournal,
@@ -219,6 +265,7 @@ export default function CommandPalette() {
     openSystemEditor,
     openShortcutOverview,
     selectSystem,
+    setPendingAction,
     keymap,
   ]);
 
