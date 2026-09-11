@@ -22,7 +22,7 @@ pub use error::AppError;
 
 use std::sync::Mutex;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::config::Config;
 use crate::db::pool::{build_pool, DbPool};
@@ -31,6 +31,13 @@ pub struct AppState {
     pub pool: DbPool,
     pub config: Mutex<Config>,
     pub previous_foreground: Mutex<Option<context_capture::ForegroundHandle>>,
+    /// Cross-customer count of overdue systems (`commands::systems::list_overdue_systems`),
+    /// recomputed every `MAINTENANCE_CHECK_INTERVAL` by `run_maintenance_check` and
+    /// reflected in the tray tooltip (`tray::sync_tray_tooltip`) and the
+    /// `maintenance-check-completed` event. Deliberately NOT persisted to
+    /// `config.toml` -- it's cheap to recompute on every launch, and there's no
+    /// reason to serialize it.
+    pub overdue_systems_count: Mutex<usize>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -78,6 +85,7 @@ pub fn run() {
             pool,
             config: Mutex::new(app_config),
             previous_foreground: Mutex::new(None),
+            overdue_systems_count: Mutex::new(0),
         })
         .setup(move |app| {
             window::install_hide_on_close(app.handle());
@@ -125,6 +133,7 @@ pub fn run() {
 
             spawn_auto_backup_scheduler(app.handle().clone());
             spawn_auto_update_check_scheduler(app.handle().clone());
+            spawn_maintenance_check_scheduler(app.handle().clone());
 
             Ok(())
         })
@@ -525,5 +534,45 @@ fn run_auto_update_check_if_due(app: &tauri::AppHandle) {
         Ok(Some(update)) => updater::apply_update_check_result(app, Some(update.version)),
         Ok(None) => updater::apply_update_check_result(app, None),
         Err(e) => eprintln!("Automatische Update-Suche fehlgeschlagen: {e}"),
+    }
+}
+
+/// Interval between recomputations of the cross-customer overdue-systems
+/// count. Same coarse-grained reasoning as `AUTO_BACKUP_CHECK_INTERVAL` and
+/// `AUTO_UPDATE_CHECK_INTERVAL`.
+const MAINTENANCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+/// Starts a background thread that periodically recomputes the
+/// cross-customer overdue-systems count (same query
+/// `commands::systems::list_overdue_systems` uses) and reflects it in the
+/// tray tooltip plus a live event for the frontend badge -- see the module
+/// doc on `AppState::overdue_systems_count`. Unlike the backup/update-check
+/// schedulers there's no "is it due" gate: this is a cheap local DB query,
+/// not a network call, so it just always runs on the same interval.
+fn spawn_maintenance_check_scheduler(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        run_maintenance_check(&app);
+        std::thread::sleep(MAINTENANCE_CHECK_INTERVAL);
+    });
+}
+
+fn run_maintenance_check(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let overdue = match commands::systems::list_overdue_systems(state.clone()) {
+        Ok(list) => list.len(),
+        Err(e) => {
+            eprintln!("Wartungs-Überfälligkeitsprüfung fehlgeschlagen: {e}");
+            return;
+        }
+    };
+    *state
+        .overdue_systems_count
+        .lock()
+        .expect("Overdue-Mutex vergiftet") = overdue;
+
+    tray::sync_tray_tooltip(app);
+
+    if let Err(e) = app.emit("maintenance-check-completed", overdue) {
+        eprintln!("Ereignis \"maintenance-check-completed\" konnte nicht gesendet werden: {e}");
     }
 }
