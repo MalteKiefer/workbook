@@ -92,7 +92,7 @@ export default function CommandPalette() {
   const selectedSystemId = useAppStore((s) => s.selectedSystemId);
   const goToDashboard = useAppStore((s) => s.goToDashboard);
   const goToCustomers = useAppStore((s) => s.goToCustomers);
-  const goToSystems = useAppStore((s) => s.goToSystems);
+  const goToCustomerDetail = useAppStore((s) => s.goToCustomerDetail);
   const goToJournal = useAppStore((s) => s.goToJournal);
   const goToSettings = useAppStore((s) => s.goToSettings);
   const selectCustomer = useAppStore((s) => s.selectCustomer);
@@ -189,7 +189,7 @@ export default function CommandPalette() {
       },
     ];
     if (selectedCustomerId !== null) {
-      cmds.push({ id: "goto-systems", label: "Zu Systemliste", shortcut: keymap.goto_systems, run: () => goToSystems() });
+      cmds.push({ id: "goto-systems", label: "Zu Systemliste", shortcut: keymap.goto_systems, run: () => goToCustomerDetail() });
       cmds.push({
         id: "export-customer",
         label: "Kunde exportieren",
@@ -212,7 +212,7 @@ export default function CommandPalette() {
         label: "CSV-Import: Systeme",
         shortcut: "",
         run: () => {
-          goToSystems();
+          goToCustomerDetail();
           setPendingAction("import-systems-csv");
         },
       });
@@ -220,7 +220,7 @@ export default function CommandPalette() {
         id: "audit-log-customer",
         label: "Verlauf des ausgewählten Kunden",
         shortcut: "",
-        run: () => openCustomerEditor(selectedCustomerId),
+        run: () => goToCustomerDetail(selectedCustomerId, "verlauf"),
       });
       if (selectedSystemId !== null) {
         cmds.push({
@@ -256,7 +256,7 @@ export default function CommandPalette() {
     selectedSystemId,
     goToDashboard,
     goToCustomers,
-    goToSystems,
+    goToCustomerDetail,
     goToJournal,
     goToSettings,
     openEntryEditor,
@@ -345,13 +345,13 @@ export default function CommandPalette() {
             goToCustomers();
           } else {
             selectCustomer(hit.customer_id);
-            goToSystems(hit.customer_id);
+            goToCustomerDetail(hit.customer_id);
             selectSystem(hit.id);
           }
           close();
         },
       })),
-    [directoryHits, selectCustomer, goToCustomers, goToSystems, selectSystem, close],
+    [directoryHits, selectCustomer, goToCustomers, goToCustomerDetail, selectSystem, close],
   );
 
   const entryItems = useMemo<FlatItem[]>(

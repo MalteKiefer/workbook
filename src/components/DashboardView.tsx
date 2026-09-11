@@ -96,7 +96,7 @@ interface FlatItem {
 
 export default function DashboardView() {
   const selectCustomer = useAppStore((s) => s.selectCustomer);
-  const goToSystems = useAppStore((s) => s.goToSystems);
+  const goToCustomerDetail = useAppStore((s) => s.goToCustomerDetail);
   // EntryEditor/CustomerForm/SystemForm are globally mounted (see App.tsx)
   // and can be open while Dashboard sits underneath -- guard on formOpen
   // exactly like CustomerListView.tsx/SystemListView.tsx do, so this view's
@@ -139,9 +139,9 @@ export default function DashboardView() {
   const openCustomerSystems = useCallback(
     (customerId: number) => {
       selectCustomer(customerId);
-      goToSystems(customerId);
+      goToCustomerDetail(customerId);
     },
-    [selectCustomer, goToSystems],
+    [selectCustomer, goToCustomerDetail],
   );
 
   const customerNameById = useMemo(

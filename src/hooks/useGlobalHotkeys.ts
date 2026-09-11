@@ -14,7 +14,7 @@ export function useGlobalHotkeys() {
   const pendingTimeoutRef = useRef<number | null>(null);
 
   const goToCustomers = useAppStore((s) => s.goToCustomers);
-  const goToSystems = useAppStore((s) => s.goToSystems);
+  const goToCustomerDetail = useAppStore((s) => s.goToCustomerDetail);
   const goToJournal = useAppStore((s) => s.goToJournal);
   const formOpen = useAppStore((s) => s.formOpen);
   const closeForm = useAppStore((s) => s.closeForm);
@@ -36,7 +36,7 @@ export function useGlobalHotkeys() {
         if (formOpen) {
           e.preventDefault();
           closeForm();
-        } else if (view === "systems") {
+        } else if (view === "customer-detail") {
           goToCustomers();
         }
         clearPrefix();
@@ -68,7 +68,7 @@ export function useGlobalHotkeys() {
           goToCustomers();
         } else if (e.key === systemsFollow && selectedCustomerId !== null) {
           e.preventDefault();
-          goToSystems();
+          goToCustomerDetail();
         } else if (e.key === journalFollow) {
           e.preventDefault();
           goToJournal();
@@ -87,5 +87,5 @@ export function useGlobalHotkeys() {
       window.removeEventListener("keydown", onKeyDown);
       clearPrefix();
     };
-  }, [formOpen, view, selectedCustomerId, selectedSystemId, goToCustomers, goToSystems, goToJournal, closeForm]);
+  }, [formOpen, view, selectedCustomerId, selectedSystemId, goToCustomers, goToCustomerDetail, goToJournal, closeForm]);
 }
