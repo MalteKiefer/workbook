@@ -216,6 +216,19 @@ export default function CustomerDetailView() {
   const customerDetailTab = useAppStore((s) => s.customerDetailTab);
   const setCustomerDetailTab = useAppStore((s) => s.setCustomerDetailTab);
 
+  const [customerName, setCustomerName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedCustomerId === null) {
+      setCustomerName(null);
+      return;
+    }
+    invoke<{ id: number; name: string }[]>("list_customers", { includeArchived: true }).then((customers) => {
+      const match = customers.find((c) => c.id === selectedCustomerId);
+      setCustomerName(match ? match.name : null);
+    });
+  }, [selectedCustomerId]);
+
   if (selectedCustomerId === null) {
     return (
       <div>
@@ -239,6 +252,7 @@ export default function CustomerDetailView() {
       <button onClick={goToCustomers} style={{ marginBottom: "0.5rem" }}>
         ← Zurück zu Kunden
       </button>
+      <h1 style={{ fontSize: "1.1rem", marginBottom: "0.75rem" }}>{customerName ?? `Kunde #${selectedCustomerId}`}</h1>
       <div
         style={{
           display: "flex",

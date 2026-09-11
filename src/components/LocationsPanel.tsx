@@ -115,116 +115,111 @@ export default function LocationsPanel({ customerId }: { customerId: number }) {
   }
 
   return (
-    <details style={{ marginTop: "0.5rem" }}>
-      <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-        Standorte ({locations.length})
-      </summary>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.4rem" }}>
-        {error && <p style={{ color: "var(--danger)", fontSize: "0.82rem", margin: 0 }}>Fehler: {error}</p>}
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+      {error && <p style={{ color: "var(--danger)", fontSize: "0.82rem", margin: 0 }}>Fehler: {error}</p>}
 
-        {editingId === null && (
-          <button type="button" onClick={startCreate} style={{ alignSelf: "flex-start" }}>
-            + Neuer Standort
-          </button>
-        )}
+      {editingId === null && (
+        <button type="button" onClick={startCreate} style={{ alignSelf: "flex-start" }}>
+          + Neuer Standort
+        </button>
+      )}
 
-        {editingId !== null && (
-          <div
+      {editingId !== null && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.5rem",
+            padding: "0.75rem",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--bg-surface)",
+          }}
+        >
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            Name
+            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required autoFocus />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            Adresse Zeile 1
+            <input
+              value={form.address_line1}
+              onChange={(e) => setForm({ ...form, address_line1: e.target.value })}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            Adresse Zeile 2
+            <input
+              value={form.address_line2}
+              onChange={(e) => setForm({ ...form, address_line2: e.target.value })}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            PLZ
+            <input value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            Ort
+            <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            Land
+            <input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            Telefon
+            <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            Notizen
+            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} />
+          </label>
+          <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+            <button type="button" onClick={cancelEdit} disabled={busy}>
+              Abbrechen
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void handleSave()}
+              disabled={busy || form.name.trim() === ""}
+            >
+              Speichern
+            </button>
+          </div>
+        </div>
+      )}
+
+      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+        {locations.map((l) => (
+          <li
+            key={l.id}
             style={{
               display: "flex",
-              flexDirection: "column",
+              justifyContent: "space-between",
+              alignItems: "center",
               gap: "0.5rem",
-              padding: "0.75rem",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--bg-surface)",
+              padding: "0.4rem 0",
+              borderTop: "1px solid var(--border-subtle)",
             }}
           >
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-              Name
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required autoFocus />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-              Adresse Zeile 1
-              <input
-                value={form.address_line1}
-                onChange={(e) => setForm({ ...form, address_line1: e.target.value })}
-              />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-              Adresse Zeile 2
-              <input
-                value={form.address_line2}
-                onChange={(e) => setForm({ ...form, address_line2: e.target.value })}
-              />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-              PLZ
-              <input value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-              Ort
-              <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-              Land
-              <input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-              Telefon
-              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-              Notizen
-              <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} />
-            </label>
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-              <button type="button" onClick={cancelEdit} disabled={busy}>
-                Abbrechen
+            <span style={{ fontSize: "0.85rem" }}>
+              {l.name}
+              {(l.postal_code || l.city) && (
+                <span style={{ color: "var(--text-muted)" }}> · {[l.postal_code, l.city].filter(Boolean).join(" ")}</span>
+              )}
+            </span>
+            <span style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
+              <button type="button" onClick={() => startEdit(l)} disabled={busy}>
+                Bearbeiten
               </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => void handleSave()}
-                disabled={busy || form.name.trim() === ""}
-              >
-                Speichern
+              <button type="button" onClick={() => void handleDelete(l.id)} disabled={busy}>
+                Löschen
               </button>
-            </div>
-          </div>
-        )}
-
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {locations.map((l) => (
-            <li
-              key={l.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "0.5rem",
-                padding: "0.4rem 0",
-                borderTop: "1px solid var(--border-subtle)",
-              }}
-            >
-              <span style={{ fontSize: "0.85rem" }}>
-                {l.name}
-                {(l.postal_code || l.city) && (
-                  <span style={{ color: "var(--text-muted)" }}> · {[l.postal_code, l.city].filter(Boolean).join(" ")}</span>
-                )}
-              </span>
-              <span style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
-                <button type="button" onClick={() => startEdit(l)} disabled={busy}>
-                  Bearbeiten
-                </button>
-                <button type="button" onClick={() => void handleDelete(l.id)} disabled={busy}>
-                  Löschen
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </details>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

@@ -25,11 +25,6 @@ interface System {
   last_performed_at_utc: string | null;
 }
 
-interface Customer {
-  id: number;
-  name: string;
-}
-
 // Kept in sync with src-tauri/src/commands/systems.rs::BulkArchiveSummary.
 interface BulkArchiveSummary {
   archived: number;
@@ -53,7 +48,6 @@ function formatOverdueSince(s: System): string {
 
 export default function SystemListView() {
   const selectedCustomerId = useAppStore((s) => s.selectedCustomerId);
-  const goToCustomers = useAppStore((s) => s.goToCustomers);
   const formOpen = useAppStore((s) => s.formOpen);
   const systemEditorTarget = useAppStore((s) => s.systemEditorTarget);
   const openSystemEditor = useAppStore((s) => s.openSystemEditor);
@@ -62,7 +56,6 @@ export default function SystemListView() {
 
   const [systems, setSystems] = useState<System[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [customerName, setCustomerName] = useState<string | null>(null);
 
   const [importBusy, setImportBusy] = useState(false);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
@@ -121,17 +114,6 @@ export default function SystemListView() {
   }, [systemEditorTarget, reload]);
 
   useEffect(() => {
-    if (selectedCustomerId === null) {
-      setCustomerName(null);
-      return;
-    }
-    invoke<Customer[]>("list_customers", { includeArchived: true }).then((customers) => {
-      const match = customers.find((c) => c.id === selectedCustomerId);
-      setCustomerName(match ? match.name : null);
-    });
-  }, [selectedCustomerId]);
-
-  useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (formOpen || isTypingTarget(document.activeElement)) return;
       const keymap = getKeymap();
@@ -154,7 +136,7 @@ export default function SystemListView() {
   }, [systems, selectedIndex, formOpen, selectedCustomerId, openSystemEditor]);
 
   // Consumes the Command Palette's "CSV-Import: Systeme" pendingAction (set in
-  // CommandPalette.tsx alongside goToSystems()) by running this view's own
+  // CommandPalette.tsx alongside goToCustomerDetail()) by running this view's own
   // existing CSV-import handler once it mounts. Clearing it immediately is
   // essential -- otherwise it would silently re-fire on every unrelated
   // re-mount of this view.
@@ -238,25 +220,12 @@ export default function SystemListView() {
   }
 
   if (selectedCustomerId === null) {
-    return (
-      <div>
-        <p>Kein Kunde ausgewählt — zurück zur Kundenliste</p>
-        <button onClick={goToCustomers}>Zurück zu Kunden</button>
-      </div>
-    );
+    return null;
   }
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
-        <div>
-          <button onClick={goToCustomers} style={{ marginBottom: "0.5rem" }}>
-            ← Zurück zu Kunden
-          </button>
-          <h1 style={{ fontSize: "1.1rem" }}>
-            Systeme von {customerName ?? `Kunde #${selectedCustomerId}`}
-          </h1>
-        </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-start", marginBottom: "0.75rem" }}>
         <span style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
           <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.85rem" }}>
             <input
