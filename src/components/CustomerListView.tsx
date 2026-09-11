@@ -26,7 +26,7 @@ export default function CustomerListView() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const selectCustomer = useAppStore((s) => s.selectCustomer);
-  const goToSystems = useAppStore((s) => s.goToSystems);
+  const goToCustomerDetail = useAppStore((s) => s.goToCustomerDetail);
   const formOpen = useAppStore((s) => s.formOpen);
   const customerEditorTarget = useAppStore((s) => s.customerEditorTarget);
   const openCustomerEditor = useAppStore((s) => s.openCustomerEditor);
@@ -92,19 +92,19 @@ export default function CustomerListView() {
         if (customer) {
           e.preventDefault();
           selectCustomer(customer.id);
-          goToSystems(customer.id);
+          goToCustomerDetail(customer.id);
         }
       } else if (matchesBinding(e, keymap.edit_selected)) {
         const customer = customers[selectedIndex];
         if (customer) {
           e.preventDefault();
-          openCustomerEditor(customer.id);
+          goToCustomerDetail(customer.id, "uebersicht");
         }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [customers, selectedIndex, formOpen, selectCustomer, goToSystems, openCustomerEditor]);
+  }, [customers, selectedIndex, formOpen, selectCustomer, goToCustomerDetail]);
 
   // Consumes the Command Palette's "CSV-Import: Kunden" pendingAction (set in
   // CommandPalette.tsx alongside goToCustomers()) by running this view's own
@@ -249,7 +249,7 @@ export default function CustomerListView() {
             <span
               onClick={() => {
                 selectCustomer(c.id);
-                goToSystems(c.id);
+                goToCustomerDetail(c.id);
               }}
               style={{ cursor: "pointer", flex: 1 }}
               title="Systeme dieses Kunden öffnen"
@@ -260,12 +260,12 @@ export default function CustomerListView() {
               <button
                 onClick={() => {
                   selectCustomer(c.id);
-                  goToSystems(c.id);
+                  goToCustomerDetail(c.id);
                 }}
               >
                 Systeme →
               </button>
-              <button onClick={() => openCustomerEditor(c.id)}>Bearbeiten</button>
+              <button onClick={() => goToCustomerDetail(c.id, "uebersicht")}>Bearbeiten</button>
               <button onClick={() => archive(c.id)}>Archivieren</button>
             </span>
           </li>
