@@ -75,6 +75,11 @@ pub struct DirectoryHit {
 /// exposed in the result. Both `customers.notes` and `systems.notes` --
 /// free-text fields an admin edits directly -- are also matched, so
 /// something identifying written only in a Notes field is still findable.
+/// Each entity's own `audit_log.summary` history is matched the same way
+/// (`EXISTS`, not `JOIN`, for the same "no duplicate hits from several
+/// matching log rows" reason as the plugin-payload branch above) -- an
+/// admin who only remembers something from an audit note (e.g. a past
+/// rename, a plugin-link change) can still find the entity by it.
 pub fn search_directory(
     conn: &Connection,
     query: &str,
@@ -89,6 +94,11 @@ pub fn search_directory(
              name LIKE ?1 COLLATE NOCASE
              OR short_code LIKE ?1 COLLATE NOCASE
              OR notes LIKE ?1 COLLATE NOCASE
+             OR EXISTS (
+                 SELECT 1 FROM audit_log al
+                 WHERE al.entity_type = 'customer' AND al.entity_id = customers.id
+                   AND al.summary LIKE ?1 COLLATE NOCASE
+             )
          )
          UNION ALL
          SELECT 'system' AS kind, id, customer_id, name
@@ -100,6 +110,11 @@ pub fn search_directory(
              OR EXISTS (
                  SELECT 1 FROM external_refs er
                  WHERE er.system_id = systems.id AND er.payload_json LIKE ?1 COLLATE NOCASE
+             )
+             OR EXISTS (
+                 SELECT 1 FROM audit_log al
+                 WHERE al.entity_type = 'system' AND al.entity_id = systems.id
+                   AND al.summary LIKE ?1 COLLATE NOCASE
              )
          )
          LIMIT ?2",
@@ -283,6 +298,80 @@ mod tests {
 
         let hits = search_directory(&conn, "ZZ-0007", 10).unwrap();
         assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn search_directory_finds_customer_by_audit_log_summary_fragment() {
+        let conn = migrated_connection();
+        seed(&conn);
+        // "Vertrag storniert" only appears in an audit_log row for customer
+        // 1, never in name/short_code/notes -- proves the new audit_log
+        // EXISTS branch, not the existing branches, is what matches here.
+        conn.execute(
+            "INSERT INTO audit_log (entity_type, entity_id, action, summary, at_utc, at_tz)
+             VALUES ('customer', 1, 'updated', 'Vertrag storniert zum 30.09.', '2026-09-07T12:00:00.000Z', 'Europe/Berlin')",
+            [],
+        )
+        .unwrap();
+
+        let hits = search_directory(&conn, "storniert", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].kind, DirectoryKind::Customer);
+        assert_eq!(hits[0].id, 1);
+    }
+
+    #[test]
+    fn search_directory_finds_system_by_audit_log_summary_fragment() {
+        let conn = migrated_connection();
+        seed(&conn);
+        conn.execute(
+            "INSERT INTO audit_log (entity_type, entity_id, action, summary, at_utc, at_tz)
+             VALUES ('system', 1, 'updated', 'Wartungsintervall auf 90 Tage geändert', '2026-09-07T12:00:00.000Z', 'Europe/Berlin')",
+            [],
+        )
+        .unwrap();
+
+        let hits = search_directory(&conn, "Wartungsintervall", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].kind, DirectoryKind::System);
+        assert_eq!(hits[0].id, 1);
+    }
+
+    #[test]
+    fn search_directory_audit_log_match_still_excludes_archived_customer() {
+        let conn = migrated_connection();
+        seed(&conn);
+        // Customer id 2 (Beispiel AG) is archived by seed(). An audit_log
+        // row matching it must still be excluded by the archived_at_utc
+        // IS NULL guard, same as the notes-fragment archived test above --
+        // guards against the new OR-branch being placed outside the
+        // parenthesized group.
+        conn.execute(
+            "INSERT INTO audit_log (entity_type, entity_id, action, summary, at_utc, at_tz)
+             VALUES ('customer', 2, 'updated', 'Sonderfall XYZ', '2026-09-07T12:00:00.000Z', 'Europe/Berlin')",
+            [],
+        )
+        .unwrap();
+
+        let hits = search_directory(&conn, "Sonderfall XYZ", 10).unwrap();
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn search_directory_does_not_duplicate_a_customer_with_multiple_audit_log_rows() {
+        let conn = migrated_connection();
+        seed(&conn);
+        conn.execute(
+            "INSERT INTO audit_log (entity_type, entity_id, action, summary, at_utc, at_tz)
+             VALUES ('customer', 1, 'created', 'Kunde repeat-me angelegt', '2026-09-07T12:00:00.000Z', 'Europe/Berlin'),
+                    ('customer', 1, 'updated', 'Notiz zu repeat-me ergänzt', '2026-09-07T12:00:00.000Z', 'Europe/Berlin')",
+            [],
+        )
+        .unwrap();
+
+        let hits = search_directory(&conn, "repeat-me", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, 1);
     }
 
     #[test]
