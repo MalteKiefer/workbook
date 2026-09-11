@@ -168,6 +168,40 @@ pub fn update(
     Ok(system)
 }
 
+/// Sets ONLY `maintenance_interval_days` on one system, leaving every other
+/// field untouched -- deliberately narrower than `update()`, which requires
+/// the caller to already have and resend every other field. Used by the
+/// bulk "Wartungsintervall setzen" action, where the frontend only has each
+/// selected system's id, not its full current field set.
+pub fn set_maintenance_interval(
+    conn: &Connection,
+    id: i64,
+    maintenance_interval_days: Option<i64>,
+    tz: &Tz,
+) -> Result<System, AppError> {
+    validate_maintenance_interval(maintenance_interval_days)?;
+    let (now_utc, now_tz) = now_with_tz(tz);
+    let changed = conn.execute(
+        "UPDATE systems SET maintenance_interval_days = ?1, updated_at_utc = ?2, updated_at_tz = ?3 WHERE id = ?4",
+        params![maintenance_interval_days, now_utc, now_tz, id],
+    )?;
+    if changed == 0 {
+        return Err(AppError::NotFound(format!("System {id} nicht gefunden")));
+    }
+    let system = get(conn, id)?;
+    if let Err(e) = audit_log::record(
+        conn,
+        "system",
+        system.id,
+        "updated",
+        &format!("Wartungsintervall von \"{}\" geändert", system.name),
+        tz,
+    ) {
+        eprintln!("Audit-Log-Eintrag konnte nicht gespeichert werden: {e}");
+    }
+    Ok(system)
+}
+
 pub fn archive(conn: &Connection, id: i64, tz: &Tz) -> Result<(), AppError> {
     let (now_utc, now_tz) = now_with_tz(tz);
     // Fetched before archiving purely to include the system's name in the
@@ -340,6 +374,68 @@ mod tests {
             &berlin(),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_maintenance_interval_changes_only_the_interval() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        let created = create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "FS01".into(),
+                system_type: "Server".into(),
+                hostname: "fs01.acme.local".into(),
+                ip_address: "10.0.0.5".into(),
+                notes: "Ein paar Notizen".into(),
+                maintenance_interval_days: None,
+            },
+            &berlin(),
+        )
+        .unwrap();
+        let updated = set_maintenance_interval(&conn, created.id, Some(30), &berlin()).unwrap();
+        assert_eq!(updated.maintenance_interval_days, Some(30));
+        assert_eq!(updated.name, created.name);
+        assert_eq!(updated.system_type, created.system_type);
+        assert_eq!(updated.hostname, created.hostname);
+        assert_eq!(updated.ip_address, created.ip_address);
+        assert_eq!(updated.notes, created.notes);
+        assert_eq!(updated.created_at_utc, created.created_at_utc);
+    }
+
+    #[test]
+    fn set_maintenance_interval_rejects_zero_or_negative_maintenance_interval() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        let created = create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "FS01".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+                maintenance_interval_days: None,
+            },
+            &berlin(),
+        )
+        .unwrap();
+        for bad_interval in [0, -1, -30] {
+            let result = set_maintenance_interval(&conn, created.id, Some(bad_interval), &berlin());
+            assert!(
+                result.is_err(),
+                "{bad_interval} Tage hätte abgelehnt werden müssen"
+            );
+        }
+    }
+
+    #[test]
+    fn set_maintenance_interval_returns_not_found_for_nonexistent_id() {
+        let conn = migrated_connection();
+        let result = set_maintenance_interval(&conn, 999, Some(30), &berlin());
+        assert!(matches!(result, Err(AppError::NotFound(_))));
     }
 
     #[test]
