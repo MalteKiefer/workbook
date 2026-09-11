@@ -20,10 +20,17 @@ pub struct SnmpProbeResult {
     pub sys_up_time: Option<String>,
 }
 
-fn value_to_display_string(value: &Value) -> String {
+/// `None` for the three RFC 3416 "exception" values a device sends
+/// instead of a real value for an OID it doesn't have -- e.g. no
+/// sysLocation configured -- so those surface the same way a
+/// completely absent OID does (see `probe`'s own doc comment: "that's
+/// `None`, not an error"), rather than as the literal debug text
+/// "NoSuchInstance" leaking into the UI.
+fn value_to_display_string(value: &Value) -> Option<String> {
     match value {
-        Value::OctetString(bytes) => String::from_utf8_lossy(bytes).into_owned(),
-        other => format!("{other:?}"),
+        Value::NoSuchObject | Value::NoSuchInstance | Value::EndOfMibView => None,
+        Value::OctetString(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+        other => Some(format!("{other:?}")),
     }
 }
 
@@ -66,13 +73,13 @@ pub fn probe(ip: &str, community: &str) -> Result<SnmpProbeResult, AppError> {
     for (oid, value) in response.varbinds {
         let display = value_to_display_string(&value);
         if oid == sys_descr_oid {
-            result.sys_descr = Some(display);
+            result.sys_descr = display;
         } else if oid == sys_up_time_oid {
-            result.sys_up_time = Some(display);
+            result.sys_up_time = display;
         } else if oid == sys_name_oid {
-            result.sys_name = Some(display);
+            result.sys_name = display;
         } else if oid == sys_location_oid {
-            result.sys_location = Some(display);
+            result.sys_location = display;
         }
     }
     Ok(result)
@@ -91,5 +98,25 @@ mod tests {
         // 2-second SNMP_TIMEOUT bounds this test's runtime.
         let result = probe("127.0.0.1", "public");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn value_to_display_string_treats_snmp_exception_values_as_unset() {
+        // A device that doesn't have e.g. sysLocation configured answers
+        // with one of these three RFC 3416 placeholders instead of a real
+        // value -- must surface as None (matching a genuinely absent OID),
+        // not as the literal debug text "NoSuchInstance" etc.
+        assert_eq!(value_to_display_string(&Value::NoSuchObject), None);
+        assert_eq!(value_to_display_string(&Value::NoSuchInstance), None);
+        assert_eq!(value_to_display_string(&Value::EndOfMibView), None);
+    }
+
+    #[test]
+    fn value_to_display_string_decodes_octet_string_as_utf8() {
+        let bytes = b"Cisco IOS Switch";
+        assert_eq!(
+            value_to_display_string(&Value::OctetString(bytes)),
+            Some("Cisco IOS Switch".to_string())
+        );
     }
 }
