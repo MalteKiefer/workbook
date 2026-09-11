@@ -4,6 +4,7 @@ pub mod customers;
 pub mod entries;
 pub mod entry_templates;
 pub mod external_refs;
+pub mod locations;
 pub mod migrations;
 pub mod pool;
 pub mod search;
