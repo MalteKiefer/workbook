@@ -155,6 +155,13 @@ pub struct VultrInstance {
     /// Vultr's `plan` field (the instance size/flavor), used as a
     /// `platform`-equivalent display string, like Datto RMM's `deviceClass`.
     pub platform: Option<String>,
+    /// Vultr's own free-text OS description (e.g. `"Debian 12 x64"`),
+    /// verified present on the same `GET /v2/instances` response
+    /// `map_instance` already parses, under the key `os` -- distinct from
+    /// `platform` above, which actually reads Vultr's `plan` field (the
+    /// instance's pricing/hardware plan, not its OS -- a pre-existing
+    /// naming quirk in this file, do not change it).
+    pub operating_system: Option<String>,
     pub region: Option<String>,
     pub linked_system_id: Option<i64>,
 }
@@ -393,6 +400,7 @@ fn map_instance(value: &serde_json::Value) -> Option<VultrInstance> {
     let label = non_empty_str(value, "label");
     let hostname = non_empty_str(value, "hostname");
     let name = label.or(hostname).unwrap_or_else(|| external_id.clone());
+    let operating_system = non_empty_str(value, "os");
     Some(VultrInstance {
         external_id,
         name,
@@ -400,6 +408,7 @@ fn map_instance(value: &serde_json::Value) -> Option<VultrInstance> {
         ipv6_address: non_empty_str(value, "v6_main_ip"),
         status: non_empty_str(value, "power_status"),
         platform: non_empty_str(value, "plan"),
+        operating_system,
         region: non_empty_str(value, "region"),
         linked_system_id: None,
     })
@@ -494,6 +503,7 @@ mod tests {
         // power_status ("running"), NOT status ("active") -- see module docs.
         assert_eq!(instance.status.as_deref(), Some("running"));
         assert_eq!(instance.platform.as_deref(), Some("vc2-2c-4gb"));
+        assert_eq!(instance.operating_system.as_deref(), Some("Debian 12 x64"));
         assert_eq!(instance.region.as_deref(), Some("ewr"));
         assert_eq!(instance.linked_system_id, None);
     }

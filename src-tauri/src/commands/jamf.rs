@@ -45,6 +45,7 @@ pub struct ExternalSystemDto {
     pub ip_address: Option<String>,
     pub serial_number: Option<String>,
     pub asset_tag: Option<String>,
+    pub operating_system: Option<String>,
     /// Direct link to the computer's detail page in Jamf Pro's own web
     /// console (`{base_url}/computers.html?id={id}`), the well-documented
     /// classic Jamf Pro web app URL pattern -- constructed from the
@@ -243,6 +244,7 @@ fn to_external_system_dto(
         ip_address: device.ip_address,
         serial_number: device.serial_number,
         asset_tag: device.asset_tag,
+        operating_system: device.operating_system,
         linked_system_id,
     }
 }
@@ -712,6 +714,7 @@ mod tests {
             ip_address: None,
             serial_number: None,
             asset_tag: None,
+            operating_system: None,
             site_id: site_id.to_string(),
         }
     }
@@ -808,6 +811,7 @@ mod tests {
                 ip_address: Some("10.0.0.5".to_string()),
                 serial_number: Some("C02XXXXX".to_string()),
                 asset_tag: Some("AT-0001".to_string()),
+                operating_system: Some("macOS 14.5".to_string()),
                 jamf_url: "https://acme.jamfcloud.com/computers.html?id=101".to_string(),
                 linked_system_id: Some(3),
             }],

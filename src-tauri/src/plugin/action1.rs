@@ -239,6 +239,12 @@ pub struct Action1Endpoint {
     /// deliberately never reads (see module docs).
     pub status: Option<String>,
     pub platform: Option<String>,
+    /// Action1's own free-text OS description (e.g. `"Windows 11
+    /// (23H2)"`), verified present on the same
+    /// `GET /endpoints/managed/{orgId}` response `map_endpoint` already
+    /// parses, under the key `OS` -- distinct from `platform` above, which
+    /// is a different, separate field on the same object.
+    pub operating_system: Option<String>,
     pub organization_id: String,
     /// Never populated from the raw endpoint JSON itself -- Action1's
     /// `/endpoints/managed/{orgId}` response has no organization NAME field
@@ -678,12 +684,14 @@ fn map_endpoint(
     let ip_address = value["address"].as_str().map(str::to_string);
     let status = value["status"].as_str().map(str::to_string);
     let platform = value["platform"].as_str().map(str::to_string);
+    let operating_system = value["OS"].as_str().map(str::to_string);
     Some(Action1Endpoint {
         external_id,
         name,
         ip_address,
         status,
         platform,
+        operating_system,
         organization_id,
         organization_name: organization_name.map(str::to_string),
     })
@@ -820,6 +828,7 @@ mod tests {
                 "address": "10.0.0.5",
                 "status": "Connected",
                 "platform": "Windows",
+                "OS": "Windows 11 (23H2)",
                 "organization_id": "11111111-1111-1111-1111-111111111111",
                 "online_status": "ERROR"
             }),
@@ -839,6 +848,10 @@ mod tests {
         assert_eq!(endpoints[0].ip_address.as_deref(), Some("10.0.0.5"));
         assert_eq!(endpoints[0].status.as_deref(), Some("Connected"));
         assert_eq!(endpoints[0].platform.as_deref(), Some("Windows"));
+        assert_eq!(
+            endpoints[0].operating_system.as_deref(),
+            Some("Windows 11 (23H2)")
+        );
         assert_eq!(
             endpoints[0].organization_id,
             "11111111-1111-1111-1111-111111111111"

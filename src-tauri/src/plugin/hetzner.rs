@@ -146,6 +146,13 @@ pub struct HetznerServer {
     pub status: Option<String>,
     /// `server_type.name`, e.g. "cx22".
     pub platform: Option<String>,
+    /// Hetzner's server image description, combined from the nested
+    /// `image.os_flavor` + `image.os_version` fields (e.g. `"debian 12"`)
+    /// verified present on the same `GET /v1/servers` response `map_server`
+    /// already parses. `image` itself can be `null` (server created from a
+    /// snapshot/backup with no OS metadata) -- `None` in that case, not an
+    /// error.
+    pub operating_system: Option<String>,
     /// `location.name`, e.g. "fsn1" -- informational display only.
     pub location: Option<String>,
 }
@@ -388,6 +395,13 @@ fn map_server(value: &serde_json::Value) -> Option<HetznerServer> {
         .unwrap_or_else(|| external_id.clone());
     let status = value["status"].as_str().map(str::to_string);
     let platform = value["server_type"]["name"].as_str().map(str::to_string);
+    let os_flavor = value["image"]["os_flavor"].as_str();
+    let os_version = value["image"]["os_version"].as_str();
+    let operating_system = match (os_flavor, os_version) {
+        (Some(flavor), Some(version)) => Some(format!("{flavor} {version}")),
+        (Some(flavor), None) => Some(flavor.to_string()),
+        (None, _) => None,
+    };
     let location = value["location"]["name"].as_str().map(str::to_string);
     let ip_address = extract_ipv4_address(value);
     Some(HetznerServer {
@@ -397,6 +411,7 @@ fn map_server(value: &serde_json::Value) -> Option<HetznerServer> {
         ip_address,
         status,
         platform,
+        operating_system,
         location,
     })
 }
@@ -424,6 +439,7 @@ mod tests {
             "status": "running",
             "server_type": {"name": "cx22"},
             "location": {"name": "fsn1"},
+            "image": {"os_flavor": "debian", "os_version": "12"},
             "public_net": {
                 "ipv4": {"ip": "203.0.113.5"},
                 "ipv6": {"ip": "2001:db8::/64"}
@@ -531,8 +547,27 @@ mod tests {
         assert_eq!(server.hostname.as_deref(), Some("web-01"));
         assert_eq!(server.status.as_deref(), Some("running"));
         assert_eq!(server.platform.as_deref(), Some("cx22"));
+        assert_eq!(server.operating_system.as_deref(), Some("debian 12"));
         assert_eq!(server.location.as_deref(), Some("fsn1"));
         assert_eq!(server.ip_address.as_deref(), Some("203.0.113.5"));
+    }
+
+    #[test]
+    fn null_image_yields_none_operating_system_not_an_error() {
+        let json = serde_json::json!({
+            "id": 43,
+            "name": "web-02",
+            "image": null
+        });
+        let servers = map_servers(std::slice::from_ref(&json));
+        assert_eq!(servers[0].operating_system, None);
+    }
+
+    #[test]
+    fn missing_image_key_yields_none_operating_system() {
+        let json = serde_json::json!({"id": 44, "name": "web-03"});
+        let servers = map_servers(std::slice::from_ref(&json));
+        assert_eq!(servers[0].operating_system, None);
     }
 
     #[test]

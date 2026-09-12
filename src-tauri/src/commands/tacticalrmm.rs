@@ -54,6 +54,7 @@ pub struct ExternalSystemDto {
     pub status: Option<String>,
     /// `"windows"`/`"linux"`/`"darwin"`, passed through verbatim.
     pub platform: Option<String>,
+    pub operating_system: Option<String>,
     /// Informational only -- NOT part of the client-mapping join (that uses
     /// `client_name`, see module docs); just the agent's own site name for
     /// display, since mapping granularity deliberately stays at the Client
@@ -256,6 +257,7 @@ fn to_external_system_dto(
         ip_address: agent.ip_address,
         status: agent.status,
         platform: agent.platform,
+        operating_system: agent.operating_system,
         site_name: agent.site_name,
         linked_system_id,
     }
@@ -731,6 +733,7 @@ mod tests {
             ip_address: None,
             status: None,
             platform: None,
+            operating_system: None,
             client_name: client_name.to_string(),
             site_name: None,
         }
@@ -828,6 +831,7 @@ mod tests {
                 ip_address: Some("10.0.0.5".to_string()),
                 status: Some("online".to_string()),
                 platform: Some("windows".to_string()),
+                operating_system: Some("windows 11".to_string()),
                 site_name: Some("Hauptsitz".to_string()),
                 linked_system_id: Some(3),
             }],

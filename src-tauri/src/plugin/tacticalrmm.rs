@@ -189,6 +189,12 @@ pub struct TacticalRmmAgent {
     /// verified `AgentPlat` choices -- same free-form-string rationale as
     /// `status`.
     pub platform: Option<String>,
+    /// Tactical RMM's own free-text OS description (e.g. `"Windows 10 Pro,
+    /// 64 bit (build 19042.928)"`), verified present on the same
+    /// `GET /agents/?detail=true` response `map_agent` already parses --
+    /// distinct from `platform` above, which is only the coarse
+    /// `"windows"`/`"linux"`/`"darwin"` family.
+    pub operating_system: Option<String>,
     /// The agent's owning client, as a NAME (verified: Tactical RMM's agent
     /// list serializers carry no numeric client ID at all, see module
     /// docs) -- used as the join key in
@@ -418,6 +424,7 @@ fn map_agent(value: &serde_json::Value) -> Option<TacticalRmmAgent> {
     let site_name = value["site_name"].as_str().map(str::to_string);
     let status = value["status"].as_str().map(str::to_string);
     let platform = value["plat"].as_str().map(str::to_string);
+    let operating_system = value["operating_system"].as_str().map(str::to_string);
     let ip_address = extract_ip_address(value);
     Some(TacticalRmmAgent {
         external_id,
@@ -426,6 +433,7 @@ fn map_agent(value: &serde_json::Value) -> Option<TacticalRmmAgent> {
         ip_address,
         status,
         platform,
+        operating_system,
         client_name,
         site_name,
     })
@@ -510,6 +518,7 @@ mod tests {
                     "site_name": "Hauptsitz",
                     "status": "online",
                     "plat": "windows",
+                    "operating_system": "Windows 10 Pro, 64 bit (build 19042.928)",
                     "public_ip": "203.0.113.9",
                     "local_ips": "10.0.0.5, 10.0.0.6"
                 },
@@ -536,9 +545,15 @@ mod tests {
         assert_eq!(agents[0].site_name.as_deref(), Some("Hauptsitz"));
         assert_eq!(agents[0].status.as_deref(), Some("online"));
         assert_eq!(agents[0].platform.as_deref(), Some("windows"));
+        assert_eq!(
+            agents[0].operating_system.as_deref(),
+            Some("Windows 10 Pro, 64 bit (build 19042.928)")
+        );
         assert_eq!(agents[0].ip_address.as_deref(), Some("10.0.0.5"));
         assert_eq!(agents[1].external_id, "def456");
         assert_eq!(agents[1].client_name, "Contoso AG");
+        // The linux sample object has no "operating_system" key at all.
+        assert_eq!(agents[1].operating_system, None);
         // local_ips is the literal Tactical RMM error string -> falls back
         // to public_ip, which is itself null here -> None.
         assert_eq!(agents[1].ip_address, None);
