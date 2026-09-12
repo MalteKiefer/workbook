@@ -211,6 +211,30 @@ export default function ExportDialog() {
     }
   }
 
+  async function handleExportAuditReport() {
+    if (customerId === "") {
+      setError("Kunde ist erforderlich");
+      return;
+    }
+    setError(null);
+    setStatus(null);
+    try {
+      const customerName = customers.find((c) => c.id === customerId)?.name ?? "Kunde";
+      const destPath = await save({
+        defaultPath: `${sanitizeForFilename(customerName)}__Pruefprotokoll.pdf`,
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      });
+      if (!destPath) return;
+      setBusy(true);
+      await invoke("export_audit_report_pdf", { customerId, destPath });
+      setStatus(`Prüfprotokoll exportiert: ${destPath}`);
+    } catch (e) {
+      setError(formatInvokeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!exportDialogOpen) return null;
 
   return (
@@ -296,6 +320,13 @@ export default function ExportDialog() {
             onClick={() => void handleExportPdf()}
           >
             Als PDF exportieren
+          </button>
+          <button
+            type="button"
+            disabled={allCustomers || customerId === "" || busy}
+            onClick={() => void handleExportAuditReport()}
+          >
+            Prüfprotokoll exportieren
           </button>
         </div>
       </div>
