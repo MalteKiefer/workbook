@@ -14,6 +14,7 @@ interface System {
   ip_address: string;
   notes: string;
   maintenance_interval_days: number | null;
+  operating_system: string | null;
 }
 
 // Curated Typ choices covering both physical/network assets (which have a
@@ -52,6 +53,7 @@ export default function SystemForm() {
   const [customType, setCustomType] = useState("");
   const [hostname, setHostname] = useState("");
   const [ipAddress, setIpAddress] = useState("");
+  const [operatingSystem, setOperatingSystem] = useState("");
   const [notes, setNotes] = useState("");
   // Kept as the raw input string (rather than number | null) so the field
   // can be empty while typing -- converted to number | null only when
@@ -71,6 +73,7 @@ export default function SystemForm() {
       setCustomType("");
       setHostname(systemEditorPrefill?.hostname ?? "");
       setIpAddress(systemEditorPrefill?.ip_address ?? "");
+      setOperatingSystem("");
       setNotes("");
       setMaintenanceIntervalDays("");
       return;
@@ -93,6 +96,7 @@ export default function SystemForm() {
           }
           setHostname(match.hostname);
           setIpAddress(match.ip_address);
+          setOperatingSystem(match.operating_system ?? "");
           setNotes(match.notes);
           setMaintenanceIntervalDays(
             match.maintenance_interval_days === null ? "" : String(match.maintenance_interval_days)
@@ -136,6 +140,10 @@ export default function SystemForm() {
     // optional value in this form.
     const trimmedInterval = maintenanceIntervalDays.trim();
     const effectiveMaintenanceIntervalDays = trimmedInterval === "" ? null : Number(trimmedInterval);
+    // Empty input means "unknown" (null), same convention as every other
+    // optional text field's payload construction elsewhere in this codebase
+    // (e.g. NetworksPanel.tsx's notes handling).
+    const effectiveOperatingSystem = operatingSystem.trim() === "" ? null : operatingSystem.trim();
     try {
       if (isEditMode) {
         await invoke("update_system", {
@@ -156,6 +164,7 @@ export default function SystemForm() {
             // payload (system_type, ip_address) and elsewhere in the
             // codebase (e.g. EntryEditor.tsx's body_md/performed_at_utc).
             maintenance_interval_days: effectiveMaintenanceIntervalDays,
+            operating_system: effectiveOperatingSystem,
           },
         });
       } else {
@@ -168,6 +177,7 @@ export default function SystemForm() {
             ip_address: effectiveIpAddress,
             notes,
             maintenance_interval_days: effectiveMaintenanceIntervalDays,
+            operating_system: effectiveOperatingSystem,
           },
         });
       }
@@ -217,6 +227,14 @@ export default function SystemForm() {
             <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
               IP-Adresse
               <input value={ipAddress} onChange={(e) => setIpAddress(e.target.value)} style={{ fontFamily: "var(--font-mono)" }} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+              Betriebssystem
+              <input
+                value={operatingSystem}
+                onChange={(e) => setOperatingSystem(e.target.value)}
+                placeholder="z.B. Windows 11 Pro, Ubuntu 24.04"
+              />
             </label>
           </>
         )}
