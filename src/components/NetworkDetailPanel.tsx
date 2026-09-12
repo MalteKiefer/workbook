@@ -49,6 +49,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [results, setResults] = useState<HostScanResult[]>([]);
+  const [filterText, setFilterText] = useState("");
 
   const [creatingIp, setCreatingIp] = useState<string | null>(null);
   const [createdIps, setCreatedIps] = useState<Set<string>>(new Set());
@@ -92,6 +93,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
       setCreateErrors({});
       setQuickConnectErrorByIp({});
       setExpandedIp(null);
+      setFilterText("");
     } catch (e) {
       setScanError(formatInvokeError(e));
     } finally {
@@ -221,6 +223,18 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
     }
   }
 
+  const filteredResults = results.filter((result) => {
+    const needle = filterText.trim().toLowerCase();
+    if (needle === "") return true;
+    return (
+      result.ip.includes(needle) ||
+      (result.hostname?.toLowerCase().includes(needle) ?? false) ||
+      (result.vendor?.toLowerCase().includes(needle) ?? false) ||
+      (result.device_type?.toLowerCase().includes(needle) ?? false) ||
+      result.open_ports.some((port) => String(port).includes(needle))
+    );
+  });
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
       <div>
@@ -269,129 +283,149 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
       {scanError && <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.82rem" }}>Fehler: {scanError}</p>}
 
       {results.length > 0 && (
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {results.map((result) => (
-            <li
-              key={result.ip}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.4rem",
-                padding: "0.5rem 0.6rem",
-                borderTop: "1px solid var(--border-subtle)",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
-                <span style={{ fontSize: "0.85rem" }}>
-                  <span style={{ fontFamily: "var(--font-mono)" }}>{result.ip}</span>{" "}
-                  <span style={{ color: "var(--text-muted)" }}>
-                    {result.open_ports.length > 0 ? result.open_ports.join(", ") : "keine bekannten Ports offen"}
-                  </span>
-                </span>
-                <HostActionsMenu
-                  result={result}
-                  isCreated={createdIps.has(result.ip)}
-                  isCreating={creatingIp === result.ip}
-                  onToggleSnmp={() => toggleSnmpSection(result.ip)}
-                  onCreateSystem={() => void handleCreateSystem(result)}
-                  onOpenUrl={(url) => void handleOpenUrl(result.ip, url)}
-                  onOpenRdp={() => void handleOpenRdp(result.ip)}
-                  onOpenShare={() => void handleOpenShare(result.ip)}
-                />
-              </div>
-              {(result.hostname || result.mac || result.vendor || result.device_type) && (
-                <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                  {[
-                    result.hostname,
-                    result.mac && result.vendor ? `${result.mac} (${result.vendor})` : result.mac ?? result.vendor,
-                    result.device_type,
-                  ]
-                    .filter((part): part is string => Boolean(part))
-                    .join(" · ")}
-                </span>
-              )}
-              {createErrors[result.ip] && (
-                <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
-                  Fehler: {createErrors[result.ip]}
-                </p>
-              )}
-              {quickConnectErrorByIp[result.ip] && (
-                <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
-                  Fehler: {quickConnectErrorByIp[result.ip]}
-                </p>
-              )}
-              {expandedIp === result.ip && (
-                <div
+        <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+          Suchen (IP, Hostname, Hersteller, Typ, Port)
+          <input
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            placeholder="z.B. 192.168.1, druck, 3389…"
+            style={{ fontFamily: "var(--font-mono)" }}
+          />
+        </label>
+      )}
+
+      {results.length > 0 && (
+        <>
+          {filteredResults.length === 0 ? (
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-muted)" }}>
+              Keine Treffer für "{filterText}".
+            </p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {filteredResults.map((result) => (
+                <li
+                  key={result.ip}
                   style={{
                     display: "flex",
                     flexDirection: "column",
                     gap: "0.4rem",
-                    padding: "0.5rem",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-sm)",
-                    background: "var(--bg-surface)",
+                    padding: "0.5rem 0.6rem",
+                    borderTop: "1px solid var(--border-subtle)",
                   }}
                 >
-                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "flex-end" }}>
-                    <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1 }}>
-                      Community-String
-                      <input
-                        value={communityByIp[result.ip] ?? "public"}
-                        onChange={(e) =>
-                          setCommunityByIp((prev) => ({ ...prev, [result.ip]: e.target.value }))
-                        }
-                        disabled={snmpBusyIp === result.ip}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => void handleProbeSnmp(result.ip)}
-                      disabled={snmpBusyIp === result.ip}
-                    >
-                      Abfragen
-                    </button>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontSize: "0.85rem" }}>
+                      <span style={{ fontFamily: "var(--font-mono)" }}>{result.ip}</span>{" "}
+                      <span style={{ color: "var(--text-muted)" }}>
+                        {result.open_ports.length > 0 ? result.open_ports.join(", ") : "keine bekannten Ports offen"}
+                      </span>
+                    </span>
+                    <HostActionsMenu
+                      result={result}
+                      isCreated={createdIps.has(result.ip)}
+                      isCreating={creatingIp === result.ip}
+                      onToggleSnmp={() => toggleSnmpSection(result.ip)}
+                      onCreateSystem={() => void handleCreateSystem(result)}
+                      onOpenUrl={(url) => void handleOpenUrl(result.ip, url)}
+                      onOpenRdp={() => void handleOpenRdp(result.ip)}
+                      onOpenShare={() => void handleOpenShare(result.ip)}
+                    />
                   </div>
-                  {snmpBusyIp === result.ip && (
-                    <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-secondary)" }}>Fragt ab…</p>
+                  {(result.hostname || result.mac || result.vendor || result.device_type) && (
+                    <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                      {[
+                        result.hostname,
+                        result.mac && result.vendor ? `${result.mac} (${result.vendor})` : result.mac ?? result.vendor,
+                        result.device_type,
+                      ]
+                        .filter((part): part is string => Boolean(part))
+                        .join(" · ")}
+                    </span>
                   )}
-                  {snmpErrorByIp[result.ip] && (
+                  {createErrors[result.ip] && (
                     <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
-                      Fehler: {snmpErrorByIp[result.ip]}
+                      Fehler: {createErrors[result.ip]}
                     </p>
                   )}
-                  {snmpResultByIp[result.ip] && (
-                    <dl style={{ margin: 0, fontSize: "0.8rem", display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.2rem 0.5rem" }}>
-                      {snmpResultByIp[result.ip].sys_descr !== null && (
-                        <>
-                          <dt style={{ color: "var(--text-muted)" }}>sysDescr</dt>
-                          <dd style={{ margin: 0 }}>{snmpResultByIp[result.ip].sys_descr}</dd>
-                        </>
-                      )}
-                      {snmpResultByIp[result.ip].sys_name !== null && (
-                        <>
-                          <dt style={{ color: "var(--text-muted)" }}>sysName</dt>
-                          <dd style={{ margin: 0 }}>{snmpResultByIp[result.ip].sys_name}</dd>
-                        </>
-                      )}
-                      {snmpResultByIp[result.ip].sys_location !== null && (
-                        <>
-                          <dt style={{ color: "var(--text-muted)" }}>sysLocation</dt>
-                          <dd style={{ margin: 0 }}>{snmpResultByIp[result.ip].sys_location}</dd>
-                        </>
-                      )}
-                      {snmpResultByIp[result.ip].sys_up_time !== null && (
-                        <>
-                          <dt style={{ color: "var(--text-muted)" }}>sysUpTime</dt>
-                          <dd style={{ margin: 0 }}>{snmpResultByIp[result.ip].sys_up_time}</dd>
-                        </>
-                      )}
-                    </dl>
+                  {quickConnectErrorByIp[result.ip] && (
+                    <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
+                      Fehler: {quickConnectErrorByIp[result.ip]}
+                    </p>
                   )}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+                  {expandedIp === result.ip && (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.4rem",
+                        padding: "0.5rem",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-sm)",
+                        background: "var(--bg-surface)",
+                      }}
+                    >
+                      <div style={{ display: "flex", gap: "0.4rem", alignItems: "flex-end" }}>
+                        <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", flex: 1 }}>
+                          Community-String
+                          <input
+                            value={communityByIp[result.ip] ?? "public"}
+                            onChange={(e) =>
+                              setCommunityByIp((prev) => ({ ...prev, [result.ip]: e.target.value }))
+                            }
+                            disabled={snmpBusyIp === result.ip}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => void handleProbeSnmp(result.ip)}
+                          disabled={snmpBusyIp === result.ip}
+                        >
+                          Abfragen
+                        </button>
+                      </div>
+                      {snmpBusyIp === result.ip && (
+                        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-secondary)" }}>Fragt ab…</p>
+                      )}
+                      {snmpErrorByIp[result.ip] && (
+                        <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
+                          Fehler: {snmpErrorByIp[result.ip]}
+                        </p>
+                      )}
+                      {snmpResultByIp[result.ip] && (
+                        <dl style={{ margin: 0, fontSize: "0.8rem", display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.2rem 0.5rem" }}>
+                          {snmpResultByIp[result.ip].sys_descr !== null && (
+                            <>
+                              <dt style={{ color: "var(--text-muted)" }}>sysDescr</dt>
+                              <dd style={{ margin: 0 }}>{snmpResultByIp[result.ip].sys_descr}</dd>
+                            </>
+                          )}
+                          {snmpResultByIp[result.ip].sys_name !== null && (
+                            <>
+                              <dt style={{ color: "var(--text-muted)" }}>sysName</dt>
+                              <dd style={{ margin: 0 }}>{snmpResultByIp[result.ip].sys_name}</dd>
+                            </>
+                          )}
+                          {snmpResultByIp[result.ip].sys_location !== null && (
+                            <>
+                              <dt style={{ color: "var(--text-muted)" }}>sysLocation</dt>
+                              <dd style={{ margin: 0 }}>{snmpResultByIp[result.ip].sys_location}</dd>
+                            </>
+                          )}
+                          {snmpResultByIp[result.ip].sys_up_time !== null && (
+                            <>
+                              <dt style={{ color: "var(--text-muted)" }}>sysUpTime</dt>
+                              <dd style={{ margin: 0 }}>{snmpResultByIp[result.ip].sys_up_time}</dd>
+                            </>
+                          )}
+                        </dl>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       {nmapBusy && <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-secondary)" }}>Scanne mit nmap…</p>}
