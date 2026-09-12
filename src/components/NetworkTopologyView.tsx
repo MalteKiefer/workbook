@@ -19,7 +19,6 @@ interface Network {
 // for the same kind of partial backend shape.
 interface Location {
   id: number;
-  customer_id: number;
   name: string;
 }
 
@@ -65,18 +64,22 @@ export default function NetworkTopologyView({ customerId }: { customerId: number
   if (networks === null || locations === null || systems === null) {
     return <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>Lade…</p>;
   }
+  const allSystems = systems;
 
   function systemsInNetwork(network: Network): SystemSummary[] {
-    return systems!.filter((s) => s.ip_address.trim() !== "" && cidrContains(network.cidr, s.ip_address));
+    return allSystems.filter((s) => s.ip_address.trim() !== "" && cidrContains(network.cidr, s.ip_address));
   }
 
-  const matchedSystemIds = new Set(networks.flatMap((n) => systemsInNetwork(n).map((s) => s.id)));
+  const systemsByNetworkId = new Map(networks.map((n) => [n.id, systemsInNetwork(n)]));
+
+  const matchedSystemIds = new Set(networks.flatMap((n) => (systemsByNetworkId.get(n.id) ?? []).map((s) => s.id)));
   const unassignedSystems = systems.filter((s) => !matchedSystemIds.has(s.id));
 
+  const knownLocationIds = new Set(locations.map((l) => l.id));
   const networksByLocation = new Map<number, Network[]>();
   const unassignedNetworks: Network[] = [];
   for (const network of networks) {
-    if (network.location_id === null) {
+    if (network.location_id === null || !knownLocationIds.has(network.location_id)) {
       unassignedNetworks.push(network);
     } else {
       const list = networksByLocation.get(network.location_id) ?? [];
@@ -86,7 +89,7 @@ export default function NetworkTopologyView({ customerId }: { customerId: number
   }
 
   function renderNetwork(network: Network) {
-    const matched = systemsInNetwork(network);
+    const matched = systemsByNetworkId.get(network.id) ?? [];
     return (
       <div key={network.id} style={{ ...boxStyle, marginTop: "0.5rem", marginLeft: "1rem" }}>
         <div style={{ fontSize: "0.9rem", fontWeight: 600 }}>

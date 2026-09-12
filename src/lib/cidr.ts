@@ -5,8 +5,9 @@
 export function ipToInt(ip: string): number | null {
   const parts = ip.trim().split(".");
   if (parts.length !== 4) return null;
+  if (parts.some((p) => !/^\d{1,3}$/.test(p))) return null;
   const octets = parts.map((p) => Number(p));
-  if (octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+  if (octets.some((n) => n < 0 || n > 255)) return null;
   return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
 }
 
@@ -18,6 +19,7 @@ export function ipToInt(ip: string): number | null {
  */
 export function cidrContains(cidr: string, ip: string): boolean {
   const [base, prefixStr] = cidr.split("/");
+  if (prefixStr === undefined || !/^\d{1,2}$/.test(prefixStr.trim())) return false;
   const prefix = Number(prefixStr);
   if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) return false;
   const baseInt = ipToInt(base);
