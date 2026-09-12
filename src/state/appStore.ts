@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 export type View = "dashboard" | "customers" | "customer-detail" | "journal" | "settings";
 export type CustomerDetailTab = "uebersicht" | "systeme" | "standorte" | "netzwerke" | "ablauf" | "zugangsdaten" | "verlauf";
-export type SettingsTab = "general" | "backup" | "plugins" | "keymap" | "update" | "templates";
+export type SettingsTab = "general" | "backup" | "plugins" | "keymap" | "update" | "templates" | "network";
 
 interface AppState {
   view: View;

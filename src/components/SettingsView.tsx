@@ -5,6 +5,7 @@ import PluginsView from "./PluginsView";
 import KeymapSettingsView from "./KeymapSettingsView";
 import UpdateSettingsView from "./UpdateSettingsView";
 import TemplatesSettingsView from "./TemplatesSettingsView";
+import NetworkSettingsView from "./NetworkSettingsView";
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -54,6 +55,9 @@ export default function SettingsView() {
         <TabButton active={settingsTab === "templates"} onClick={() => setSettingsTab("templates")}>
           Vorlagen
         </TabButton>
+        <TabButton active={settingsTab === "network"} onClick={() => setSettingsTab("network")}>
+          Netzwerk
+        </TabButton>
         <TabButton active={settingsTab === "update"} onClick={() => setSettingsTab("update")}>
           Aktualisierung
           {updateAvailableVersion !== null && (
@@ -77,6 +81,7 @@ export default function SettingsView() {
       {settingsTab === "plugins" && <PluginsView />}
       {settingsTab === "keymap" && <KeymapSettingsView />}
       {settingsTab === "templates" && <TemplatesSettingsView />}
+      {settingsTab === "network" && <NetworkSettingsView />}
       {settingsTab === "update" && <UpdateSettingsView />}
     </div>
   );
