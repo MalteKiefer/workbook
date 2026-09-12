@@ -53,6 +53,10 @@ interface ExternalSystemDto {
   linked_system_id: number | null;
   status: string | null;
   platform: string | null;
+  // Hetzner's own reported OS description, a combined "os_flavor os_version"
+  // string (e.g. "debian 12") -- distinct from `platform` above, which is
+  // Hetzner's server TYPE (e.g. "cx22"), not its OS.
+  operating_system: string | null;
   location: string | null;
 }
 
@@ -82,7 +86,7 @@ interface System {
   operating_system: string | null;
 }
 
-type CompareField = "name" | "hostname" | "ip_address";
+type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 
 // Hetzner's server object has no separate physical-hostname field -- `name`
 // doubles as both the display name and the hostname-equivalent (see
@@ -909,7 +913,7 @@ export default function HetznerPluginSection() {
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
           maintenance_interval_days: localSystem.maintenance_interval_days,
-          operating_system: localSystem.operating_system,
+          operating_system: field === "operating_system" ? value : localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
@@ -980,6 +984,12 @@ export default function HetznerPluginSection() {
                         label: "IP-Adresse",
                         localValue: localSystem.ip_address,
                         externalValue: findExternalIp(data),
+                      },
+                      {
+                        field: "operating_system" as const,
+                        label: "Betriebssystem",
+                        localValue: localSystem.operating_system ?? "",
+                        externalValue: device.operating_system,
                       },
                     ] satisfies { field: CompareField; label: string; localValue: string; externalValue: string | null }[]
                   ).map((row) => {

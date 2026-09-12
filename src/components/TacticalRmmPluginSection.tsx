@@ -91,6 +91,10 @@ interface ExternalSystemDto {
   status: string | null;
   // "windows" | "linux" | "darwin", passed through verbatim.
   platform: string | null;
+  // Tactical RMM's own reported OS description (distinct from `platform`
+  // above, which stays the coarse windows/linux/darwin family), passed
+  // through verbatim.
+  operating_system: string | null;
   // Informational only — NOT part of the client-mapping join (that's
   // client_name, resolved backend-side); just this agent's own Tactical RMM
   // Site name for display, since mapping granularity stops at the Client
@@ -132,7 +136,7 @@ interface System {
   operating_system: string | null;
 }
 
-type CompareField = "name" | "hostname" | "ip_address";
+type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 
 // A Tactical RMM single-agent detail JSON (from get_tacticalrmm_system_details)
 // reliably has "hostname" and "public_ip"/"local_ips" at the top level
@@ -918,7 +922,7 @@ export default function TacticalRmmPluginSection() {
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
           maintenance_interval_days: localSystem.maintenance_interval_days,
-          operating_system: localSystem.operating_system,
+          operating_system: field === "operating_system" ? value : localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
@@ -1141,6 +1145,12 @@ export default function TacticalRmmPluginSection() {
                         label: "IP-Adresse",
                         localValue: localSystem.ip_address,
                         externalValue: findExternalValue(data, IP_KEYS),
+                      },
+                      {
+                        field: "operating_system" as const,
+                        label: "Betriebssystem",
+                        localValue: localSystem.operating_system ?? "",
+                        externalValue: device.operating_system,
                       },
                     ] satisfies { field: CompareField; label: string; localValue: string; externalValue: string | null }[]
                   ).map((row) => {
