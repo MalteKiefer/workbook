@@ -8,6 +8,7 @@ import SystemListView from "./SystemListView";
 import TicketsPanel from "./TicketsPanel";
 import LocationsPanel from "./LocationsPanel";
 import NetworksPanel from "./NetworksPanel";
+import NetworkTopologyView from "./NetworkTopologyView";
 import ExpiringItemsPanel from "./ExpiringItemsPanel";
 import VaultPanel from "./VaultPanel";
 import AuditLogPanel from "./AuditLogPanel";
@@ -246,6 +247,7 @@ export default function CustomerDetailView() {
     { id: "tickets", label: "Tickets" },
     { id: "standorte", label: "Standorte" },
     { id: "netzwerke", label: "Netzwerke" },
+    { id: "topologie", label: "Topologie" },
     { id: "ablauf", label: "Ablauf-Tracking" },
     { id: "zugangsdaten", label: "Zugangsdaten" },
     { id: "verlauf", label: "Verlauf" },
@@ -277,6 +279,7 @@ export default function CustomerDetailView() {
       {customerDetailTab === "tickets" && <TicketsPanel customerId={selectedCustomerId} />}
       {customerDetailTab === "standorte" && <LocationsPanel customerId={selectedCustomerId} />}
       {customerDetailTab === "netzwerke" && <NetworksPanel customerId={selectedCustomerId} />}
+      {customerDetailTab === "topologie" && <NetworkTopologyView customerId={selectedCustomerId} />}
       {customerDetailTab === "ablauf" && <ExpiringItemsPanel customerId={selectedCustomerId} />}
       {customerDetailTab === "zugangsdaten" && <VaultPanel customerId={selectedCustomerId} />}
       {customerDetailTab === "verlauf" && <AuditLogPanel entityType="customer" entityId={selectedCustomerId} asTab />}
