@@ -152,6 +152,14 @@ fn probe_host(ip: Ipv4Addr, ports: &[u16]) -> Option<HostScanResult> {
     })
 }
 
+/// Sorts scan results numerically by IP address (e.g. 10.0.0.2 before
+/// 10.0.0.164), rather than lexicographically as a plain string sort would.
+/// Extracted into its own function so tests can exercise the exact same
+/// code path that `scan_range` uses in production.
+fn sort_by_ip(results: &mut [HostScanResult]) {
+    results.sort_by_key(|r| r.ip.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED));
+}
+
 /// Scans every address in `ips` concurrently (bounded by `max_concurrency`
 /// simultaneous threads, since a fully sequential scan of e.g. 254
 /// addresses × 6 ports × 400ms would take minutes) and returns only the
@@ -191,7 +199,7 @@ pub fn scan_range(
     for handle in handles {
         let _ = handle.join();
     }
-    results.sort_by_key(|r| r.ip.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED));
+    sort_by_ip(&mut results);
     results
 }
 
@@ -323,7 +331,7 @@ mod tests {
                 hostname: None,
             },
         ];
-        results.sort_by_key(|r| r.ip.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED));
+        sort_by_ip(&mut results);
         let ips: Vec<&str> = results.iter().map(|r| r.ip.as_str()).collect();
         assert_eq!(ips, vec!["10.0.0.2", "10.0.0.23", "10.0.0.164"]);
     }
