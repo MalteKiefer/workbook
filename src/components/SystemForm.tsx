@@ -23,7 +23,29 @@ interface System {
 // Ninja/Level plugins' "Als neues System anlegen" flow with a type string
 // that isn't one of these). system_type stays a plain string column in the
 // DB either way; this is purely a form-presentation choice.
-const CURATED_SYSTEM_TYPES = ["Server", "Workstation", "Netzwerkgerät", "Drucker", "Firewall", "SaaS / Cloud-Dienst"];
+// Alphabetically sorted, except "SaaS / Cloud-Dienst" pinned last -- it's
+// the one type with no physical network presence (see
+// typeHasNetworkFields below), so it reads better grouped apart from every
+// type that actually has an IP/hostname.
+const CURATED_SYSTEM_TYPES = [
+  "Access Point",
+  "Drucker",
+  "Firewall",
+  "IoT",
+  "Kamera",
+  "Multifunktionsgerät",
+  "NAS",
+  "Netzwerkgerät",
+  "Notebook",
+  "Scanner",
+  "Server",
+  "Smartphone/Tablet",
+  "Switch",
+  "USV",
+  "VM",
+  "Workstation",
+  "SaaS / Cloud-Dienst",
+];
 const OTHER_TYPE = "Sonstiges";
 
 // Hostname/IP-Adresse don't apply to a cloud/SaaS service the way they do to
