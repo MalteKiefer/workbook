@@ -36,6 +36,7 @@ pub struct ExternalSystemDto {
     pub ip_address: Option<String>,
     pub status: Option<String>,
     pub platform: Option<String>,
+    pub operating_system: Option<String>,
     pub location: Option<String>,
     /// `Some(id)` if any local system is already linked to this external ID
     /// for this connection (an `external_refs` row with matching
@@ -202,6 +203,7 @@ fn to_external_system_dto(
         ip_address: server.ip_address,
         status: server.status,
         platform: server.platform,
+        operating_system: server.operating_system,
         location: server.location,
         linked_system_id,
     }
@@ -428,13 +430,14 @@ mod tests {
             ip_address: Some("203.0.113.5".to_string()),
             status: Some("running".to_string()),
             platform: Some("cx22".to_string()),
-            operating_system: None,
+            operating_system: Some("debian 12".to_string()),
             location: Some("fsn1".to_string()),
         };
         let dto = to_external_system_dto(server, Some(3));
         assert_eq!(dto.external_id, "42");
         assert_eq!(dto.status.as_deref(), Some("running"));
         assert_eq!(dto.platform.as_deref(), Some("cx22"));
+        assert_eq!(dto.operating_system.as_deref(), Some("debian 12"));
         assert_eq!(dto.location.as_deref(), Some("fsn1"));
         assert_eq!(dto.linked_system_id, Some(3));
     }
@@ -454,6 +457,7 @@ mod tests {
         let dto = to_external_system_dto(server, None);
         assert_eq!(dto.status, None);
         assert_eq!(dto.platform, None);
+        assert_eq!(dto.operating_system, None);
         assert_eq!(dto.location, None);
         assert_eq!(dto.linked_system_id, None);
     }
@@ -507,6 +511,7 @@ mod tests {
             ip_address: Some("203.0.113.5".to_string()),
             status: Some("running".to_string()),
             platform: Some("cx22".to_string()),
+            operating_system: Some("debian 12".to_string()),
             location: Some("fsn1".to_string()),
             linked_system_id: Some(3),
         }

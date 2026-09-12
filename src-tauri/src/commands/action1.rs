@@ -68,6 +68,7 @@ pub struct ExternalSystemDto {
     /// health flag (never surfaced anywhere in this app, see module docs).
     pub status: Option<String>,
     pub platform: Option<String>,
+    pub operating_system: Option<String>,
     /// `Some(id)` if any local system is already linked to this external ID
     /// for this connection (an `external_refs` row with matching
     /// `plugin_id`/`external_id`), otherwise `None`. Always `None` for
@@ -258,6 +259,7 @@ fn to_external_system_dto(
         ip_address: endpoint.ip_address,
         status: endpoint.status,
         platform: endpoint.platform,
+        operating_system: endpoint.operating_system,
         linked_system_id,
     }
 }
@@ -864,6 +866,7 @@ mod tests {
                 ip_address: Some("10.0.0.5".to_string()),
                 status: Some("Connected".to_string()),
                 platform: Some("Windows".to_string()),
+                operating_system: Some("Windows 11".to_string()),
                 linked_system_id: Some(3),
             }],
         }

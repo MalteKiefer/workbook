@@ -53,6 +53,7 @@ pub struct ExternalSystemDto {
     pub status: Option<String>,
     /// One of Datto RMM's own `deviceClass` values, passed through verbatim.
     pub platform: Option<String>,
+    pub operating_system: Option<String>,
     /// A genuine, confirmed web-dashboard deep link for this exact device
     /// (see `plugin::dattormm` module docs) -- `None` only if Datto RMM
     /// itself didn't report one for this device, never silently dropped.
@@ -255,6 +256,7 @@ fn to_external_system_dto(
         ip_address: device.ip_address,
         status: device.status,
         platform: device.platform,
+        operating_system: device.operating_system,
         portal_url: device.portal_url,
         linked_system_id,
     }
@@ -844,6 +846,7 @@ mod tests {
                 ip_address: Some("10.0.0.5".to_string()),
                 status: Some("online".to_string()),
                 platform: Some("device".to_string()),
+                operating_system: Some("Windows 11".to_string()),
                 portal_url: Some("https://merlot.centrastage.net/device/dev-1".to_string()),
                 linked_system_id: Some(3),
             }],

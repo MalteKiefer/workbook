@@ -46,6 +46,7 @@ pub struct ExternalSystemDto {
     /// (`ipv4Addresses[].ip`) are only available via
     /// `get_netcup_system_details`.
     pub ip_address: Option<String>,
+    pub operating_system: Option<String>,
     /// `Some(id)` if any local system is already linked to this external ID
     /// for this connection (an `external_refs` row with matching
     /// `plugin_id`/`external_id`), otherwise `None`.
@@ -211,6 +212,7 @@ fn to_external_system_dto(
         name: server.name,
         status: None,
         ip_address: None,
+        operating_system: server.operating_system,
         linked_system_id,
     }
 }
@@ -437,13 +439,14 @@ mod tests {
         let server = NetcupServer {
             external_id: "111".to_string(),
             name: "Server 01".to_string(),
-            operating_system: None,
+            operating_system: Some("Debian 12".to_string()),
         };
         let dto = to_external_system_dto(server, Some(3));
         assert_eq!(dto.external_id, "111");
         assert_eq!(dto.name, "Server 01");
         assert_eq!(dto.status, None);
         assert_eq!(dto.ip_address, None);
+        assert_eq!(dto.operating_system.as_deref(), Some("Debian 12"));
         assert_eq!(dto.linked_system_id, Some(3));
     }
 
@@ -455,6 +458,7 @@ mod tests {
             operating_system: None,
         };
         let dto = to_external_system_dto(server, None);
+        assert_eq!(dto.operating_system, None);
         assert_eq!(dto.linked_system_id, None);
     }
 
@@ -505,6 +509,7 @@ mod tests {
             name: format!("Server {id}"),
             status: None,
             ip_address: None,
+            operating_system: Some("Debian 12".to_string()),
             linked_system_id: Some(3),
         }
     }
