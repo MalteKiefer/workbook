@@ -11,6 +11,7 @@ pub mod db;
 pub mod error;
 pub mod export;
 pub mod hotkeys;
+pub mod ics;
 pub mod import;
 pub mod mac_vendor;
 pub mod maintenance;
@@ -223,6 +224,7 @@ pub fn run() {
             commands::export::export_pdf,
             commands::export::export_markdown_all_customers,
             commands::export::export_pdf_all_customers,
+            commands::export::export_calendar_ics,
             commands::backup::create_backup,
             commands::backup::restore_backup,
             commands::backup::is_backup_file_encrypted,

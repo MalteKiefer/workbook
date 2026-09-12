@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../state/appStore";
 import { isTypingTarget } from "../hooks/useGlobalHotkeys";
 import { getKeymap, matchesBinding } from "../lib/keymap";
 import { EXPIRING_ITEM_KIND_LABELS, isExpiringSoon } from "../lib/expiry";
+import { formatInvokeError } from "../lib/errors";
 
 interface Customer {
   id: number;
@@ -108,6 +110,9 @@ export default function DashboardView() {
   const [expiringItems, setExpiringItems] = useState<ExpiringItem[] | null>(null);
   const [recentEntries, setRecentEntries] = useState<Entry[] | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [icsExportBusy, setIcsExportBusy] = useState(false);
+  const [icsExportError, setIcsExportError] = useState<string | null>(null);
+  const [icsExportStatus, setIcsExportStatus] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
@@ -135,6 +140,25 @@ export default function DashboardView() {
     };
     invoke<Entry[]>("list_entries", { filter }).then(setRecentEntries);
   }, []);
+
+  async function handleExportIcs() {
+    setIcsExportError(null);
+    setIcsExportStatus(null);
+    try {
+      const destPath = await save({
+        defaultPath: "wartungsdoku-kalender.ics",
+        filters: [{ name: "iCalendar", extensions: ["ics"] }],
+      });
+      if (!destPath) return;
+      setIcsExportBusy(true);
+      await invoke("export_calendar_ics", { destPath });
+      setIcsExportStatus(`Kalender exportiert: ${destPath}`);
+    } catch (e) {
+      setIcsExportError(formatInvokeError(e));
+    } finally {
+      setIcsExportBusy(false);
+    }
+  }
 
   const openCustomerSystems = useCallback(
     (customerId: number) => {
@@ -278,6 +302,18 @@ export default function DashboardView() {
           ? "Lade…"
           : `${customers.length} aktive Kunden · ${overdueSystems.length} Systeme überfällig · ${dueExpiringItems.length} bald ablaufend`}
       </p>
+
+      <div style={{ marginTop: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <button type="button" onClick={() => void handleExportIcs()} disabled={icsExportBusy}>
+          Kalender exportieren (.ics)
+        </button>
+        {icsExportError && (
+          <span style={{ color: "var(--danger)", fontSize: "0.82rem" }}>Fehler: {icsExportError}</span>
+        )}
+        {icsExportStatus && (
+          <span style={{ color: "var(--success)", fontSize: "0.82rem" }}>{icsExportStatus}</span>
+        )}
+      </div>
 
       <section style={{ marginTop: "1.5rem" }}>
         <h2 style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>Überfällige Wartungen</h2>

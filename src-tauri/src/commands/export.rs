@@ -201,6 +201,107 @@ pub fn export_pdf(
         .map_err(|e| AppError::Io(format!("PDF konnte nicht geschrieben werden: {e}")))
 }
 
+/// Exports a single `.ics` (iCalendar) file covering every active customer's
+/// systems with a maintenance interval (one all-day event per system, on its
+/// next computed due date) and every tracked expiring item (one all-day
+/// event per item, with a `VALARM` reminder matching its own
+/// `reminder_days_before`). Global across all active customers, not filtered
+/// to one -- see `ics` module docs. A snapshot export like the other
+/// `export_*` commands, not a live sync.
+#[tauri::command]
+pub fn export_calendar_ics(state: State<AppState>, dest_path: String) -> Result<(), AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let tz = time::system_timezone()?;
+
+    let customers = db::customers::list(&conn, false)?;
+
+    let mut maintenance_events = Vec::new();
+    for customer in &customers {
+        let systems = db::systems::list_by_customer(&conn, customer.id, false)?;
+        for system in systems {
+            let Some(interval_days) = system.maintenance_interval_days else {
+                continue;
+            };
+            let last_performed_at_utc = db::systems::latest_performed_at(&conn, system.id)?;
+            let baseline_str = last_performed_at_utc
+                .as_deref()
+                .unwrap_or(&system.created_at_utc);
+            let Ok(baseline) = chrono::DateTime::parse_from_rfc3339(baseline_str) else {
+                continue;
+            };
+            let Some(duration) = chrono::Duration::try_days(interval_days) else {
+                continue;
+            };
+            let Some(due_on) = baseline
+                .with_timezone(&tz)
+                .checked_add_signed(duration)
+                .map(|dt| dt.date_naive())
+            else {
+                continue;
+            };
+            maintenance_events.push(crate::ics::MaintenanceEvent {
+                system_id: system.id,
+                system_name: system.name.clone(),
+                customer_name: customer.name.clone(),
+                due_on,
+            });
+        }
+    }
+
+    // Expiring items intentionally include archived customers' items (see
+    // `db::expiring_items::list_all` below, which is NOT filtered to active
+    // customers -- matching the Dashboard's own unfiltered
+    // `list_expiring_items` behavior), so names must resolve for archived
+    // customers too, not just active ones.
+    let customer_name_by_id: HashMap<i64, String> = db::customers::list(&conn, true)
+        .map(|cs| cs.into_iter().map(|c| (c.id, c.name)).collect())?;
+    let mut expiry_events = Vec::new();
+    for item in db::expiring_items::list_all(&conn)? {
+        let Ok(expires_on) = chrono::NaiveDate::parse_from_str(&item.expires_on, "%Y-%m-%d") else {
+            continue;
+        };
+        let customer_name = customer_name_by_id
+            .get(&item.customer_id)
+            .cloned()
+            .unwrap_or_else(|| format!("Kunde #{}", item.customer_id));
+        expiry_events.push(crate::ics::ExpiryEvent {
+            item_id: item.id,
+            label: item.label.clone(),
+            customer_name,
+            kind_label: expiring_item_kind_label(item.kind).to_string(),
+            expires_on,
+            reminder_days_before: item.reminder_days_before,
+        });
+    }
+
+    let ics_content = crate::ics::build_calendar(&maintenance_events, &expiry_events);
+    std::fs::write(&dest_path, ics_content).map_err(|e| {
+        AppError::Io(format!(
+            "Kalenderdatei konnte nicht geschrieben werden: {e}"
+        ))
+    })
+}
+
+/// German display label for an expiring-item kind -- mirrors
+/// `src/lib/expiry.ts`'s `EXPIRING_ITEM_KIND_LABELS` map exactly (that map
+/// is the frontend's source of truth for these labels; keep both in sync if
+/// either ever changes).
+fn expiring_item_kind_label(kind: db::expiring_items::ExpiringItemKind) -> &'static str {
+    use db::expiring_items::ExpiringItemKind;
+    match kind {
+        ExpiringItemKind::SslCertificate => "SSL-Zertifikat",
+        ExpiringItemKind::Domain => "Domain",
+        ExpiringItemKind::License => "Lizenz",
+        ExpiringItemKind::Contract => "Vertrag",
+        ExpiringItemKind::Warranty => "Garantie",
+        ExpiringItemKind::Sonstiges => "Sonstiges",
+    }
+}
+
 /// Groups already-fetched (and already filtered by `db::entries::list`)
 /// entries into per-system PDF sections: system order first (as given by
 /// `systems`, e.g. active-only, name-sorted -- see the caller), then
