@@ -14,10 +14,10 @@ use crate::error::AppError;
 
 /// Common TCP ports worth probing for a general "is anything here, and
 /// roughly what" signal -- not an exhaustive service list, just enough
-/// spread (SSH, HTTP(S), SMB, RDP, a common alt-HTTP port) to catch most
-/// servers, NAS boxes, printers, hypervisor hosts, and Windows machines
-/// without the scan taking unreasonably long.
-pub const DEFAULT_PORTS: &[u16] = &[22, 80, 443, 445, 3389, 8080];
+/// spread (SSH, HTTP(S), SMB, RDP, a common alt-HTTP port, raw/JetDirect
+/// printing) to catch most servers, NAS boxes, printers, hypervisor hosts,
+/// and Windows machines without the scan taking unreasonably long.
+pub const DEFAULT_PORTS: &[u16] = &[22, 80, 443, 445, 3389, 8080, 9100];
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(400);
 
@@ -257,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn guess_device_type_prefers_rdp_over_smb() {
+    fn guess_device_type_maps_windows_ports_to_windows() {
         assert_eq!(
             guess_device_type(&[445, 3389]),
             Some("Windows (vermutlich)".to_string())

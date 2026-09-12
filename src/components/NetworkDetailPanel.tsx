@@ -238,9 +238,13 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                   )}
                 </span>
               </div>
-              {(result.hostname || result.vendor || result.device_type || result.mac) && (
+              {(result.hostname || result.mac || result.vendor || result.device_type) && (
                 <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                  {[result.hostname, result.mac && result.vendor ? `${result.mac} (${result.vendor})` : result.mac, result.device_type]
+                  {[
+                    result.hostname,
+                    result.mac && result.vendor ? `${result.mac} (${result.vendor})` : result.mac ?? result.vendor,
+                    result.device_type,
+                  ]
                     .filter((part): part is string => Boolean(part))
                     .join(" · ")}
                 </span>
