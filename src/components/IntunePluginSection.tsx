@@ -86,7 +86,7 @@ interface System {
   operating_system: string | null;
 }
 
-type CompareField = "name" | "hostname" | "ip_address";
+type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 
 // Intune's managed-device object has no separate physical-hostname field --
 // `deviceName` doubles as both the display name and the hostname-equivalent
@@ -908,7 +908,7 @@ export default function IntunePluginSection() {
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
           maintenance_interval_days: localSystem.maintenance_interval_days,
-          operating_system: localSystem.operating_system,
+          operating_system: field === "operating_system" ? value : localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
@@ -926,6 +926,9 @@ export default function IntunePluginSection() {
     const localSystems = localSystemsByCustomer[connection.customer_id] ?? [];
     const localSystem =
       device.linked_system_id !== null ? localSystems.find((s) => s.id === device.linked_system_id) : undefined;
+    const externalOperatingSystem = device.operating_system
+      ? `${device.operating_system}${device.os_version ? ` ${device.os_version}` : ""}`
+      : null;
 
     return (
       <div
@@ -987,6 +990,12 @@ export default function IntunePluginSection() {
                         label: "IP-Adresse",
                         localValue: localSystem.ip_address,
                         externalValue: findExternalIp(),
+                      },
+                      {
+                        field: "operating_system" as const,
+                        label: "Betriebssystem",
+                        localValue: localSystem.operating_system ?? "",
+                        externalValue: externalOperatingSystem,
                       },
                     ] satisfies { field: CompareField; label: string; localValue: string; externalValue: string | null }[]
                   ).map((row) => {

@@ -52,6 +52,12 @@ interface ExternalSystemDto {
   // display string, like Datto RMM's deviceClass.
   platform: string | null;
   region: string | null;
+  // Distinct from `platform` above, despite the confusable naming --
+  // `platform` is Vultr's pricing/hardware plan string (e.g. "vc2-2c-4gb"),
+  // not an OS. This is the instance's actual installed operating system, as
+  // reported by Vultr's own API (see plugin::vultr module docs on the Rust
+  // side).
+  operating_system: string | null;
   linked_system_id: number | null;
 }
 
@@ -81,7 +87,7 @@ interface System {
   operating_system: string | null;
 }
 
-type CompareField = "name" | "hostname" | "ip_address";
+type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 
 // Vultr's instance object has no separate hostname field surfaced in
 // ExternalSystemDto (the display-name fallback chain -- label, then
@@ -899,7 +905,7 @@ export default function VultrPluginSection() {
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
           maintenance_interval_days: localSystem.maintenance_interval_days,
-          operating_system: localSystem.operating_system,
+          operating_system: field === "operating_system" ? value : localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
@@ -971,6 +977,12 @@ export default function VultrPluginSection() {
                         label: "IP-Adresse",
                         localValue: localSystem.ip_address,
                         externalValue: findExternalValue(data, IP_KEYS),
+                      },
+                      {
+                        field: "operating_system" as const,
+                        label: "Betriebssystem",
+                        localValue: localSystem.operating_system ?? "",
+                        externalValue: instance.operating_system,
                       },
                     ] satisfies { field: CompareField; label: string; localValue: string; externalValue: string | null }[]
                   ).map((row) => {

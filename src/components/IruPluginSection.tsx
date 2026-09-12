@@ -109,7 +109,7 @@ interface System {
   operating_system: string | null;
 }
 
-type CompareField = "name" | "hostname" | "ip_address";
+type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 
 // Iru's own device JSON (from get_iru_system_details) reliably has
 // "device_name"/"model"/"serial_number"/"asset_tag" at the top level, but
@@ -901,7 +901,7 @@ export default function IruPluginSection() {
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
           maintenance_interval_days: localSystem.maintenance_interval_days,
-          operating_system: localSystem.operating_system,
+          operating_system: field === "operating_system" ? value : localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
@@ -919,6 +919,16 @@ export default function IruPluginSection() {
     const localSystems = localSystemsByCustomer[connection.customer_id] ?? [];
     const localSystem =
       device.linked_system_id !== null ? localSystems.find((s) => s.id === device.linked_system_id) : undefined;
+    // Iru has no single combined OS string -- `platform` (OS family, e.g.
+    // "macOS") and `os_version` (e.g. "14.4.1") are separate fields. Combine
+    // them the same way Intune's operating_system + os_version are combined;
+    // if platform is absent but a version is still present, fall back to
+    // just the version rather than null (some Iru devices report a version
+    // without a platform family, per this file's own polymorphic-device-
+    // shape docs above).
+    const externalOperatingSystem = device.platform
+      ? `${device.platform}${device.os_version ? ` ${device.os_version}` : ""}`
+      : device.os_version;
 
     return (
       <div
@@ -973,6 +983,12 @@ export default function IruPluginSection() {
                         label: "IP-Adresse",
                         localValue: localSystem.ip_address,
                         externalValue: findExternalValue(data, IP_KEYS),
+                      },
+                      {
+                        field: "operating_system" as const,
+                        label: "Betriebssystem",
+                        localValue: localSystem.operating_system ?? "",
+                        externalValue: externalOperatingSystem,
                       },
                     ] satisfies { field: CompareField; label: string; localValue: string; externalValue: string | null }[]
                   ).map((row) => {

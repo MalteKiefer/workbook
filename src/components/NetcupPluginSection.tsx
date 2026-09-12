@@ -58,6 +58,11 @@ interface ExternalSystemDto {
   // findExternalIp below, never from this DTO.
   status: string | null;
   ip_address: string | null;
+  // Sourced from netcup's own provisioning template name (e.g. "Debian
+  // 12"), see plugin::netcup module docs on the Rust side. Best-effort only:
+  // `null` whenever a server was never (re)installed through netcup's own
+  // panel, which is expected/common, not an error.
+  operating_system: string | null;
   linked_system_id: number | null;
 }
 
@@ -87,7 +92,7 @@ interface System {
   operating_system: string | null;
 }
 
-type CompareField = "name" | "hostname" | "ip_address";
+type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 
 // netcup's own server JSON (from get_netcup_system_details) carries the same
 // nickname/hostname/name fields the list endpoint does (verified: the detail
@@ -852,7 +857,7 @@ export default function NetcupPluginSection() {
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
           maintenance_interval_days: localSystem.maintenance_interval_days,
-          operating_system: localSystem.operating_system,
+          operating_system: field === "operating_system" ? value : localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
@@ -924,6 +929,12 @@ export default function NetcupPluginSection() {
                         label: "IP-Adresse",
                         localValue: localSystem.ip_address,
                         externalValue: findExternalIp(data),
+                      },
+                      {
+                        field: "operating_system" as const,
+                        label: "Betriebssystem",
+                        localValue: localSystem.operating_system ?? "",
+                        externalValue: device.operating_system,
                       },
                     ] satisfies { field: CompareField; label: string; localValue: string; externalValue: string | null }[]
                   ).map((row) => {
