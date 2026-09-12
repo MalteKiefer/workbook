@@ -34,17 +34,20 @@ function sanitizeForFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, "_").trim();
 }
 
-// "YYYYMMDD_HHMM__Kunde[__System].pdf" — timestamped at export time (local
-// time, same as the OS clock the user reads the save dialog with), customer
-// name always included, system name only when a single system was selected
-// (not left as the "Alle Systeme" default) since only then does it actually
-// narrow down what's in the file.
-function buildExportFilename(customerName: string, systemName: string | null): string {
+// "YYYYMMDD_HHMM__Kunde[__System][__suffix].pdf" — timestamped at export time
+// (local time, same as the OS clock the user reads the save dialog with),
+// customer name always included, system name only when a single system was
+// selected (not left as the "Alle Systeme" default) since only then does it
+// actually narrow down what's in the file. `suffix` is an optional extra
+// segment (e.g. "Pruefprotokoll") for export types that aren't a system-scoped
+// manual/journal, appended in place of a system name.
+function buildExportFilename(customerName: string, systemName: string | null, suffix?: string): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
   const parts = [stamp, sanitizeForFilename(customerName)];
   if (systemName) parts.push(sanitizeForFilename(systemName));
+  if (suffix) parts.push(sanitizeForFilename(suffix));
   return `${parts.join("__")}.pdf`;
 }
 
@@ -221,7 +224,7 @@ export default function ExportDialog() {
     try {
       const customerName = customers.find((c) => c.id === customerId)?.name ?? "Kunde";
       const destPath = await save({
-        defaultPath: `${sanitizeForFilename(customerName)}__Pruefprotokoll.pdf`,
+        defaultPath: buildExportFilename(customerName, null, "Pruefprotokoll"),
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
       if (!destPath) return;

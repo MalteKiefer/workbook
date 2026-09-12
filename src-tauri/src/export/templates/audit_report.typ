@@ -51,7 +51,7 @@
 
 // -- Content ---------------------------------------------------------------
 #if rows.len() == 0 [
-  #text(fill: gray)[Keine protokollierten Änderungen im gewählten Zeitraum.]
+  #text(fill: gray)[Keine protokollierten Änderungen vorhanden.]
 ] else [
   #table(
     columns: (auto, auto, auto, 1fr),

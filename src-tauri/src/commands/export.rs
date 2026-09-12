@@ -219,12 +219,36 @@ pub fn export_audit_report_pdf(
         .map_err(|e| AppError::Database(e.to_string()))?;
 
     let customer = db::customers::get(&conn, customer_id)?;
+    let rows = collect_audit_rows(&conn, customer_id)?;
+
+    let tz = time::system_timezone()?;
+    let (now_utc, now_tz) = time::now_with_tz(&tz);
+    let generated_at_display = time::format_timestamp_for_display(&now_utc, &now_tz)?;
+
+    let pdf_bytes =
+        export::pdf::render_audit_report_pdf(&customer.name, generated_at_display, rows)?;
+
+    std::fs::write(&dest_path, pdf_bytes)
+        .map_err(|e| AppError::Io(format!("PDF konnte nicht geschrieben werden: {e}")))
+}
+
+/// Collects and chronologically sorts one customer's own audit-log entries
+/// together with every one of its systems' entries (including archived
+/// systems -- see export_audit_report_pdf's doc comment) into display-ready
+/// rows. Split out from export_audit_report_pdf so it's unit-testable
+/// without a Tauri State/AppState, same rationale as build_pdf_sections
+/// above.
+fn collect_audit_rows(
+    conn: &rusqlite::Connection,
+    customer_id: i64,
+) -> Result<Vec<export::pdf::AuditReportRow>, AppError> {
     // Archived systems included deliberately -- a decommissioned system's
     // history is still part of the compliance record, unlike the regular
     // manual/journal exports which default to active-only.
-    let systems = db::systems::list_by_customer(&conn, customer_id, true)?;
+    let systems = db::systems::list_by_customer(conn, customer_id, true)?;
 
     struct RawRow {
+        id: i64,
         at_utc: String,
         at_tz: String,
         scope_label: String,
@@ -233,8 +257,9 @@ pub fn export_audit_report_pdf(
     }
 
     let mut raw_rows: Vec<RawRow> = Vec::new();
-    for entry in db::audit_log::list_for_entity(&conn, "customer", customer_id)? {
+    for entry in db::audit_log::list_for_entity(conn, "customer", customer_id)? {
         raw_rows.push(RawRow {
+            id: entry.id,
             at_utc: entry.at_utc,
             at_tz: entry.at_tz,
             scope_label: "Kunde".to_string(),
@@ -243,8 +268,9 @@ pub fn export_audit_report_pdf(
         });
     }
     for system in &systems {
-        for entry in db::audit_log::list_for_entity(&conn, "system", system.id)? {
+        for entry in db::audit_log::list_for_entity(conn, "system", system.id)? {
             raw_rows.push(RawRow {
+                id: entry.id,
                 at_utc: entry.at_utc,
                 at_tz: entry.at_tz,
                 scope_label: system.name.clone(),
@@ -259,7 +285,15 @@ pub fn export_audit_report_pdf(
     // text, but an untouched RFC3339 UTC timestamp does (fixed-width,
     // most-significant-first). Ascending (oldest first), matching
     // export_pdf's own "grown history" reading order for the manual export.
-    raw_rows.sort_by(|a, b| a.at_utc.cmp(&b.at_utc));
+    //
+    // Tiebreak on `id` (ascending): `list_for_entity` already returns each
+    // entity's own rows DESCENDING (`at_utc DESC, id DESC`, see its own doc
+    // comment on same-millisecond writes), and `Vec::sort_by` is a stable
+    // sort -- without an explicit tiebreak here, two rows sharing an
+    // identical `at_utc` would keep that DESCENDING relative order after
+    // this merge, locally reversing just that tie group against the
+    // otherwise-ascending result.
+    raw_rows.sort_by(|a, b| a.at_utc.cmp(&b.at_utc).then(a.id.cmp(&b.id)));
 
     let mut rows = Vec::with_capacity(raw_rows.len());
     for r in raw_rows {
@@ -271,16 +305,7 @@ pub fn export_audit_report_pdf(
             summary: r.summary,
         });
     }
-
-    let tz = time::system_timezone()?;
-    let (now_utc, now_tz) = time::now_with_tz(&tz);
-    let generated_at_display = time::format_timestamp_for_display(&now_utc, &now_tz)?;
-
-    let pdf_bytes =
-        export::pdf::render_audit_report_pdf(&customer.name, generated_at_display, rows)?;
-
-    std::fs::write(&dest_path, pdf_bytes)
-        .map_err(|e| AppError::Io(format!("PDF konnte nicht geschrieben werden: {e}")))
+    Ok(rows)
 }
 
 /// Exports a single `.ics` (iCalendar) file covering every active customer's
@@ -499,7 +524,7 @@ mod tests {
     use crate::db::entries::{self, NewEntry};
     use crate::db::systems::{self, NewSystem};
     use crate::db::test_support::migrated_connection;
-    use rusqlite::Connection;
+    use rusqlite::{params, Connection};
 
     fn berlin() -> chrono_tz::Tz {
         "Europe/Berlin".parse().unwrap()
@@ -718,5 +743,103 @@ mod tests {
             haystack.contains("Ohne System"),
             "the 'Ohne System' section heading should appear in the rendered PDF bytes"
         );
+    }
+
+    // Regression coverage for collect_audit_rows: seeds one customer plus two
+    // systems (one archived via systems::archive) and pins their
+    // automatically-recorded audit-log rows' timestamps across a MONTH
+    // boundary (2026-09-02 vs. 2026-10-01) specifically -- as formatted
+    // display strings ("02.09.2026" vs. "01.10.2026") these do NOT sort
+    // chronologically as text, but the raw ISO timestamps do, which is
+    // exactly what this function's sort must get right (see its own comment
+    // on sorting by at_utc, not at_display). Also proves archived systems'
+    // entries aren't silently excluded, and that each row's scope_label
+    // matches its own originating system, not a neighbor's.
+    //
+    // Audit-log rows aren't created directly -- this codebase has no public
+    // `db::audit_log::create`-style function; they're written automatically
+    // as a side effect of customers::create / systems::create /
+    // systems::archive (see db/audit_log.rs and db/systems.rs). Each of
+    // those calls' own audit_log::record() runs strictly after its main
+    // INSERT, so conn.last_insert_rowid() immediately after the call gives
+    // the new audit_log row's id -- used here to target the exact rows to
+    // pin, same direct-SQL-UPDATE pattern db/tickets.rs's own ordering test
+    // uses to avoid a wall-clock-based (and therefore flaky/tautological)
+    // test.
+    #[test]
+    fn collect_audit_rows_sorts_across_month_boundary_and_includes_archived_systems() {
+        let conn = migrated_connection();
+
+        let customer_id = seed_customer(&conn, "ACME GmbH");
+        let customer_audit_id = conn.last_insert_rowid();
+
+        seed_system(&conn, customer_id, "Server Alpha");
+        let system_a_audit_id = conn.last_insert_rowid();
+
+        let system_b_id = seed_system(&conn, customer_id, "Server Beta");
+        let system_b_created_audit_id = conn.last_insert_rowid();
+
+        systems::archive(&conn, system_b_id, &berlin()).unwrap();
+        let system_b_archived_audit_id = conn.last_insert_rowid();
+
+        for (id, ts) in [
+            (customer_audit_id, "2026-09-02T10:00:00.000Z"),
+            (system_a_audit_id, "2026-09-20T10:00:00.000Z"),
+            (system_b_created_audit_id, "2026-10-01T10:00:00.000Z"),
+            (system_b_archived_audit_id, "2026-10-05T10:00:00.000Z"),
+        ] {
+            conn.execute(
+                "UPDATE audit_log SET at_utc = ?1 WHERE id = ?2",
+                params![ts, id],
+            )
+            .unwrap();
+        }
+
+        let rows = collect_audit_rows(&conn, customer_id).unwrap();
+
+        assert_eq!(
+            rows.len(),
+            4,
+            "the customer's own entry plus both systems' entries (including \
+             the archived system's two) must all be present"
+        );
+
+        let at_displays: Vec<&str> = rows.iter().map(|r| r.at_display.as_str()).collect();
+        // Correct chronological order (September before October). A sort on
+        // the formatted display strings instead of the raw timestamps would
+        // scramble this, since "01.10.2026" < "02.09.2026" < "05.10.2026" <
+        // "20.09.2026" lexicographically.
+        assert!(
+            at_displays[0].starts_with("02.09.2026"),
+            "expected the earliest (Kunde) row first, got {:?}",
+            at_displays
+        );
+        assert!(
+            at_displays[1].starts_with("20.09.2026"),
+            "expected Server Alpha's row second, got {:?}",
+            at_displays
+        );
+        assert!(
+            at_displays[2].starts_with("01.10.2026"),
+            "expected Server Beta's creation row third, got {:?}",
+            at_displays
+        );
+        assert!(
+            at_displays[3].starts_with("05.10.2026"),
+            "expected Server Beta's archival row last, got {:?}",
+            at_displays
+        );
+
+        assert_eq!(rows[0].scope_label, "Kunde");
+        assert_eq!(rows[0].action, "created");
+        assert_eq!(rows[1].scope_label, "Server Alpha");
+        assert_eq!(rows[2].scope_label, "Server Beta");
+        assert_eq!(rows[2].action, "created");
+        assert_eq!(
+            rows[3].scope_label, "Server Beta",
+            "the archived system's own entry must keep its own name as scope_label, \
+             not fall back to or swap with the other system's"
+        );
+        assert_eq!(rows[3].action, "archived");
     }
 }
