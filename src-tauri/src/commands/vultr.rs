@@ -423,6 +423,7 @@ mod tests {
             ipv6_address: Some("2001:db8::1".to_string()),
             status: Some("running".to_string()),
             platform: Some("vc2-2c-4gb".to_string()),
+            operating_system: None,
             region: Some("ewr".to_string()),
             linked_system_id: None,
         };
@@ -445,6 +446,7 @@ mod tests {
             ipv6_address: None,
             status: None,
             platform: None,
+            operating_system: None,
             region: None,
             linked_system_id: None,
         };

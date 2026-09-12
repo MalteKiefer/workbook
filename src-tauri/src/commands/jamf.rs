@@ -712,6 +712,7 @@ mod tests {
             ip_address: None,
             serial_number: None,
             asset_tag: None,
+            operating_system: None,
             site_id: site_id.to_string(),
         }
     }

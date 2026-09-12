@@ -767,6 +767,7 @@ mod tests {
             ip_address: None,
             status: None,
             platform: None,
+            operating_system: None,
             organization_id: organization_id.to_string(),
             organization_name: None,
         }

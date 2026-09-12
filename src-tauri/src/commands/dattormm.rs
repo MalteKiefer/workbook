@@ -739,6 +739,7 @@ mod tests {
             ip_address: None,
             status: None,
             platform: None,
+            operating_system: None,
             site_uid: site_uid.to_string(),
             site_name: String::new(),
             portal_url: None,

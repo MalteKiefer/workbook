@@ -437,6 +437,7 @@ mod tests {
         let server = NetcupServer {
             external_id: "111".to_string(),
             name: "Server 01".to_string(),
+            operating_system: None,
         };
         let dto = to_external_system_dto(server, Some(3));
         assert_eq!(dto.external_id, "111");
@@ -451,6 +452,7 @@ mod tests {
         let server = NetcupServer {
             external_id: "222".to_string(),
             name: "Server 02".to_string(),
+            operating_system: None,
         };
         let dto = to_external_system_dto(server, None);
         assert_eq!(dto.linked_system_id, None);

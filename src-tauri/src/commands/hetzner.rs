@@ -428,6 +428,7 @@ mod tests {
             ip_address: Some("203.0.113.5".to_string()),
             status: Some("running".to_string()),
             platform: Some("cx22".to_string()),
+            operating_system: None,
             location: Some("fsn1".to_string()),
         };
         let dto = to_external_system_dto(server, Some(3));
@@ -447,6 +448,7 @@ mod tests {
             ip_address: None,
             status: None,
             platform: None,
+            operating_system: None,
             location: None,
         };
         let dto = to_external_system_dto(server, None);

@@ -225,6 +225,12 @@ pub struct DattoRmmDevice {
     /// `"unknown"`), passed through as a free-form string -- no Rust enum,
     /// see module docs.
     pub platform: Option<String>,
+    /// Datto RMM's own free-text OS description (e.g. `"Windows Server
+    /// 2022"`), verified present on the same `GET /api/v2/account/devices`
+    /// response `map_device` already parses -- distinct from `platform`
+    /// above, which is only the coarse `deviceClass` family
+    /// (`"device"`/`"printer"`/etc.).
+    pub operating_system: Option<String>,
     /// The GENUINE foreign key to `DattoRmmSite::uid` (see module docs) --
     /// used as the join key in `commands::dattormm::group_devices_by_site`,
     /// no name-based workaround needed (unlike Tactical RMM).
@@ -593,6 +599,7 @@ fn map_device(value: &serde_json::Value) -> Option<DattoRmmDevice> {
         .as_bool()
         .map(|online| if online { "online" } else { "offline" }.to_string());
     let platform = value["deviceClass"].as_str().map(str::to_string);
+    let operating_system = value["operatingSystem"].as_str().map(str::to_string);
     let portal_url = value["portalUrl"].as_str().map(str::to_string);
     Some(DattoRmmDevice {
         external_id,
@@ -601,6 +608,7 @@ fn map_device(value: &serde_json::Value) -> Option<DattoRmmDevice> {
         ip_address,
         status,
         platform,
+        operating_system,
         site_uid,
         site_name,
         portal_url,
@@ -705,6 +713,10 @@ mod tests {
         assert_eq!(devices[0].ip_address.as_deref(), Some("10.0.0.5"));
         assert_eq!(devices[0].status.as_deref(), Some("online"));
         assert_eq!(devices[0].platform.as_deref(), Some("device"));
+        assert_eq!(
+            devices[0].operating_system.as_deref(),
+            Some("Windows Server 2022")
+        );
         assert_eq!(devices[0].site_uid, "site-a-uid");
         assert_eq!(devices[0].site_name, "ACME Hauptsitz");
         assert_eq!(

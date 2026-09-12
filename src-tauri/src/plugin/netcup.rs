@@ -150,6 +150,15 @@ pub struct NetcupConnectionMeta {
 pub struct NetcupServer {
     pub external_id: String,
     pub name: String,
+    /// netcup's own provisioning-image/template name (e.g. `"Debian 12"`),
+    /// read from the nested `template.name` field verified present on the
+    /// same `GET /scp-core/api/v1/servers` response `map_server` already
+    /// parses. Best-effort only, unlike the other plugins in this batch:
+    /// `template` is `null` whenever a server was never (re)installed
+    /// through netcup's own panel (e.g. a manual OS reinstall bypassing
+    /// netcup's provisioning flow), so a `None` here does not necessarily
+    /// mean "no OS", just "netcup doesn't know".
+    pub operating_system: Option<String>,
 }
 
 /// A plugin object for exactly one configured netcup connection. `id` here
@@ -368,7 +377,12 @@ fn map_server(value: &serde_json::Value) -> Option<NetcupServer> {
         .or_else(|| value["name"].as_str())
         .map(str::to_string)
         .unwrap_or_else(|| external_id.clone());
-    Some(NetcupServer { external_id, name })
+    let operating_system = value["template"]["name"].as_str().map(str::to_string);
+    Some(NetcupServer {
+        external_id,
+        name,
+        operating_system,
+    })
 }
 
 #[cfg(test)]
@@ -410,8 +424,21 @@ mod tests {
         assert_eq!(servers.len(), 2);
         assert_eq!(servers[0].external_id, "111");
         assert_eq!(servers[0].name, "Server 01");
+        // Neither sample object carries a "template" key at all -> None,
+        // not an error.
+        assert_eq!(servers[0].operating_system, None);
         assert_eq!(servers[1].external_id, "222");
         assert_eq!(servers[1].name, "fw-edge");
+        assert_eq!(servers[1].operating_system, None);
+    }
+
+    #[test]
+    fn maps_operating_system_from_nested_template_name() {
+        let json = serde_json::json!([
+            {"id": 333, "name": "v333", "template": {"id": 7, "name": "Debian 12"}}
+        ]);
+        let servers = map_servers(json.as_array().unwrap());
+        assert_eq!(servers[0].operating_system.as_deref(), Some("Debian 12"));
     }
 
     #[test]

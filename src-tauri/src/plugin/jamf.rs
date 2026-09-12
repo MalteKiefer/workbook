@@ -154,6 +154,12 @@ pub struct JamfDevice {
     pub ip_address: Option<String>,
     pub serial_number: Option<String>,
     pub asset_tag: Option<String>,
+    /// Jamf's own free-text OS description, combined from the nested
+    /// `operatingSystem.name` + `operatingSystem.version` fields (e.g.
+    /// `"macOS 14.5"`) -- requires the `section=OPERATING_SYSTEM` query
+    /// parameter added above; without it this object is absent from the
+    /// response and this is simply `None`.
+    pub operating_system: Option<String>,
     pub site_id: String,
 }
 
@@ -343,6 +349,7 @@ fn fetch_computers_page(
         .header("Authorization", format!("Bearer {bearer_token}"))
         .query("section", "GENERAL")
         .query("section", "HARDWARE")
+        .query("section", "OPERATING_SYSTEM")
         .query("page", page.to_string())
         .query("page-size", page_size.to_string())
         .call()
@@ -368,6 +375,7 @@ fn fetch_computer_detail(
         .header("Authorization", format!("Bearer {bearer_token}"))
         .query("section", "GENERAL")
         .query("section", "HARDWARE")
+        .query("section", "OPERATING_SYSTEM")
         .call()
         .map_err(map_ureq_error)?;
     response
@@ -508,6 +516,13 @@ fn map_computer(value: &serde_json::Value) -> Option<JamfDevice> {
         .or_else(|| value["hardware"]["serialNumber"].as_str())
         .map(str::to_string);
     let asset_tag = general["assetTag"].as_str().map(str::to_string);
+    let os_name = value["operatingSystem"]["name"].as_str();
+    let os_version = value["operatingSystem"]["version"].as_str();
+    let operating_system = match (os_name, os_version) {
+        (Some(name), Some(version)) => Some(format!("{name} {version}")),
+        (Some(name), None) => Some(name.to_string()),
+        (None, _) => None,
+    };
     Some(JamfDevice {
         external_id,
         name,
@@ -515,6 +530,7 @@ fn map_computer(value: &serde_json::Value) -> Option<JamfDevice> {
         ip_address,
         serial_number,
         asset_tag,
+        operating_system,
         site_id,
     })
 }
@@ -614,7 +630,8 @@ mod tests {
                         "assetTag": "AT-0001",
                         "site": {"id": "1", "name": "Hauptsitz"}
                     },
-                    "hardware": {"serialNumber": "C02XXXXX", "macAddress": "AA:BB:CC:DD:EE:FF"}
+                    "hardware": {"serialNumber": "C02XXXXX", "macAddress": "AA:BB:CC:DD:EE:FF"},
+                    "operatingSystem": {"name": "macOS", "version": "14.5"}
                 },
                 {
                     "id": "202",
@@ -638,10 +655,12 @@ mod tests {
         assert_eq!(devices[0].ip_address.as_deref(), Some("10.0.0.5"));
         assert_eq!(devices[0].serial_number.as_deref(), Some("C02XXXXX"));
         assert_eq!(devices[0].asset_tag.as_deref(), Some("AT-0001"));
+        assert_eq!(devices[0].operating_system.as_deref(), Some("macOS 14.5"));
         assert_eq!(devices[1].external_id, "202");
         assert_eq!(devices[1].site_id, "2");
         assert_eq!(devices[1].ip_address.as_deref(), Some("10.0.0.9"));
         assert_eq!(devices[1].asset_tag, None);
+        assert_eq!(devices[1].operating_system, None);
     }
 
     #[test]

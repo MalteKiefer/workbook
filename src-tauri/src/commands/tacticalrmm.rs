@@ -731,6 +731,7 @@ mod tests {
             ip_address: None,
             status: None,
             platform: None,
+            operating_system: None,
             client_name: client_name.to_string(),
             site_name: None,
         }
