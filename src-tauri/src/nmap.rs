@@ -53,6 +53,9 @@ fn validate_target(target: &str) -> Result<(), AppError> {
 /// elsewhere), so a non-elevated run simply gets nmap's own permission
 /// error surfaced back through the existing error path below; this
 /// function makes no attempt to detect or request elevation itself.
+/// `-sS` (SYN scan) is deliberately never used for the same reason: it
+/// also needs raw-socket/elevated privileges on every platform this app
+/// targets, so `-sV`'s connect-based scan is used unconditionally instead.
 /// `--max-parallelism 10` works around a real nmap bug (nmap/nmap#1764,
 /// fixed upstream in 7.90): nmap <7.90 asserts
 /// `htn.toclock_running == true` in Target.cc and crashes when scanning

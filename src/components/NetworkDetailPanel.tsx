@@ -226,29 +226,32 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
     if (toCreate.length === 0) return;
     setBulkCreateBusy(true);
     setBulkCreateSummary(null);
-    let created = 0;
-    const errors: string[] = [];
-    for (const result of toCreate) {
-      try {
-        await invoke("create_system", {
-          input: {
-            customer_id: network.customer_id,
-            name: result.hostname ?? result.ip,
-            system_type: "",
-            hostname: result.hostname ?? "",
-            ip_address: result.ip,
-            notes: "",
-            maintenance_interval_days: null,
-          },
-        });
-        created += 1;
-      } catch (e) {
-        errors.push(`${result.ip}: ${formatInvokeError(e)}`);
+    try {
+      let created = 0;
+      const errors: string[] = [];
+      for (const result of toCreate) {
+        try {
+          await invoke("create_system", {
+            input: {
+              customer_id: network.customer_id,
+              name: result.hostname ?? result.ip,
+              system_type: "",
+              hostname: result.hostname ?? "",
+              ip_address: result.ip,
+              notes: "",
+              maintenance_interval_days: null,
+            },
+          });
+          created += 1;
+        } catch (e) {
+          errors.push(`${result.ip}: ${formatInvokeError(e)}`);
+        }
       }
+      setBulkCreateSummary({ created, errors });
+      setSelectedIps(new Set());
+    } finally {
+      setBulkCreateBusy(false);
     }
-    setBulkCreateSummary({ created, errors });
-    setSelectedIps(new Set());
-    setBulkCreateBusy(false);
   }
 
   const filteredResults = results.filter((result) => {
@@ -272,7 +275,17 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
   function toggleSelectAllVisible() {
     const visibleIps = filteredResults.map((r) => r.ip);
     const allVisibleSelected = visibleIps.length > 0 && visibleIps.every((ip) => selectedIps.has(ip));
-    setSelectedIps(allVisibleSelected ? new Set() : new Set(visibleIps));
+    setSelectedIps((prev) => {
+      const next = new Set(prev);
+      for (const ip of visibleIps) {
+        if (allVisibleSelected) {
+          next.delete(ip);
+        } else {
+          next.add(ip);
+        }
+      }
+      return next;
+    });
   }
 
   return (
@@ -365,32 +378,33 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
 
       {results.length > 0 && (
         <>
+          {(filteredResults.length > 0 || selectedIps.size > 0) && (
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.82rem" }}>
+              {filteredResults.length > 0 && (
+                <label style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={filteredResults.length > 0 && filteredResults.every((r) => selectedIps.has(r.ip))}
+                    onChange={toggleSelectAllVisible}
+                  />
+                  Alle auswählen
+                </label>
+              )}
+              {selectedIps.size > 0 && (
+                <>
+                  <span style={{ color: "var(--text-muted)" }}>{selectedIps.size} ausgewählt</span>
+                  <button type="button" onClick={() => void handleBulkCreateSystems()} disabled={bulkCreateBusy}>
+                    Als Systeme anlegen
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           {filteredResults.length === 0 ? (
             <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-muted)" }}>
               Keine Treffer für "{filterText}".
             </p>
           ) : (
-            <>
-              {filteredResults.length > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.82rem" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                    <input
-                      type="checkbox"
-                      checked={filteredResults.length > 0 && filteredResults.every((r) => selectedIps.has(r.ip))}
-                      onChange={toggleSelectAllVisible}
-                    />
-                    Alle auswählen
-                  </label>
-                  {selectedIps.size > 0 && (
-                    <>
-                      <span style={{ color: "var(--text-muted)" }}>{selectedIps.size} ausgewählt</span>
-                      <button type="button" onClick={() => void handleBulkCreateSystems()} disabled={bulkCreateBusy}>
-                        Als Systeme anlegen
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
               {filteredResults.map((result) => (
                 <li
@@ -410,7 +424,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                       onChange={() => toggleSelected(result.ip)}
                       style={{ flexShrink: 0 }}
                     />
-                    <span style={{ fontSize: "0.85rem" }}>
+                    <span style={{ fontSize: "0.85rem", flex: 1 }}>
                       <span style={{ fontFamily: "var(--font-mono)" }}>{result.ip}</span>{" "}
                       <span style={{ color: "var(--text-muted)" }}>
                         {result.open_ports.length > 0 ? result.open_ports.join(", ") : "keine bekannten Ports offen"}
@@ -526,8 +540,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                   )}
                 </li>
               ))}
-              </ul>
-            </>
+            </ul>
           )}
         </>
       )}
