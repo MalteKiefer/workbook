@@ -4,6 +4,12 @@ export type View = "dashboard" | "customers" | "customer-detail" | "journal" | "
 export type CustomerDetailTab = "uebersicht" | "systeme" | "standorte" | "netzwerke" | "ablauf" | "zugangsdaten" | "verlauf";
 export type SettingsTab = "general" | "backup" | "plugins" | "keymap" | "update" | "templates" | "network";
 
+export interface SystemEditorPrefill {
+  name?: string;
+  hostname?: string;
+  ip_address?: string;
+}
+
 interface AppState {
   view: View;
   settingsTab: SettingsTab;
@@ -17,6 +23,7 @@ interface AppState {
   customerEditorTarget: "new" | number | null;
   systemEditorTarget: "new" | number | null;
   systemEditorCustomerId: number | null;
+  systemEditorPrefill: SystemEditorPrefill | null;
   shortcutOverviewOpen: boolean;
   updateAvailableVersion: string | null;
   overdueSystemCount: number;
@@ -40,7 +47,7 @@ interface AppState {
   closeExportDialog: () => void;
   openCustomerEditor: (target: "new" | number) => void;
   closeCustomerEditor: () => void;
-  openSystemEditor: (target: "new" | number, customerId: number) => void;
+  openSystemEditor: (target: "new" | number, customerId: number, prefill?: SystemEditorPrefill) => void;
   closeSystemEditor: () => void;
   openShortcutOverview: () => void;
   closeShortcutOverview: () => void;
@@ -62,6 +69,7 @@ export const useAppStore = create<AppState>((set) => ({
   customerEditorTarget: null,
   systemEditorTarget: null,
   systemEditorCustomerId: null,
+  systemEditorPrefill: null,
   shortcutOverviewOpen: false,
   updateAvailableVersion: null,
   overdueSystemCount: 0,
@@ -90,8 +98,9 @@ export const useAppStore = create<AppState>((set) => ({
   closeExportDialog: () => set({ exportDialogOpen: false }),
   openCustomerEditor: (target) => set({ customerEditorTarget: target }),
   closeCustomerEditor: () => set({ customerEditorTarget: null }),
-  openSystemEditor: (target, customerId) => set({ systemEditorTarget: target, systemEditorCustomerId: customerId }),
-  closeSystemEditor: () => set({ systemEditorTarget: null, systemEditorCustomerId: null }),
+  openSystemEditor: (target, customerId, prefill) =>
+    set({ systemEditorTarget: target, systemEditorCustomerId: customerId, systemEditorPrefill: prefill ?? null }),
+  closeSystemEditor: () => set({ systemEditorTarget: null, systemEditorCustomerId: null, systemEditorPrefill: null }),
   openShortcutOverview: () => set({ shortcutOverviewOpen: true }),
   closeShortcutOverview: () => set({ shortcutOverviewOpen: false }),
   setUpdateAvailableVersion: (version) => set({ updateAvailableVersion: version }),

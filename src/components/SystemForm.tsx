@@ -41,6 +41,7 @@ function typeHasNetworkFields(typeSelection: string): boolean {
 export default function SystemForm() {
   const systemEditorTarget = useAppStore((s) => s.systemEditorTarget);
   const systemEditorCustomerId = useAppStore((s) => s.systemEditorCustomerId);
+  const systemEditorPrefill = useAppStore((s) => s.systemEditorPrefill);
   const closeSystemEditor = useAppStore((s) => s.closeSystemEditor);
   const formOpenInStore = useAppStore((s) => s.formOpen);
   const openForm = useAppStore((s) => s.openForm);
@@ -65,11 +66,11 @@ export default function SystemForm() {
     setError(null);
 
     if (systemEditorTarget === "new") {
-      setName("");
+      setName(systemEditorPrefill?.name ?? "");
       setTypeSelection("");
       setCustomType("");
-      setHostname("");
-      setIpAddress("");
+      setHostname(systemEditorPrefill?.hostname ?? "");
+      setIpAddress(systemEditorPrefill?.ip_address ?? "");
       setNotes("");
       setMaintenanceIntervalDays("");
       return;
@@ -99,7 +100,7 @@ export default function SystemForm() {
         }
       })
       .catch((e) => setError(formatInvokeError(e)));
-  }, [systemEditorTarget, systemEditorCustomerId]);
+  }, [systemEditorTarget, systemEditorCustomerId, systemEditorPrefill]);
 
   useEffect(() => {
     if (systemEditorTarget === null) return;

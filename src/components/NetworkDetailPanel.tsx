@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatInvokeError } from "../lib/errors";
+import { useAppStore } from "../state/appStore";
 
 // Mirrors src-tauri/src/network_scan.rs::HostScanResult.
 interface HostScanResult {
@@ -45,15 +46,13 @@ interface NetworkDetailPanelProps {
 // system-installed nmap binary (run_nmap_scan), offered only when
 // is_nmap_available() returns true.
 export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPanelProps) {
+  const openSystemEditor = useAppStore((s) => s.openSystemEditor);
+
   const [target, setTarget] = useState(network.cidr);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [results, setResults] = useState<HostScanResult[]>([]);
   const [filterText, setFilterText] = useState("");
-
-  const [creatingIp, setCreatingIp] = useState<string | null>(null);
-  const [createdIps, setCreatedIps] = useState<Set<string>>(new Set());
-  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
 
   const [expandedIp, setExpandedIp] = useState<string | null>(null);
   const [communityByIp, setCommunityByIp] = useState<Record<string, string>>({});
@@ -89,8 +88,6 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
     try {
       const found = await invoke<HostScanResult[]>("scan_network", { cidr: target });
       setResults(found);
-      setCreatedIps(new Set());
-      setCreateErrors({});
       setQuickConnectErrorByIp({});
       setExpandedIp(null);
       setFilterText("");
@@ -98,33 +95,6 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
       setScanError(formatInvokeError(e));
     } finally {
       setScanBusy(false);
-    }
-  }
-
-  async function handleCreateSystem(result: HostScanResult) {
-    setCreatingIp(result.ip);
-    setCreateErrors((prev) => {
-      const next = { ...prev };
-      delete next[result.ip];
-      return next;
-    });
-    try {
-      await invoke("create_system", {
-        input: {
-          customer_id: network.customer_id,
-          name: result.ip,
-          system_type: "",
-          hostname: "",
-          ip_address: result.ip,
-          notes: "",
-          maintenance_interval_days: null,
-        },
-      });
-      setCreatedIps((prev) => new Set(prev).add(result.ip));
-    } catch (e) {
-      setCreateErrors((prev) => ({ ...prev, [result.ip]: formatInvokeError(e) }));
-    } finally {
-      setCreatingIp(null);
     }
   }
 
@@ -221,6 +191,14 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
     } catch (e) {
       setNmapError(formatInvokeError(e));
     }
+  }
+
+  function handleOpenCreateSystemModal(result: HostScanResult) {
+    openSystemEditor("new", network.customer_id, {
+      name: result.hostname ?? result.ip,
+      hostname: result.hostname ?? "",
+      ip_address: result.ip,
+    });
   }
 
   const filteredResults = results.filter((result) => {
@@ -322,10 +300,8 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                     </span>
                     <HostActionsMenu
                       result={result}
-                      isCreated={createdIps.has(result.ip)}
-                      isCreating={creatingIp === result.ip}
                       onToggleSnmp={() => toggleSnmpSection(result.ip)}
-                      onCreateSystem={() => void handleCreateSystem(result)}
+                      onCreateSystem={() => handleOpenCreateSystemModal(result)}
                       onOpenUrl={(url) => void handleOpenUrl(result.ip, url)}
                       onOpenRdp={() => void handleOpenRdp(result.ip)}
                       onOpenShare={() => void handleOpenShare(result.ip)}
@@ -341,11 +317,6 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                         .filter((part): part is string => Boolean(part))
                         .join(" · ")}
                     </span>
-                  )}
-                  {createErrors[result.ip] && (
-                    <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
-                      Fehler: {createErrors[result.ip]}
-                    </p>
                   )}
                   {quickConnectErrorByIp[result.ip] && (
                     <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
@@ -481,8 +452,6 @@ const WEB_PORT_SCHEMES: Record<number, "http" | "https"> = {
 
 interface HostActionsMenuProps {
   result: HostScanResult;
-  isCreated: boolean;
-  isCreating: boolean;
   onToggleSnmp: () => void;
   onCreateSystem: () => void;
   onOpenUrl: (url: string) => void;
@@ -492,8 +461,6 @@ interface HostActionsMenuProps {
 
 function HostActionsMenu({
   result,
-  isCreated,
-  isCreating,
   onToggleSnmp,
   onCreateSystem,
   onOpenUrl,
@@ -592,14 +559,8 @@ function HostActionsMenu({
           <button type="button" role="menuitem" style={menuItemStyle} onClick={() => runAndClose(onToggleSnmp)}>
             SNMP abfragen
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            style={menuItemStyle}
-            disabled={isCreated || isCreating}
-            onClick={() => runAndClose(onCreateSystem)}
-          >
-            {isCreated ? "Angelegt ✓" : "Als System anlegen"}
+          <button type="button" role="menuitem" style={menuItemStyle} onClick={() => runAndClose(onCreateSystem)}>
+            Als System anlegen
           </button>
           {connectItems.length > 0 && (
             <>
