@@ -21,6 +21,7 @@ pub struct System {
     pub archived_at_utc: Option<String>,
     pub archived_at_tz: Option<String>,
     pub maintenance_interval_days: Option<i64>,
+    pub operating_system: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -38,6 +39,15 @@ pub struct NewSystem {
     /// absent `Option<T>` key as a hard deserialize error, not `None`.
     #[serde(default)]
     pub maintenance_interval_days: Option<i64>,
+    /// `#[serde(default)]` -- same reasoning as `maintenance_interval_days`
+    /// above: every call site that constructs this from JavaScript before
+    /// this field existed (all 17 plugin sections' create-and-link/adopt
+    /// flows, both Journal pickers, CSV import, the network scan panel's
+    /// create-system flow) omits the key entirely rather than sending
+    /// `null`; without this, serde treats an absent `Option<T>` key as a
+    /// hard deserialize error, not `None`.
+    #[serde(default)]
+    pub operating_system: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -54,6 +64,15 @@ pub struct UpdateSystem {
     /// absent `Option<T>` key as a hard deserialize error, not `None`.
     #[serde(default)]
     pub maintenance_interval_days: Option<i64>,
+    /// `#[serde(default)]` -- same reasoning as `maintenance_interval_days`
+    /// above: every call site that constructs this from JavaScript before
+    /// this field existed (all 17 plugin sections' create-and-link/adopt
+    /// flows, both Journal pickers, CSV import, the network scan panel's
+    /// create-system flow) omits the key entirely rather than sending
+    /// `null`; without this, serde treats an absent `Option<T>` key as a
+    /// hard deserialize error, not `None`.
+    #[serde(default)]
+    pub operating_system: Option<String>,
 }
 
 fn row_to_system(row: &Row) -> rusqlite::Result<System> {
@@ -72,6 +91,7 @@ fn row_to_system(row: &Row) -> rusqlite::Result<System> {
         archived_at_utc: row.get("archived_at_utc")?,
         archived_at_tz: row.get("archived_at_tz")?,
         maintenance_interval_days: row.get("maintenance_interval_days")?,
+        operating_system: row.get("operating_system")?,
     })
 }
 
@@ -92,9 +112,9 @@ pub fn create(conn: &Connection, input: NewSystem, tz: &Tz) -> Result<System, Ap
     validate_maintenance_interval(input.maintenance_interval_days)?;
     let (now_utc, now_tz) = now_with_tz(tz);
     conn.execute(
-        "INSERT INTO systems (customer_id, name, system_type, hostname, ip_address, notes, maintenance_interval_days, created_at_utc, created_at_tz, updated_at_utc, updated_at_tz)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?8, ?9)",
-        params![input.customer_id, input.name, input.system_type, input.hostname, input.ip_address, input.notes, input.maintenance_interval_days, now_utc, now_tz],
+        "INSERT INTO systems (customer_id, name, system_type, hostname, ip_address, notes, maintenance_interval_days, operating_system, created_at_utc, created_at_tz, updated_at_utc, updated_at_tz)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?9, ?10)",
+        params![input.customer_id, input.name, input.system_type, input.hostname, input.ip_address, input.notes, input.maintenance_interval_days, input.operating_system, now_utc, now_tz],
     )?;
     let system = get(conn, conn.last_insert_rowid())?;
     if let Err(e) = audit_log::record(
@@ -148,8 +168,8 @@ pub fn update(
     validate_maintenance_interval(input.maintenance_interval_days)?;
     let (now_utc, now_tz) = now_with_tz(tz);
     let changed = conn.execute(
-        "UPDATE systems SET name = ?1, system_type = ?2, hostname = ?3, ip_address = ?4, notes = ?5, maintenance_interval_days = ?6, updated_at_utc = ?7, updated_at_tz = ?8 WHERE id = ?9",
-        params![input.name, input.system_type, input.hostname, input.ip_address, input.notes, input.maintenance_interval_days, now_utc, now_tz, id],
+        "UPDATE systems SET name = ?1, system_type = ?2, hostname = ?3, ip_address = ?4, notes = ?5, maintenance_interval_days = ?6, operating_system = ?7, updated_at_utc = ?8, updated_at_tz = ?9 WHERE id = ?10",
+        params![input.name, input.system_type, input.hostname, input.ip_address, input.notes, input.maintenance_interval_days, input.operating_system, now_utc, now_tz, id],
     )?;
     if changed == 0 {
         return Err(AppError::NotFound(format!("System {id} nicht gefunden")));
@@ -266,6 +286,7 @@ mod tests {
         }"#;
         let parsed: NewSystem = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.maintenance_interval_days, None);
+        assert_eq!(parsed.operating_system, None);
     }
 
     #[test]
@@ -279,6 +300,7 @@ mod tests {
         }"#;
         let parsed: UpdateSystem = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.maintenance_interval_days, None);
+        assert_eq!(parsed.operating_system, None);
     }
 
     fn seed_customer(conn: &Connection) -> i64 {
@@ -309,6 +331,7 @@ mod tests {
                 ip_address: "10.0.0.5".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -332,6 +355,7 @@ mod tests {
                     ip_address: "".into(),
                     notes: "".into(),
                     maintenance_interval_days: Some(bad_interval),
+                    operating_system: None,
                 },
                 &berlin(),
             );
@@ -356,6 +380,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -370,6 +395,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: Some(-5),
+                operating_system: None,
             },
             &berlin(),
         );
@@ -390,6 +416,7 @@ mod tests {
                 ip_address: "10.0.0.5".into(),
                 notes: "Ein paar Notizen".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -418,6 +445,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -451,6 +479,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         );
@@ -471,6 +500,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -485,6 +515,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -510,6 +541,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -524,6 +556,7 @@ mod tests {
                 ip_address: "10.0.0.1".into(),
                 notes: "".into(),
                 maintenance_interval_days: Some(90),
+                operating_system: None,
             },
             &berlin(),
         )
@@ -547,6 +580,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -563,6 +597,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: Some(90),
+                operating_system: None,
             },
             &berlin(),
         )
@@ -574,6 +609,83 @@ mod tests {
                 .maintenance_interval_days,
             Some(90)
         );
+    }
+
+    #[test]
+    fn create_persists_operating_system_and_defaults_to_none() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        let without_os = create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "Ohne Betriebssystem".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+                maintenance_interval_days: None,
+                operating_system: None,
+            },
+            &berlin(),
+        )
+        .unwrap();
+        assert_eq!(without_os.operating_system, None);
+
+        let input = NewSystem {
+            customer_id,
+            name: "Mit Betriebssystem".into(),
+            system_type: "".into(),
+            hostname: "".into(),
+            ip_address: "".into(),
+            notes: "".into(),
+            maintenance_interval_days: None,
+            operating_system: Some("Windows 11 Pro".to_string()),
+        };
+        let created = create(&conn, input, &berlin()).unwrap();
+        assert_eq!(created.operating_system, Some("Windows 11 Pro".to_string()));
+        assert_eq!(
+            get(&conn, created.id).unwrap().operating_system,
+            Some("Windows 11 Pro".to_string())
+        );
+    }
+
+    #[test]
+    fn update_can_set_and_clear_operating_system() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        let created = create(
+            &conn,
+            NewSystem {
+                customer_id,
+                name: "FS01".into(),
+                system_type: "".into(),
+                hostname: "".into(),
+                ip_address: "".into(),
+                notes: "".into(),
+                maintenance_interval_days: None,
+                operating_system: None,
+            },
+            &berlin(),
+        )
+        .unwrap();
+        assert_eq!(created.operating_system, None);
+
+        let mut update_input = UpdateSystem {
+            name: created.name.clone(),
+            system_type: created.system_type.clone(),
+            hostname: created.hostname.clone(),
+            ip_address: created.ip_address.clone(),
+            notes: created.notes.clone(),
+            maintenance_interval_days: created.maintenance_interval_days,
+            operating_system: Some("Ubuntu 24.04".to_string()),
+        };
+        let updated = update(&conn, created.id, update_input.clone(), &berlin()).unwrap();
+        assert_eq!(updated.operating_system, Some("Ubuntu 24.04".to_string()));
+
+        update_input.operating_system = None;
+        let cleared = update(&conn, created.id, update_input, &berlin()).unwrap();
+        assert_eq!(cleared.operating_system, None);
     }
 
     #[test]
@@ -590,6 +702,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -612,6 +725,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -659,6 +773,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -680,6 +795,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -694,6 +810,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -715,6 +832,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )

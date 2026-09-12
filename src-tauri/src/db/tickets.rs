@@ -410,6 +410,7 @@ mod tests {
                 ip_address: "".to_string(),
                 notes: "".to_string(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )

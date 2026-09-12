@@ -18,6 +18,7 @@ interface System {
   notes: string;
   archived_at_utc: string | null;
   maintenance_interval_days: number | null;
+  operating_system: string | null;
   // Computed by list_systems_with_maintenance_status (maintenance::is_overdue),
   // not stored columns -- see SystemWithMaintenanceStatus on the Rust side.
   overdue: boolean;
@@ -364,6 +365,9 @@ export default function SystemListView() {
                   {" "}
                   — {s.ip_address}
                 </span>
+              )}
+              {s.operating_system && (
+                <span style={{ color: "var(--text-muted)", fontSize: "0.85em" }}> · {s.operating_system}</span>
               )}
             </span>
             <span style={{ display: "flex", gap: "0.4rem" }}>
