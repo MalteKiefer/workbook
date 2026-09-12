@@ -97,6 +97,9 @@ interface ExternalSystemDto {
   // RMM's windows/linux/darwin is (see module docs) — shown as-is, no
   // translation table.
   platform: string | null;
+  // Action1's own reported OS description (distinct from `platform` above),
+  // passed through verbatim.
+  operating_system: string | null;
   linked_system_id: number | null;
 }
 
@@ -133,7 +136,7 @@ interface System {
   operating_system: string | null;
 }
 
-type CompareField = "name" | "hostname" | "ip_address";
+type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 
 // An Action1 single-endpoint detail JSON (from get_action1_system_details)
 // reliably has "device_name"/"name" and "address" at the top level (see
@@ -942,7 +945,7 @@ export default function Action1PluginSection() {
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
           maintenance_interval_days: localSystem.maintenance_interval_days,
-          operating_system: localSystem.operating_system,
+          operating_system: field === "operating_system" ? value : localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
@@ -1160,6 +1163,12 @@ export default function Action1PluginSection() {
                         label: "IP-Adresse",
                         localValue: localSystem.ip_address,
                         externalValue: findExternalValue(data, IP_KEYS),
+                      },
+                      {
+                        field: "operating_system" as const,
+                        label: "Betriebssystem",
+                        localValue: localSystem.operating_system ?? "",
+                        externalValue: device.operating_system,
                       },
                     ] satisfies { field: CompareField; label: string; localValue: string; externalValue: string | null }[]
                   ).map((row) => {

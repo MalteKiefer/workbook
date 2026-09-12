@@ -77,6 +77,10 @@ interface ExternalSystemDto {
   // ("device"/"printer"/"esxihost"/"rmmnetworkdevice"/"unknown"), passed
   // through verbatim.
   platform: string | null;
+  // Datto RMM's own reported OS description (distinct from `platform`
+  // above, which stays the coarse deviceClass value), passed through
+  // verbatim.
+  operating_system: string | null;
   // A genuine, confirmed web-dashboard deep link for this exact device (see
   // module docs) — `null` only if Datto RMM itself didn't report one.
   portal_url: string | null;
@@ -118,7 +122,7 @@ interface System {
   operating_system: string | null;
 }
 
-type CompareField = "name" | "hostname" | "ip_address";
+type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 
 // A Datto RMM single-device detail JSON (from get_dattormm_system_details)
 // reliably has "hostname" and "intIpAddress"/"extIpAddress" at the top level
@@ -945,7 +949,7 @@ export default function DattoRmmPluginSection() {
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
           maintenance_interval_days: localSystem.maintenance_interval_days,
-          operating_system: localSystem.operating_system,
+          operating_system: field === "operating_system" ? value : localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
@@ -1166,6 +1170,12 @@ export default function DattoRmmPluginSection() {
                         label: "IP-Adresse",
                         localValue: localSystem.ip_address,
                         externalValue: findExternalValue(data, IP_KEYS),
+                      },
+                      {
+                        field: "operating_system" as const,
+                        label: "Betriebssystem",
+                        localValue: localSystem.operating_system ?? "",
+                        externalValue: device.operating_system,
                       },
                     ] satisfies { field: CompareField; label: string; localValue: string; externalValue: string | null }[]
                   ).map((row) => {
