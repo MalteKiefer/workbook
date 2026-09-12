@@ -8571,7 +8571,7 @@ dependencies = [
 
 [[package]]
 name = "wartungsdoku"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "aes-gcm",
  "arboard",
