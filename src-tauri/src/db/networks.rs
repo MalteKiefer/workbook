@@ -11,6 +11,7 @@ pub struct Network {
     pub customer_id: i64,
     pub name: String,
     pub cidr: String,
+    pub location_id: Option<i64>,
     pub notes: String,
     pub created_at_utc: String,
     pub created_at_tz: String,
@@ -24,6 +25,8 @@ pub struct NewNetwork {
     pub name: String,
     pub cidr: String,
     #[serde(default)]
+    pub location_id: Option<i64>,
+    #[serde(default)]
     pub notes: String,
 }
 
@@ -31,6 +34,8 @@ pub struct NewNetwork {
 pub struct UpdateNetwork {
     pub name: String,
     pub cidr: String,
+    #[serde(default)]
+    pub location_id: Option<i64>,
     #[serde(default)]
     pub notes: String,
 }
@@ -56,6 +61,7 @@ fn row_to_network(row: &Row) -> rusqlite::Result<Network> {
         customer_id: row.get("customer_id")?,
         name: row.get("name")?,
         cidr: row.get("cidr")?,
+        location_id: row.get("location_id")?,
         notes: row.get("notes")?,
         created_at_utc: row.get("created_at_utc")?,
         created_at_tz: row.get("created_at_tz")?,
@@ -68,9 +74,17 @@ pub fn create(conn: &Connection, input: NewNetwork, tz: &Tz) -> Result<Network, 
     validate(&input.name, &input.cidr)?;
     let (now_utc, now_tz) = now_with_tz(tz);
     conn.execute(
-        "INSERT INTO networks (customer_id, name, cidr, notes, created_at_utc, created_at_tz, updated_at_utc, updated_at_tz)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?5, ?6)",
-        params![input.customer_id, input.name, input.cidr, input.notes, now_utc, now_tz],
+        "INSERT INTO networks (customer_id, name, cidr, location_id, notes, created_at_utc, created_at_tz, updated_at_utc, updated_at_tz)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?6, ?7)",
+        params![
+            input.customer_id,
+            input.name,
+            input.cidr,
+            input.location_id,
+            input.notes,
+            now_utc,
+            now_tz
+        ],
     )?;
     get(conn, conn.last_insert_rowid())
 }
@@ -105,8 +119,16 @@ pub fn update(
     validate(&input.name, &input.cidr)?;
     let (now_utc, now_tz) = now_with_tz(tz);
     let changed = conn.execute(
-        "UPDATE networks SET name = ?1, cidr = ?2, notes = ?3, updated_at_utc = ?4, updated_at_tz = ?5 WHERE id = ?6",
-        params![input.name, input.cidr, input.notes, now_utc, now_tz, id],
+        "UPDATE networks SET name = ?1, cidr = ?2, location_id = ?3, notes = ?4, updated_at_utc = ?5, updated_at_tz = ?6 WHERE id = ?7",
+        params![
+            input.name,
+            input.cidr,
+            input.location_id,
+            input.notes,
+            now_utc,
+            now_tz,
+            id
+        ],
     )?;
     if changed == 0 {
         return Err(AppError::NotFound(format!("Netzwerk {id} nicht gefunden")));
@@ -151,6 +173,7 @@ mod tests {
             customer_id,
             name: "Hauptbüro".to_string(),
             cidr: "192.168.1.0/24".to_string(),
+            location_id: None,
             notes: "".to_string(),
         }
     }
@@ -231,6 +254,7 @@ mod tests {
             UpdateNetwork {
                 name: "x".to_string(),
                 cidr: "10.0.0.0/24".to_string(),
+                location_id: None,
                 notes: "".to_string(),
             },
             &berlin(),
@@ -253,5 +277,54 @@ mod tests {
         let conn = migrated_connection();
         let err = delete(&conn, 999).unwrap_err();
         assert_eq!(err.code(), "not_found");
+    }
+
+    #[test]
+    fn location_id_roundtrips_through_create_and_update() {
+        use crate::db::locations::{self, NewLocation};
+
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        // migrated_connection() enables `PRAGMA foreign_keys = ON` before running
+        // migrations, so FK enforcement is strict here (unlike a bare in-memory
+        // connection without that pragma) -- a bare `location_id: Some(42)` with
+        // no real `locations` row 42 fails the INSERT with a FK constraint
+        // violation. A real Location is created first so the id is valid.
+        let location_id = locations::create(
+            &conn,
+            NewLocation {
+                customer_id,
+                name: "Filiale Nord".to_string(),
+                address_line1: "".to_string(),
+                address_line2: "".to_string(),
+                postal_code: "".to_string(),
+                city: "".to_string(),
+                country: "".to_string(),
+                phone: "".to_string(),
+                notes: "".to_string(),
+            },
+            &berlin(),
+        )
+        .unwrap()
+        .id;
+
+        let mut input = sample(customer_id);
+        input.location_id = Some(location_id);
+        let created = create(&conn, input, &berlin()).unwrap();
+        assert_eq!(created.location_id, Some(location_id));
+
+        let updated = update(
+            &conn,
+            created.id,
+            UpdateNetwork {
+                name: created.name.clone(),
+                cidr: created.cidr.clone(),
+                location_id: None,
+                notes: created.notes.clone(),
+            },
+            &berlin(),
+        )
+        .unwrap();
+        assert_eq!(updated.location_id, None);
     }
 }
