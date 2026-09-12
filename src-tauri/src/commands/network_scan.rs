@@ -11,6 +11,11 @@ pub fn scan_network(
         let config = state.config.lock().expect("Config-Mutex vergiftet");
         config.network_scan_ports.clone()
     };
+    let ports = if ports.is_empty() {
+        network_scan::DEFAULT_PORTS.to_vec()
+    } else {
+        ports
+    };
     let addrs = network_scan::parse_cidr(&cidr)?;
     Ok(network_scan::scan_range(addrs, 64, &ports))
 }
@@ -56,6 +61,9 @@ pub fn set_network_scan_settings(state: State<AppState>, ports: Vec<u16>) -> Res
             "Port 0 ist kein gültiger TCP-Port.".to_string(),
         ));
     }
+    let mut ports = ports;
+    ports.sort_unstable();
+    ports.dedup();
     let mut config = state.config.lock().expect("Config-Mutex vergiftet");
     config.network_scan_ports = ports;
     let config_path = config.data_dir.join("config.toml");

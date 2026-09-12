@@ -1855,4 +1855,36 @@ mod tests {
 
         assert_eq!(loaded.keymap, KeymapConfig::default());
     }
+
+    #[test]
+    fn save_then_load_roundtrips_network_scan_ports() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.network_scan_ports = vec![22, 9100];
+
+        config.save(&path).unwrap();
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(loaded.network_scan_ports, vec![22, 9100]);
+        assert_eq!(loaded, config);
+    }
+
+    #[test]
+    fn config_without_network_scan_ports_field_defaults_to_default_ports() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Simulates a config.toml from before the configurable scan ports
+        // feature was introduced -- the field is entirely missing and must
+        // fall back gracefully to `network_scan::DEFAULT_PORTS` thanks to
+        // `#[serde(default)]` instead of making loading fail.
+        std::fs::write(&path, "autostart_enabled = true\n").unwrap();
+
+        let loaded = Config::load_or_default(&path).unwrap();
+
+        assert_eq!(
+            loaded.network_scan_ports,
+            crate::network_scan::DEFAULT_PORTS.to_vec()
+        );
+    }
 }

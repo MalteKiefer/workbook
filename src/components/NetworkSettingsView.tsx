@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatInvokeError } from "../lib/errors";
 
@@ -34,6 +34,16 @@ export default function NetworkSettingsView() {
   const [nmapAvailable, setNmapAvailable] = useState<boolean | null>(null);
   const [installHint, setInstallHint] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const copyResetTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current !== null) {
+        window.clearTimeout(copyResetTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,12 +111,19 @@ export default function NetworkSettingsView() {
 
   async function handleCopyHint() {
     if (installHint === null) return;
+    setCopyError(null);
     try {
       await navigator.clipboard.writeText(installHint);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyResetTimeoutRef.current !== null) {
+        window.clearTimeout(copyResetTimeoutRef.current);
+      }
+      copyResetTimeoutRef.current = window.setTimeout(() => {
+        setCopied(false);
+        copyResetTimeoutRef.current = null;
+      }, 2000);
     } catch (e) {
-      setPortsError(formatInvokeError(e));
+      setCopyError(formatInvokeError(e));
     }
   }
 
@@ -133,13 +150,19 @@ export default function NetworkSettingsView() {
           <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: "0.85rem" }}>Lade Einstellungen…</p>
         ) : (
           <>
-            <input
-              value={portsInput}
-              onChange={(e) => setPortsInput(e.target.value)}
-              disabled={portsBusy}
-              placeholder="22, 80, 443, 445, 3389, 8080"
-              style={{ fontFamily: "var(--font-mono)" }}
-            />
+            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.85rem" }}>
+              Ports
+              <input
+                value={portsInput}
+                onChange={(e) => {
+                  setPortsInput(e.target.value);
+                  setPortsStatus(null);
+                }}
+                disabled={portsBusy}
+                placeholder="22, 80, 443, 445, 3389, 8080"
+                style={{ fontFamily: "var(--font-mono)" }}
+              />
+            </label>
             <div>
               <button type="button" className="btn-primary" disabled={portsBusy} onClick={() => void handleSavePorts()}>
                 Speichern
@@ -183,8 +206,8 @@ export default function NetworkSettingsView() {
                     fontFamily: "var(--font-mono)",
                     fontSize: "0.78rem",
                     overflow: "auto",
-                    background: "var(--bg-surface)",
-                    border: "1px solid var(--border)",
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--border-subtle)",
                     borderRadius: "var(--radius-sm)",
                   }}
                 >
@@ -195,6 +218,9 @@ export default function NetworkSettingsView() {
                     {copied ? "Kopiert!" : "Kopieren"}
                   </button>
                 </div>
+                {copyError && (
+                  <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.82rem" }}>Fehler: {copyError}</p>
+                )}
               </div>
             )}
           </>
