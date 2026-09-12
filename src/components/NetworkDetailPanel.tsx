@@ -53,6 +53,9 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
   const [scanError, setScanError] = useState<string | null>(null);
   const [results, setResults] = useState<HostScanResult[]>([]);
   const [filterText, setFilterText] = useState("");
+  const [selectedIps, setSelectedIps] = useState<Set<string>>(new Set());
+  const [bulkCreateBusy, setBulkCreateBusy] = useState(false);
+  const [bulkCreateSummary, setBulkCreateSummary] = useState<{ created: number; errors: string[] } | null>(null);
 
   const [expandedIp, setExpandedIp] = useState<string | null>(null);
   const [communityByIp, setCommunityByIp] = useState<Record<string, string>>({});
@@ -92,6 +95,8 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
       setQuickConnectErrorByIp({});
       setExpandedIp(null);
       setFilterText("");
+      setSelectedIps(new Set());
+      setBulkCreateSummary(null);
     } catch (e) {
       setScanError(formatInvokeError(e));
     } finally {
@@ -202,6 +207,48 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
     });
   }
 
+  function toggleSelected(ip: string) {
+    setSelectedIps((prev) => {
+      const next = new Set(prev);
+      if (next.has(ip)) {
+        next.delete(ip);
+      } else {
+        next.add(ip);
+      }
+      return next;
+    });
+  }
+
+  async function handleBulkCreateSystems() {
+    const toCreate = results.filter((r) => selectedIps.has(r.ip));
+    if (toCreate.length === 0) return;
+    setBulkCreateBusy(true);
+    setBulkCreateSummary(null);
+    let created = 0;
+    const errors: string[] = [];
+    for (const result of toCreate) {
+      try {
+        await invoke("create_system", {
+          input: {
+            customer_id: network.customer_id,
+            name: result.hostname ?? result.ip,
+            system_type: "",
+            hostname: result.hostname ?? "",
+            ip_address: result.ip,
+            notes: "",
+            maintenance_interval_days: null,
+          },
+        });
+        created += 1;
+      } catch (e) {
+        errors.push(`${result.ip}: ${formatInvokeError(e)}`);
+      }
+    }
+    setBulkCreateSummary({ created, errors });
+    setSelectedIps(new Set());
+    setBulkCreateBusy(false);
+  }
+
   const filteredResults = results.filter((result) => {
     const needle = filterText.trim().toLowerCase();
     if (needle === "") return true;
@@ -213,6 +260,12 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
       result.open_ports.some((port) => String(port).includes(needle))
     );
   });
+
+  function toggleSelectAllVisible() {
+    const visibleIps = filteredResults.map((r) => r.ip);
+    const allVisibleSelected = visibleIps.length > 0 && visibleIps.every((ip) => selectedIps.has(ip));
+    setSelectedIps(allVisibleSelected ? new Set() : new Set(visibleIps));
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -277,6 +330,18 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
         </p>
       )}
       {scanError && <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.82rem" }}>Fehler: {scanError}</p>}
+      {bulkCreateSummary && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+          <p style={{ margin: 0, color: "var(--success)", fontSize: "0.85rem" }}>
+            {bulkCreateSummary.created} System(e) angelegt.
+          </p>
+          {bulkCreateSummary.errors.map((err) => (
+            <p key={err} style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
+              {err}
+            </p>
+          ))}
+        </div>
+      )}
 
       {results.length > 0 && (
         <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
@@ -297,6 +362,27 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
               Keine Treffer für "{filterText}".
             </p>
           ) : (
+            <>
+              {filteredResults.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.82rem" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={filteredResults.length > 0 && filteredResults.every((r) => selectedIps.has(r.ip))}
+                      onChange={toggleSelectAllVisible}
+                    />
+                    Alle auswählen
+                  </label>
+                  {selectedIps.size > 0 && (
+                    <>
+                      <span style={{ color: "var(--text-muted)" }}>{selectedIps.size} ausgewählt</span>
+                      <button type="button" onClick={() => void handleBulkCreateSystems()} disabled={bulkCreateBusy}>
+                        Als Systeme anlegen
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
               {filteredResults.map((result) => (
                 <li
@@ -310,6 +396,12 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIps.has(result.ip)}
+                      onChange={() => toggleSelected(result.ip)}
+                      style={{ flexShrink: 0 }}
+                    />
                     <span style={{ fontSize: "0.85rem" }}>
                       <span style={{ fontFamily: "var(--font-mono)" }}>{result.ip}</span>{" "}
                       <span style={{ color: "var(--text-muted)" }}>
@@ -412,7 +504,8 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                   )}
                 </li>
               ))}
-            </ul>
+              </ul>
+            </>
           )}
         </>
       )}
