@@ -91,6 +91,8 @@ interface System {
   hostname: string;
   ip_address: string;
   notes: string;
+  maintenance_interval_days: number | null;
+  operating_system: string | null;
 }
 
 type CompareField = "name" | "hostname" | "ip_address";
@@ -1013,6 +1015,8 @@ export default function LevelPluginSection() {
           hostname: field === "hostname" ? value : localSystem.hostname,
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
+          maintenance_interval_days: localSystem.maintenance_interval_days,
+          operating_system: localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
