@@ -3,9 +3,9 @@ use tauri::State;
 use crate::{network_scan, nmap, snmp_probe, AppError, AppState};
 
 #[tauri::command]
-pub fn scan_network(
+pub async fn scan_network(
     cidr: String,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<network_scan::HostScanResult>, AppError> {
     let ports = {
         let config = state.config.lock().expect("Config-Mutex vergiftet");
@@ -16,44 +16,60 @@ pub fn scan_network(
     } else {
         ports
     };
-    let addrs = network_scan::parse_cidr(&cidr)?;
-    let results = network_scan::scan_range(addrs, 64, &ports);
 
-    let arp_table = crate::arp::read_arp_table();
-    let results = results
-        .into_iter()
-        .map(|mut result| {
-            result.mac = arp_table.get(&result.ip).cloned();
-            result.vendor = result
-                .mac
-                .as_deref()
-                .and_then(crate::mac_vendor::lookup_vendor);
-            result.hostname = result.ip.parse().ok().and_then(|ip| {
-                crate::reverse_dns::lookup_hostname_with_timeout(
-                    ip,
-                    std::time::Duration::from_millis(500),
-                )
-            });
-            result
-        })
-        .collect();
+    tauri::async_runtime::spawn_blocking(
+        move || -> Result<Vec<network_scan::HostScanResult>, AppError> {
+            let addrs = network_scan::parse_cidr(&cidr)?;
+            let results = network_scan::scan_range(addrs, 64, &ports);
 
-    Ok(results)
+            let arp_table = crate::arp::read_arp_table();
+            let results = results
+                .into_iter()
+                .map(|mut result| {
+                    result.mac = arp_table.get(&result.ip).cloned();
+                    result.vendor = result
+                        .mac
+                        .as_deref()
+                        .and_then(crate::mac_vendor::lookup_vendor);
+                    result.hostname = result.ip.parse().ok().and_then(|ip| {
+                        crate::reverse_dns::lookup_hostname_with_timeout(
+                            ip,
+                            std::time::Duration::from_millis(500),
+                        )
+                    });
+                    result
+                })
+                .collect();
+
+            Ok(results)
+        },
+    )
+    .await
+    .map_err(|e| AppError::Io(format!("Scan-Task fehlgeschlagen: {e}")))?
 }
 
 #[tauri::command]
-pub fn probe_snmp(ip: String, community: String) -> Result<snmp_probe::SnmpProbeResult, AppError> {
-    snmp_probe::probe(&ip, &community)
+pub async fn probe_snmp(
+    ip: String,
+    community: String,
+) -> Result<snmp_probe::SnmpProbeResult, AppError> {
+    tauri::async_runtime::spawn_blocking(move || snmp_probe::probe(&ip, &community))
+        .await
+        .map_err(|e| AppError::Io(format!("SNMP-Abfrage-Task fehlgeschlagen: {e}")))?
 }
 
 #[tauri::command]
-pub fn is_nmap_available() -> bool {
-    nmap::is_available()
+pub async fn is_nmap_available() -> bool {
+    tauri::async_runtime::spawn_blocking(nmap::is_available)
+        .await
+        .unwrap_or(false)
 }
 
 #[tauri::command]
-pub fn run_nmap_scan(target: String) -> Result<String, AppError> {
-    nmap::run_scan(&target)
+pub async fn run_nmap_scan(target: String) -> Result<String, AppError> {
+    tauri::async_runtime::spawn_blocking(move || nmap::run_scan(&target))
+        .await
+        .map_err(|e| AppError::Io(format!("nmap-Task fehlgeschlagen: {e}")))?
 }
 
 /// Non-secret network-scan settings surfaced in Settings -> Netzwerk.
