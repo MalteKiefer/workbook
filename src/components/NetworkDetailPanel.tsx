@@ -6,6 +6,10 @@ import { formatInvokeError } from "../lib/errors";
 interface HostScanResult {
   ip: string;
   open_ports: number[];
+  device_type: string | null;
+  mac: string | null;
+  vendor: string | null;
+  hostname: string | null;
 }
 
 // Mirrors src-tauri/src/snmp_probe.rs::SnmpProbeResult.
@@ -234,6 +238,13 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                   )}
                 </span>
               </div>
+              {(result.hostname || result.vendor || result.device_type || result.mac) && (
+                <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                  {[result.hostname, result.mac && result.vendor ? `${result.mac} (${result.vendor})` : result.mac, result.device_type]
+                    .filter((part): part is string => Boolean(part))
+                    .join(" · ")}
+                </span>
+              )}
               {createErrors[result.ip] && (
                 <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
                   Fehler: {createErrors[result.ip]}
