@@ -52,6 +52,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [results, setResults] = useState<HostScanResult[]>([]);
+  const [previousResults, setPreviousResults] = useState<HostScanResult[] | null>(null);
   const [filterText, setFilterText] = useState("");
   const [selectedIps, setSelectedIps] = useState<Set<string>>(new Set());
   const [bulkCreateBusy, setBulkCreateBusy] = useState(false);
@@ -91,6 +92,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
     setScanBusy(true);
     try {
       const found = await invoke<HostScanResult[]>("scan_network", { cidr: target });
+      setPreviousResults(results.length > 0 ? results : null);
       setResults(found);
       setQuickConnectErrorByIp({});
       setExpandedIp(null);
@@ -261,6 +263,12 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
     );
   });
 
+  const previousIpSet = new Set((previousResults ?? []).map((r) => r.ip));
+  const isNewSinceLastScan = (ip: string) => previousResults !== null && !previousIpSet.has(ip);
+
+  const currentIpSet = new Set(results.map((r) => r.ip));
+  const goneSinceLastScan = (previousResults ?? []).filter((r) => !currentIpSet.has(r.ip));
+
   function toggleSelectAllVisible() {
     const visibleIps = filteredResults.map((r) => r.ip);
     const allVisibleSelected = visibleIps.length > 0 && visibleIps.every((ip) => selectedIps.has(ip));
@@ -407,6 +415,20 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                       <span style={{ color: "var(--text-muted)" }}>
                         {result.open_ports.length > 0 ? result.open_ports.join(", ") : "keine bekannten Ports offen"}
                       </span>
+                      {isNewSinceLastScan(result.ip) && (
+                        <span
+                          style={{
+                            marginLeft: "0.4rem",
+                            fontSize: "0.7rem",
+                            color: "var(--success)",
+                            border: "1px solid var(--success)",
+                            borderRadius: "var(--radius-sm)",
+                            padding: "0.05rem 0.3rem",
+                          }}
+                        >
+                          Neu
+                        </span>
+                      )}
                     </span>
                     <HostActionsMenu
                       result={result}
@@ -508,6 +530,31 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
             </>
           )}
         </>
+      )}
+
+      {previousResults !== null && goneSinceLastScan.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.3rem",
+            padding: "0.5rem 0.6rem",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: "var(--radius-sm)",
+          }}
+        >
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-muted)" }}>
+            Seit letztem Scan nicht mehr erreichbar:
+          </p>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {goneSinceLastScan.map((r) => (
+              <li key={r.ip} style={{ fontSize: "0.82rem" }}>
+                <span style={{ fontFamily: "var(--font-mono)" }}>{r.ip}</span>
+                {r.hostname && <span style={{ color: "var(--text-muted)" }}> ({r.hostname})</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {nmapBusy && <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-secondary)" }}>Scanne mit nmap…</p>}
