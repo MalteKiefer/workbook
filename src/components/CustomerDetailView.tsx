@@ -5,6 +5,7 @@ import type { CustomerDetailTab } from "../state/appStore";
 import { formatInvokeError } from "../lib/errors";
 import { isExpiringSoon } from "../lib/expiry";
 import SystemListView from "./SystemListView";
+import TicketsPanel from "./TicketsPanel";
 import LocationsPanel from "./LocationsPanel";
 import NetworksPanel from "./NetworksPanel";
 import ExpiringItemsPanel from "./ExpiringItemsPanel";
@@ -242,6 +243,7 @@ export default function CustomerDetailView() {
   const tabs: { id: CustomerDetailTab; label: string }[] = [
     { id: "uebersicht", label: "Übersicht" },
     { id: "systeme", label: "Systeme" },
+    { id: "tickets", label: "Tickets" },
     { id: "standorte", label: "Standorte" },
     { id: "netzwerke", label: "Netzwerke" },
     { id: "ablauf", label: "Ablauf-Tracking" },
@@ -272,6 +274,7 @@ export default function CustomerDetailView() {
       </div>
       {customerDetailTab === "uebersicht" && <UebersichtTab customerId={selectedCustomerId} />}
       {customerDetailTab === "systeme" && <SystemListView />}
+      {customerDetailTab === "tickets" && <TicketsPanel customerId={selectedCustomerId} />}
       {customerDetailTab === "standorte" && <LocationsPanel customerId={selectedCustomerId} />}
       {customerDetailTab === "netzwerke" && <NetworksPanel customerId={selectedCustomerId} />}
       {customerDetailTab === "ablauf" && <ExpiringItemsPanel customerId={selectedCustomerId} />}
