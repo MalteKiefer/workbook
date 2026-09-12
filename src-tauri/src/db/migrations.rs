@@ -47,6 +47,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 9,
         sql: include_str!("../../migrations/0009_networks.sql"),
     },
+    Migration {
+        version: 10,
+        sql: include_str!("../../migrations/0010_networks_location.sql"),
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> Result<i64, AppError> {
@@ -119,7 +123,7 @@ mod tests {
 
         run_migrations(&mut conn, &db_path, &berlin()).unwrap();
 
-        assert_eq!(current_version(&conn).unwrap(), 9);
+        assert_eq!(current_version(&conn).unwrap(), 10);
 
         for table in [
             "customers",

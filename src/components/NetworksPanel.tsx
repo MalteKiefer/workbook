@@ -3,23 +3,31 @@ import { invoke } from "@tauri-apps/api/core";
 import { formatInvokeError } from "../lib/errors";
 import NetworkDetailPanel from "./NetworkDetailPanel";
 
+interface Location {
+  id: number;
+  name: string;
+}
+
 interface Network {
   id: number;
   customer_id: number;
   name: string;
   cidr: string;
+  location_id: number | null;
   notes: string;
 }
 
 interface FormState {
   name: string;
   cidr: string;
+  location_id: number | null;
   notes: string;
 }
 
 const EMPTY_FORM: FormState = {
   name: "",
   cidr: "",
+  location_id: null,
   notes: "",
 };
 
@@ -30,6 +38,7 @@ export default function NetworksPanel({ customerId }: { customerId: number }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewingNetwork, setViewingNetwork] = useState<Network | null>(null);
+  const [locations, setLocations] = useState<Location[]>([]);
 
   const reload = useCallback(() => {
     invoke<Network[]>("list_networks_for_customer", { customerId })
@@ -41,6 +50,12 @@ export default function NetworksPanel({ customerId }: { customerId: number }) {
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    invoke<Location[]>("list_locations_for_customer", { customerId })
+      .then(setLocations)
+      .catch(() => setLocations([]));
+  }, [customerId]);
+
   function startCreate() {
     setEditingId("new");
     setForm(EMPTY_FORM);
@@ -49,7 +64,7 @@ export default function NetworksPanel({ customerId }: { customerId: number }) {
 
   function startEdit(n: Network) {
     setEditingId(n.id);
-    setForm({ name: n.name, cidr: n.cidr, notes: n.notes });
+    setForm({ name: n.name, cidr: n.cidr, location_id: n.location_id, notes: n.notes });
     setError(null);
   }
 
@@ -133,6 +148,22 @@ export default function NetworksPanel({ customerId }: { customerId: number }) {
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            Standort (optional)
+            <select
+              value={form.location_id ?? ""}
+              onChange={(e) =>
+                setForm({ ...form, location_id: e.target.value === "" ? null : Number(e.target.value) })
+              }
+            >
+              <option value="">Kein Standort</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
             Notizen
             <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} />
           </label>
@@ -167,6 +198,12 @@ export default function NetworksPanel({ customerId }: { customerId: number }) {
           >
             <span style={{ fontSize: "0.85rem" }}>
               {n.name} <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{n.cidr}</span>
+              {n.location_id !== null && (
+                <span style={{ color: "var(--text-muted)" }}>
+                  {" "}
+                  · {locations.find((l) => l.id === n.location_id)?.name ?? `Standort #${n.location_id}`}
+                </span>
+              )}
             </span>
             <span style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
               <button type="button" onClick={() => setViewingNetwork(n)} disabled={busy}>
