@@ -436,6 +436,10 @@ pub fn run() {
             commands::networks::create_network,
             commands::networks::update_network,
             commands::networks::delete_network,
+            commands::tickets::list_tickets_for_customer,
+            commands::tickets::create_ticket,
+            commands::tickets::update_ticket,
+            commands::tickets::delete_ticket,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -13,6 +13,7 @@ pub mod pool;
 pub mod search;
 pub mod systems;
 pub mod tags;
+pub mod tickets;
 pub mod vault;
 
 #[cfg(test)]
