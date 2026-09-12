@@ -35,16 +35,22 @@ fn validate_target(target: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Runs `nmap -sV -T4 <target>` (version detection over a plain TCP
-/// connect scan -- deliberately NOT `-sS`/`-O`, which need raw sockets
-/// and elevated privileges on every platform this app targets) and
-/// returns its combined stdout, or an error if nmap isn't installed or
-/// exits non-zero. Output is shown to the admin as-is (see brief: no
-/// structured parsing in this feature).
+/// Runs `nmap -sV -T4 --max-parallelism 10 <target>` (version detection
+/// over a plain TCP connect scan -- deliberately NOT `-sS`/`-O`, which
+/// need raw sockets and elevated privileges on every platform this app
+/// targets) and returns its combined stdout, or an error if nmap isn't
+/// installed or exits non-zero. `--max-parallelism 10` works around a
+/// real nmap bug (nmap/nmap#1764, fixed upstream in 7.90): nmap <7.90
+/// asserts `htn.toclock_running == true` in Target.cc and crashes when
+/// scanning ~100+ hosts at once (e.g. a whole /24) at default
+/// parallelism -- capping it avoids the crash on the older nmap builds
+/// this app has no control over, and is harmless on 7.90+. Output is
+/// shown to the admin as-is (see brief: no structured parsing in this
+/// feature).
 pub fn run_scan(target: &str) -> Result<String, AppError> {
     validate_target(target)?;
     let output = Command::new("nmap")
-        .args(["-sV", "-T4", target])
+        .args(["-sV", "-T4", "--max-parallelism", "10", target])
         .output()
         .map_err(|e| AppError::Validation(format!("nmap konnte nicht gestartet werden: {e}")))?;
     if !output.status.success() {
