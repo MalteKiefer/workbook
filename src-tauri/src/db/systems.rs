@@ -286,6 +286,7 @@ mod tests {
         }"#;
         let parsed: NewSystem = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.maintenance_interval_days, None);
+        assert_eq!(parsed.operating_system, None);
     }
 
     #[test]
@@ -299,6 +300,7 @@ mod tests {
         }"#;
         let parsed: UpdateSystem = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.maintenance_interval_days, None);
+        assert_eq!(parsed.operating_system, None);
     }
 
     fn seed_customer(conn: &Connection) -> i64 {
@@ -630,7 +632,7 @@ mod tests {
         .unwrap();
         assert_eq!(without_os.operating_system, None);
 
-        let mut input = NewSystem {
+        let input = NewSystem {
             customer_id,
             name: "Mit Betriebssystem".into(),
             system_type: "".into(),
@@ -638,9 +640,8 @@ mod tests {
             ip_address: "".into(),
             notes: "".into(),
             maintenance_interval_days: None,
-            operating_system: None,
+            operating_system: Some("Windows 11 Pro".to_string()),
         };
-        input.operating_system = Some("Windows 11 Pro".to_string());
         let created = create(&conn, input, &berlin()).unwrap();
         assert_eq!(created.operating_system, Some("Windows 11 Pro".to_string()));
         assert_eq!(

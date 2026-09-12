@@ -142,8 +142,12 @@ export default function SystemForm() {
     const effectiveMaintenanceIntervalDays = trimmedInterval === "" ? null : Number(trimmedInterval);
     // Empty input means "unknown" (null), same convention as every other
     // optional text field's payload construction elsewhere in this codebase
-    // (e.g. NetworksPanel.tsx's notes handling).
-    const effectiveOperatingSystem = operatingSystem.trim() === "" ? null : operatingSystem.trim();
+    // (e.g. NetworksPanel.tsx's notes handling). Also gated on
+    // showNetworkFields like effectiveHostname/effectiveIpAddress above: a
+    // SaaS/Cloud-Dienst system hides this field, so whatever was typed
+    // before switching Typ must be cleared rather than silently persisted.
+    const effectiveOperatingSystem =
+      showNetworkFields && operatingSystem.trim() !== "" ? operatingSystem.trim() : null;
     try {
       if (isEditMode) {
         await invoke("update_system", {
