@@ -66,6 +66,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
   const [nmapOutput, setNmapOutput] = useState<string | null>(null);
   const [nmapError, setNmapError] = useState<string | null>(null);
   const [nmapCopied, setNmapCopied] = useState(false);
+  const [osDetection, setOsDetection] = useState(false);
   const nmapCopyResetTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -167,7 +168,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
     setNmapError(null);
     setNmapOutput(null);
     try {
-      const output = await invoke<string>("run_nmap_scan", { target });
+      const output = await invoke<string>("run_nmap_scan", { target, osDetection });
       setNmapOutput(output);
     } catch (e) {
       setNmapError(formatInvokeError(e));
@@ -246,11 +247,28 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
             Mit nmap scannen
           </button>
         )}
+        {nmapAvailable === true && (
+          <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.82rem", whiteSpace: "nowrap" }}>
+            <input
+              type="checkbox"
+              checked={osDetection}
+              onChange={(e) => setOsDetection(e.target.checked)}
+              disabled={nmapBusy}
+            />
+            Betriebssystem erkennen (-O)
+          </label>
+        )}
       </div>
       {nmapAvailable === false && (
         <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-muted)" }}>
           nmap nicht gefunden — für erweiterte Scans lokal installieren, dieses Feature erkennt eine vorhandene
           Installation automatisch.
+        </p>
+      )}
+      {osDetection && (
+        <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-muted)" }}>
+          Benötigt Administratorrechte -- ohne diese meldet nmap einen Berechtigungsfehler, der wie jeder andere
+          nmap-Fehler unten angezeigt wird.
         </p>
       )}
       {scanBusy && (

@@ -66,8 +66,8 @@ pub async fn is_nmap_available() -> bool {
 }
 
 #[tauri::command]
-pub async fn run_nmap_scan(target: String) -> Result<String, AppError> {
-    tauri::async_runtime::spawn_blocking(move || nmap::run_scan(&target))
+pub async fn run_nmap_scan(target: String, os_detection: bool) -> Result<String, AppError> {
+    tauri::async_runtime::spawn_blocking(move || nmap::run_scan(&target, os_detection))
         .await
         .map_err(|e| AppError::Io(format!("nmap-Task fehlgeschlagen: {e}")))?
 }
