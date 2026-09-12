@@ -22,13 +22,18 @@ interface SnmpProbeResult {
   sys_up_time: string | null;
 }
 
-// Local subset of src-tauri/src/db/systems.rs::System -- only the fields
-// needed to match a scanned host against an already-documented System.
+// Local subset of src-tauri/src/db/systems.rs::System -- widened to the
+// full set of fields update_system needs so a backfill write never has to
+// omit (and thereby silently clear) anything else on the System.
 interface KnownSystem {
   id: number;
   name: string;
+  system_type: string;
   hostname: string;
   ip_address: string;
+  notes: string;
+  maintenance_interval_days: number | null;
+  operating_system: string | null;
 }
 
 interface Network {
@@ -62,6 +67,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
   const [scanError, setScanError] = useState<string | null>(null);
   const [results, setResults] = useState<HostScanResult[]>([]);
   const [knownSystems, setKnownSystems] = useState<KnownSystem[] | null>(null);
+  const [backfilledIds, setBackfilledIds] = useState<Set<number>>(new Set());
   const [previousResults, setPreviousResults] = useState<HostScanResult[] | null>(null);
   const [filterText, setFilterText] = useState("");
   const [selectedIps, setSelectedIps] = useState<Set<string>>(new Set());
@@ -106,6 +112,68 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
   useEffect(() => {
     reloadKnownSystems();
   }, [reloadKnownSystems]);
+
+  const backfillInFlightRef = useRef(false);
+
+  useEffect(() => {
+    if (knownSystems === null || results.length === 0) return;
+    if (backfillInFlightRef.current) return;
+
+    const patchesById = new Map<number, { hostname?: string; ip_address?: string }>();
+    for (const result of results) {
+      const known = findKnownSystem(result);
+      if (!known) continue;
+      const patch: { hostname?: string; ip_address?: string } = {};
+      const scannedHostname = result.hostname?.trim();
+      if (known.hostname.trim() === "" && scannedHostname) {
+        patch.hostname = scannedHostname;
+      }
+      const scannedIp = result.ip.trim();
+      if (known.ip_address.trim() === "" && scannedIp !== "") {
+        patch.ip_address = scannedIp;
+      }
+      if (Object.keys(patch).length > 0) {
+        patchesById.set(known.id, patch);
+      }
+    }
+    if (patchesById.size === 0) return;
+
+    backfillInFlightRef.current = true;
+    void (async () => {
+      const succeededIds: number[] = [];
+      for (const [id, patch] of patchesById) {
+        const known = knownSystems.find((s) => s.id === id);
+        if (!known) continue;
+        try {
+          await invoke("update_system", {
+            id,
+            input: {
+              name: known.name,
+              system_type: known.system_type,
+              hostname: patch.hostname ?? known.hostname,
+              ip_address: patch.ip_address ?? known.ip_address,
+              notes: known.notes,
+              maintenance_interval_days: known.maintenance_interval_days,
+              operating_system: known.operating_system,
+            },
+          });
+          succeededIds.push(id);
+        } catch {
+          // Best-effort, matching this file's existing conventions (e.g.
+          // reloadKnownSystems' own .catch) -- a failed backfill is not
+          // worth surfacing as a scan error, the badge simply won't show
+          // as backfilled for that one system and the field stays empty
+          // until the next scan or a manual edit.
+        }
+      }
+      if (succeededIds.length > 0) {
+        setBackfilledIds((prev) => new Set([...prev, ...succeededIds]));
+        reloadKnownSystems();
+      }
+      backfillInFlightRef.current = false;
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results, knownSystems, reloadKnownSystems]);
 
   async function handleScan() {
     setScanError(null);
@@ -479,22 +547,27 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                       )}
                       {(() => {
                         const knownSystem = findKnownSystem(result);
+                        if (!knownSystem) return null;
+                        const wasBackfilled = backfilledIds.has(knownSystem.id);
                         return (
-                          knownSystem && (
-                            <span
-                              title={`Bereits als System erfasst: ${knownSystem.name}`}
-                              style={{
-                                marginLeft: "0.4rem",
-                                fontSize: "0.7rem",
-                                color: "var(--accent)",
-                                border: "1px solid var(--accent)",
-                                borderRadius: "var(--radius-sm)",
-                                padding: "0.05rem 0.3rem",
-                              }}
-                            >
-                              Erfasst: {knownSystem.name}
-                            </span>
-                          )
+                          <span
+                            title={
+                              wasBackfilled
+                                ? `Bereits als System erfasst: ${knownSystem.name} (Hostname/IP automatisch ergänzt)`
+                                : `Bereits als System erfasst: ${knownSystem.name}`
+                            }
+                            style={{
+                              marginLeft: "0.4rem",
+                              fontSize: "0.7rem",
+                              color: "var(--accent)",
+                              border: "1px solid var(--accent)",
+                              borderRadius: "var(--radius-sm)",
+                              padding: "0.05rem 0.3rem",
+                            }}
+                          >
+                            Erfasst: {knownSystem.name}
+                            {wasBackfilled ? " (ergänzt)" : ""}
+                          </span>
                         );
                       })()}
                     </span>
