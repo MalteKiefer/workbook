@@ -197,6 +197,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )

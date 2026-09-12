@@ -154,6 +154,7 @@ mod tests {
                 ip_address: "10.0.0.5".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
@@ -294,6 +295,7 @@ mod tests {
                 ip_address: "".into(),
                 notes: "".into(),
                 maintenance_interval_days: None,
+                operating_system: None,
             },
             &berlin(),
         )
