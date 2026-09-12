@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatInvokeError } from "../lib/errors";
 
@@ -58,6 +59,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
   const [snmpBusyIp, setSnmpBusyIp] = useState<string | null>(null);
   const [snmpResultByIp, setSnmpResultByIp] = useState<Record<string, SnmpProbeResult>>({});
   const [snmpErrorByIp, setSnmpErrorByIp] = useState<Record<string, string>>({});
+  const [quickConnectErrorByIp, setQuickConnectErrorByIp] = useState<Record<string, string>>({});
 
   const [nmapAvailable, setNmapAvailable] = useState<boolean | null>(null);
   const [nmapBusy, setNmapBusy] = useState(false);
@@ -145,6 +147,45 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
       setSnmpErrorByIp((prev) => ({ ...prev, [ip]: formatInvokeError(e) }));
     } finally {
       setSnmpBusyIp(null);
+    }
+  }
+
+  async function handleOpenUrl(ip: string, url: string) {
+    setQuickConnectErrorByIp((prev) => {
+      const next = { ...prev };
+      delete next[ip];
+      return next;
+    });
+    try {
+      await invoke("open_url", { url });
+    } catch (e) {
+      setQuickConnectErrorByIp((prev) => ({ ...prev, [ip]: formatInvokeError(e) }));
+    }
+  }
+
+  async function handleOpenRdp(ip: string) {
+    setQuickConnectErrorByIp((prev) => {
+      const next = { ...prev };
+      delete next[ip];
+      return next;
+    });
+    try {
+      await invoke("open_rdp", { ip });
+    } catch (e) {
+      setQuickConnectErrorByIp((prev) => ({ ...prev, [ip]: formatInvokeError(e) }));
+    }
+  }
+
+  async function handleOpenShare(ip: string) {
+    setQuickConnectErrorByIp((prev) => {
+      const next = { ...prev };
+      delete next[ip];
+      return next;
+    });
+    try {
+      await invoke("open_share", { ip });
+    } catch (e) {
+      setQuickConnectErrorByIp((prev) => ({ ...prev, [ip]: formatInvokeError(e) }));
     }
   }
 
@@ -246,24 +287,16 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                     {result.open_ports.length > 0 ? result.open_ports.join(", ") : "keine bekannten Ports offen"}
                   </span>
                 </span>
-                <span style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
-                  <button type="button" onClick={() => toggleSnmpSection(result.ip)}>
-                    SNMP abfragen
-                  </button>
-                  {createdIps.has(result.ip) ? (
-                    <button type="button" disabled>
-                      Angelegt ✓
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void handleCreateSystem(result)}
-                      disabled={creatingIp === result.ip}
-                    >
-                      Als System anlegen
-                    </button>
-                  )}
-                </span>
+                <HostActionsMenu
+                  result={result}
+                  isCreated={createdIps.has(result.ip)}
+                  isCreating={creatingIp === result.ip}
+                  onToggleSnmp={() => toggleSnmpSection(result.ip)}
+                  onCreateSystem={() => void handleCreateSystem(result)}
+                  onOpenUrl={(url) => void handleOpenUrl(result.ip, url)}
+                  onOpenRdp={() => void handleOpenRdp(result.ip)}
+                  onOpenShare={() => void handleOpenShare(result.ip)}
+                />
               </div>
               {(result.hostname || result.mac || result.vendor || result.device_type) && (
                 <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
@@ -279,6 +312,11 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
               {createErrors[result.ip] && (
                 <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
                   Fehler: {createErrors[result.ip]}
+                </p>
+              )}
+              {quickConnectErrorByIp[result.ip] && (
+                <p style={{ margin: 0, color: "var(--danger)", fontSize: "0.8rem" }}>
+                  Fehler: {quickConnectErrorByIp[result.ip]}
                 </p>
               )}
               {expandedIp === result.ip && (
@@ -393,6 +431,157 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
           >
             {nmapOutput}
           </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const WEB_PORT_SCHEMES: Record<number, "http" | "https"> = {
+  80: "http",
+  443: "https",
+  8080: "http",
+  8443: "https",
+};
+
+interface HostActionsMenuProps {
+  result: HostScanResult;
+  isCreated: boolean;
+  isCreating: boolean;
+  onToggleSnmp: () => void;
+  onCreateSystem: () => void;
+  onOpenUrl: (url: string) => void;
+  onOpenRdp: () => void;
+  onOpenShare: () => void;
+}
+
+function HostActionsMenu({
+  result,
+  isCreated,
+  isCreating,
+  onToggleSnmp,
+  onCreateSystem,
+  onOpenUrl,
+  onOpenRdp,
+  onOpenShare,
+}: HostActionsMenuProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const webPortItems = result.open_ports
+    .filter((port) => port in WEB_PORT_SCHEMES)
+    .map((port) => {
+      const scheme = WEB_PORT_SCHEMES[port];
+      const url = `${scheme}://${result.ip}:${port}`;
+      return { key: `web-${port}`, label: `Im Browser öffnen (${url})`, action: () => onOpenUrl(url) };
+    });
+  const sshItem = result.open_ports.includes(22)
+    ? { key: "ssh", label: "Per SSH verbinden", action: () => onOpenUrl(`ssh://${result.ip}`) }
+    : null;
+  const rdpItem = result.open_ports.includes(3389)
+    ? { key: "rdp", label: "Remotedesktop öffnen (RDP)", action: onOpenRdp }
+    : null;
+  const shareItem = result.open_ports.includes(445)
+    ? { key: "share", label: "Netzwerkfreigabe öffnen (SMB)", action: onOpenShare }
+    : null;
+  const connectItems = [...webPortItems, sshItem, rdpItem, shareItem].filter(
+    (item): item is { key: string; label: string; action: () => void } => item !== null
+  );
+
+  function runAndClose(action: () => void) {
+    action();
+    setOpen(false);
+  }
+
+  const menuItemStyle: CSSProperties = {
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    background: "transparent",
+    border: "none",
+    padding: "0.4rem 0.6rem",
+    fontSize: "0.85rem",
+    borderRadius: "var(--radius-sm)",
+    cursor: "pointer",
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: "relative", flexShrink: 0 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Aktionen für ${result.ip}`}
+        style={{ fontSize: "1rem", lineHeight: 1, padding: "0.3rem 0.6rem" }}
+      >
+        ⋮
+      </button>
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            right: 0,
+            top: "100%",
+            marginTop: "0.25rem",
+            zIndex: 10,
+            minWidth: "15rem",
+            display: "flex",
+            flexDirection: "column",
+            padding: "0.25rem",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            boxShadow: "var(--shadow-sm)",
+          }}
+        >
+          <button type="button" role="menuitem" style={menuItemStyle} onClick={() => runAndClose(onToggleSnmp)}>
+            SNMP abfragen
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            style={menuItemStyle}
+            disabled={isCreated || isCreating}
+            onClick={() => runAndClose(onCreateSystem)}
+          >
+            {isCreated ? "Angelegt ✓" : "Als System anlegen"}
+          </button>
+          {connectItems.length > 0 && (
+            <>
+              <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
+              {connectItems.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  role="menuitem"
+                  style={menuItemStyle}
+                  onClick={() => runAndClose(item.action)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
