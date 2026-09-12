@@ -27,6 +27,7 @@ pub mod network_scan;
 pub mod networks;
 pub mod plugins;
 pub mod pulseway;
+pub mod quick_connect;
 pub mod quickcapture;
 pub mod search;
 pub mod settings;

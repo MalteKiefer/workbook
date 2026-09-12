@@ -17,6 +17,7 @@ pub mod maintenance;
 pub mod network_scan;
 pub mod nmap;
 pub mod plugin;
+pub mod quick_connect;
 pub mod quickcapture;
 pub mod reverse_dns;
 pub mod snmp_probe;
@@ -428,6 +429,9 @@ pub fn run() {
             commands::network_scan::get_network_scan_settings,
             commands::network_scan::set_network_scan_settings,
             commands::network_scan::nmap_install_hint,
+            commands::quick_connect::open_url,
+            commands::quick_connect::open_rdp,
+            commands::quick_connect::open_share,
             commands::networks::list_networks_for_customer,
             commands::networks::create_network,
             commands::networks::update_network,
