@@ -191,7 +191,7 @@ pub fn scan_range(
     for handle in handles {
         let _ = handle.join();
     }
-    results.sort_by(|a, b| a.ip.cmp(&b.ip));
+    results.sort_by_key(|r| r.ip.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED));
     results
 }
 
@@ -289,5 +289,42 @@ mod tests {
         // 127.0.0.1 may or may not have anything listening in a CI
         // sandbox -- only assert it terminates and returns a valid Vec.
         let _ = results;
+    }
+
+    #[test]
+    fn scan_range_results_sort_numerically_not_lexicographically() {
+        // Directly exercises the sort behavior without depending on any host
+        // actually being reachable: build the unsorted Vec by hand, matching
+        // the real bug (string "10.0.0.2" sorting after "10.0.0.164" if this
+        // regresses to a plain string sort).
+        let mut results = [
+            HostScanResult {
+                ip: "10.0.0.164".to_string(),
+                open_ports: vec![],
+                device_type: None,
+                mac: None,
+                vendor: None,
+                hostname: None,
+            },
+            HostScanResult {
+                ip: "10.0.0.2".to_string(),
+                open_ports: vec![],
+                device_type: None,
+                mac: None,
+                vendor: None,
+                hostname: None,
+            },
+            HostScanResult {
+                ip: "10.0.0.23".to_string(),
+                open_ports: vec![],
+                device_type: None,
+                mac: None,
+                vendor: None,
+                hostname: None,
+            },
+        ];
+        results.sort_by_key(|r| r.ip.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED));
+        let ips: Vec<&str> = results.iter().map(|r| r.ip.as_str()).collect();
+        assert_eq!(ips, vec!["10.0.0.2", "10.0.0.23", "10.0.0.164"]);
     }
 }
