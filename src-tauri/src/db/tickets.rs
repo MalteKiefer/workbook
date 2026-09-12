@@ -66,6 +66,15 @@ fn validate_status(status: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+fn validate_time_spent_minutes(minutes: i64) -> Result<(), AppError> {
+    if minutes < 0 {
+        return Err(AppError::Validation(
+            "Zeitaufwand darf nicht negativ sein.".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn row_to_ticket(row: &Row) -> rusqlite::Result<Ticket> {
     Ok(Ticket {
         id: row.get("id")?,
@@ -90,6 +99,7 @@ pub fn create(conn: &Connection, input: NewTicket, tz: &Tz) -> Result<Ticket, Ap
         input.status
     };
     validate_status(&status)?;
+    validate_time_spent_minutes(input.time_spent_minutes)?;
     let (now_utc, now_tz) = now_with_tz(tz);
     conn.execute(
         "INSERT INTO tickets (customer_id, system_id, title, description, status, time_spent_minutes, created_at_utc, created_at_tz, updated_at_utc, updated_at_tz)
@@ -132,6 +142,7 @@ pub fn update(
 ) -> Result<Ticket, AppError> {
     validate_title(&input.title)?;
     validate_status(&input.status)?;
+    validate_time_spent_minutes(input.time_spent_minutes)?;
     let (now_utc, now_tz) = now_with_tz(tz);
     let changed = conn.execute(
         "UPDATE tickets SET system_id = ?1, title = ?2, description = ?3, status = ?4, time_spent_minutes = ?5, updated_at_utc = ?6, updated_at_tz = ?7 WHERE id = ?8",
@@ -230,19 +241,44 @@ mod tests {
     }
 
     #[test]
-    fn list_for_customer_orders_open_before_closed() {
+    fn list_for_customer_orders_open_before_closed_then_newest_first() {
         let conn = migrated_connection();
         let customer_id = seed_customer(&conn);
+
+        let mut older_open = sample(customer_id);
+        older_open.title = "Alt offen".to_string();
+        let older_open = create(&conn, older_open, &berlin()).unwrap();
+
+        let mut newer_open = sample(customer_id);
+        newer_open.title = "Neu offen".to_string();
+        let newer_open = create(&conn, newer_open, &berlin()).unwrap();
+
         let mut closed = sample(customer_id);
         closed.title = "Erledigt".to_string();
         closed.status = "closed".to_string();
-        create(&conn, closed, &berlin()).unwrap();
-        create(&conn, sample(customer_id), &berlin()).unwrap(); // "Drucker klemmt", open
+        let closed = create(&conn, closed, &berlin()).unwrap();
+
+        // now_with_tz() only has millisecond resolution, so three creates in the
+        // same test tick share one timestamp and neither ORDER BY key is exercised.
+        // Pin distinct values, with the CLOSED ticket deliberately the newest, so a
+        // naive `ORDER BY created_at_utc DESC` would wrongly float it to the top.
+        for (id, ts) in [
+            (older_open.id, "2026-01-01T10:00:00.000Z"),
+            (newer_open.id, "2026-01-02T10:00:00.000Z"),
+            (closed.id, "2026-01-03T10:00:00.000Z"),
+        ] {
+            conn.execute(
+                "UPDATE tickets SET created_at_utc = ?1 WHERE id = ?2",
+                params![ts, id],
+            )
+            .unwrap();
+        }
 
         let tickets = list_for_customer(&conn, customer_id).unwrap();
-        assert_eq!(tickets.len(), 2);
-        assert_eq!(tickets[0].status, "open");
-        assert_eq!(tickets[1].status, "closed");
+        assert_eq!(
+            tickets.iter().map(|t| t.id).collect::<Vec<_>>(),
+            vec![newer_open.id, older_open.id, closed.id]
+        );
     }
 
     #[test]
@@ -284,6 +320,60 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.code(), "not_found");
+    }
+
+    #[test]
+    fn update_rejects_empty_status() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        let created = create(&conn, sample(customer_id), &berlin()).unwrap();
+        // The empty string is exactly the case NewTicket defaults to "open" and
+        // UpdateTicket must reject -- this pins that deliberate asymmetry.
+        let err = update(
+            &conn,
+            created.id,
+            UpdateTicket {
+                system_id: None,
+                title: "x".to_string(),
+                description: "".to_string(),
+                status: "".to_string(),
+                time_spent_minutes: 0,
+            },
+            &berlin(),
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "validation");
+    }
+
+    #[test]
+    fn create_rejects_negative_time_spent_minutes() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        let mut input = sample(customer_id);
+        input.time_spent_minutes = -5;
+        let err = create(&conn, input, &berlin()).unwrap_err();
+        assert_eq!(err.code(), "validation");
+    }
+
+    #[test]
+    fn update_rejects_negative_time_spent_minutes() {
+        let conn = migrated_connection();
+        let customer_id = seed_customer(&conn);
+        let created = create(&conn, sample(customer_id), &berlin()).unwrap();
+        let err = update(
+            &conn,
+            created.id,
+            UpdateTicket {
+                system_id: None,
+                title: "x".to_string(),
+                description: "".to_string(),
+                status: "open".to_string(),
+                time_spent_minutes: -1,
+            },
+            &berlin(),
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "validation");
     }
 
     #[test]
