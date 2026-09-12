@@ -17,7 +17,28 @@ pub fn scan_network(
         ports
     };
     let addrs = network_scan::parse_cidr(&cidr)?;
-    Ok(network_scan::scan_range(addrs, 64, &ports))
+    let results = network_scan::scan_range(addrs, 64, &ports);
+
+    let arp_table = crate::arp::read_arp_table();
+    let results = results
+        .into_iter()
+        .map(|mut result| {
+            result.mac = arp_table.get(&result.ip).cloned();
+            result.vendor = result
+                .mac
+                .as_deref()
+                .and_then(crate::mac_vendor::lookup_vendor);
+            result.hostname = result.ip.parse().ok().and_then(|ip| {
+                crate::reverse_dns::lookup_hostname_with_timeout(
+                    ip,
+                    std::time::Duration::from_millis(500),
+                )
+            });
+            result
+        })
+        .collect();
+
+    Ok(results)
 }
 
 #[tauri::command]

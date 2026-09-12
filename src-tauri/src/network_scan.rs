@@ -31,6 +31,19 @@ const MAX_HOSTS: usize = 4096;
 pub struct HostScanResult {
     pub ip: String,
     pub open_ports: Vec<u16>,
+    /// Coarse, best-effort guess from `open_ports` alone -- e.g. "Windows
+    /// (vermutlich)". `None` when nothing in `open_ports` gives a strong
+    /// enough hint. Never a substitute for the SNMP probe's actual
+    /// `sysDescr`, which this panel already offers as a separate per-host
+    /// action -- just a free clue from data the scan already has.
+    pub device_type: Option<String>,
+    /// Populated by the Tauri command layer AFTER `scan_range` returns
+    /// (see `commands::network_scan::scan_network`) -- always `None` here,
+    /// never set by `probe_host`/`scan_range` themselves, which stay pure
+    /// TCP-connect probing with no ARP/DNS/vendor-lookup I/O of their own.
+    pub mac: Option<String>,
+    pub vendor: Option<String>,
+    pub hostname: Option<String>,
 }
 
 /// Parses `cidr` (e.g. `"192.168.1.0/24"`) into the list of individual
@@ -86,6 +99,26 @@ pub fn parse_cidr(cidr: &str) -> Result<Vec<Ipv4Addr>, AppError> {
     Ok(addrs)
 }
 
+/// Guesses a coarse device type purely from which of the scanned ports
+/// responded -- not a fingerprint, just the strongest single hint among a
+/// small set of well-known port associations. Order matters: checked
+/// most-specific-first, so a host exposing any Windows-associated port
+/// (RDP 3389 or SMB 445) is reported as Windows before falling through to
+/// more generic hints further down.
+fn guess_device_type(open_ports: &[u16]) -> Option<String> {
+    if open_ports.contains(&3389) || open_ports.contains(&445) {
+        Some("Windows (vermutlich)".to_string())
+    } else if open_ports.contains(&9100) {
+        Some("Drucker (vermutlich)".to_string())
+    } else if open_ports.contains(&22) {
+        Some("Linux/Netzwerkgerät (vermutlich)".to_string())
+    } else if open_ports.contains(&80) || open_ports.contains(&443) {
+        Some("Web-Interface (Typ unbekannt)".to_string())
+    } else {
+        None
+    }
+}
+
 /// Probes every port in `ports` for `ip` in a single pass, tracking
 /// both which ports actually opened and whether any port was actively
 /// refused (as opposed to timing out, which is silent evidence of
@@ -108,9 +141,14 @@ fn probe_host(ip: Ipv4Addr, ports: &[u16]) -> Option<HostScanResult> {
     if open_ports.is_empty() && !saw_refusal {
         return None;
     }
+    let device_type = guess_device_type(&open_ports);
     Some(HostScanResult {
         ip: ip.to_string(),
         open_ports,
+        device_type,
+        mac: None,
+        vendor: None,
+        hostname: None,
     })
 }
 
@@ -216,6 +254,27 @@ mod tests {
     fn parse_cidr_rejects_range_broader_than_slash_20() {
         let err = parse_cidr("10.0.0.0/8").unwrap_err();
         assert_eq!(err.code(), "validation");
+    }
+
+    #[test]
+    fn guess_device_type_prefers_rdp_over_smb() {
+        assert_eq!(
+            guess_device_type(&[445, 3389]),
+            Some("Windows (vermutlich)".to_string())
+        );
+    }
+
+    #[test]
+    fn guess_device_type_recognizes_printer_port() {
+        assert_eq!(
+            guess_device_type(&[9100]),
+            Some("Drucker (vermutlich)".to_string())
+        );
+    }
+
+    #[test]
+    fn guess_device_type_returns_none_for_unrecognized_ports() {
+        assert_eq!(guess_device_type(&[8080]), None);
     }
 
     #[test]

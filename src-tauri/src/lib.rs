@@ -1,3 +1,4 @@
+pub mod arp;
 pub mod attachments;
 pub mod backup;
 pub mod cli;
@@ -11,11 +12,13 @@ pub mod error;
 pub mod export;
 pub mod hotkeys;
 pub mod import;
+pub mod mac_vendor;
 pub mod maintenance;
 pub mod network_scan;
 pub mod nmap;
 pub mod plugin;
 pub mod quickcapture;
+pub mod reverse_dns;
 pub mod snmp_probe;
 pub mod time;
 pub mod tray;
