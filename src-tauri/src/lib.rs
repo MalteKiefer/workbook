@@ -224,6 +224,7 @@ pub fn run() {
             commands::export::export_pdf,
             commands::export::export_markdown_all_customers,
             commands::export::export_pdf_all_customers,
+            commands::export::export_audit_report_pdf,
             commands::export::export_calendar_ics,
             commands::backup::create_backup,
             commands::backup::restore_backup,

@@ -42,6 +42,7 @@ use typst_layout::PagedDocument;
 use crate::error::AppError;
 
 static TEMPLATE: &str = include_str!("./templates/manual.typ");
+static AUDIT_REPORT_TEMPLATE: &str = include_str!("./templates/audit_report.typ");
 
 /// One entry rendered into the manual. All fields are already display-ready:
 /// this module does not format timestamps, convert Markdown, or otherwise
@@ -131,6 +132,74 @@ pub fn render_manual_pdf(
         .main_file(TEMPLATE)
         .search_fonts_with(TypstKitFontOptions::new().include_system_fonts(false))
         .with_file_system_resolver(data_dir)
+        .build();
+
+    let warned = engine.compile_with_input(input);
+    let doc: PagedDocument = warned
+        .output
+        .map_err(|e| AppError::Io(format!("PDF-Vorlage konnte nicht kompiliert werden: {e}")))?;
+
+    let pdf_bytes = typst_pdf::pdf(&doc, &Default::default())
+        .map_err(|e| AppError::Io(format!("PDF-Erzeugung fehlgeschlagen: {e:?}")))?;
+
+    Ok(pdf_bytes)
+}
+
+/// One row in the aggregated compliance/audit-trail report -- already
+/// display-ready (this module never formats timestamps itself, see the
+/// module docs above). `scope_label` is `"Kunde"` for a customer-level
+/// audit entry, or the relevant system's name for a system-level one.
+pub struct AuditReportRow {
+    pub at_display: String,
+    pub scope_label: String,
+    pub action: String,
+    pub summary: String,
+}
+
+impl IntoValue for AuditReportRow {
+    fn into_value(self) -> Value {
+        let mut dict = Dict::new();
+        dict.insert("at_display".into(), self.at_display.into_value());
+        dict.insert("scope_label".into(), self.scope_label.into_value());
+        dict.insert("action".into(), self.action.into_value());
+        dict.insert("summary".into(), self.summary.into_value());
+        Value::Dict(dict)
+    }
+}
+
+struct AuditReportInput {
+    customer_name: String,
+    generated_at: String,
+    rows: Vec<AuditReportRow>,
+}
+
+impl From<AuditReportInput> for Dict {
+    fn from(value: AuditReportInput) -> Self {
+        let mut dict = Dict::new();
+        dict.insert("customer_name".into(), value.customer_name.into_value());
+        dict.insert("generated_at".into(), value.generated_at.into_value());
+        dict.insert("rows".into(), value.rows.into_value());
+        dict
+    }
+}
+
+/// Renders the aggregated compliance/audit-trail report to PDF bytes. Unlike
+/// `render_manual_pdf`, this template has no images, so no
+/// `with_file_system_resolver` is needed.
+pub fn render_audit_report_pdf(
+    customer_name: &str,
+    generated_at_display: String,
+    rows: Vec<AuditReportRow>,
+) -> Result<Vec<u8>, AppError> {
+    let input = AuditReportInput {
+        customer_name: customer_name.to_string(),
+        generated_at: generated_at_display,
+        rows,
+    };
+
+    let engine = TypstEngine::builder()
+        .main_file(AUDIT_REPORT_TEMPLATE)
+        .search_fonts_with(TypstKitFontOptions::new().include_system_fonts(false))
         .build();
 
     let warned = engine.compile_with_input(input);
@@ -296,6 +365,36 @@ mod tests {
             vec![],
         )
         .expect("PDF-Rendering ohne Einträge sollte erfolgreich sein");
+        assert!(pdf_bytes.starts_with(b"%PDF-"));
+    }
+
+    #[test]
+    fn renders_a_report_with_rows_to_real_pdf_bytes() {
+        let rows = vec![
+            AuditReportRow {
+                at_display: "01.09.2026 10:00 CEST".to_string(),
+                scope_label: "Kunde".to_string(),
+                action: "updated".to_string(),
+                summary: "Notizen geändert".to_string(),
+            },
+            AuditReportRow {
+                at_display: "02.09.2026 11:00 CEST".to_string(),
+                scope_label: "Server1".to_string(),
+                action: "created".to_string(),
+                summary: "System angelegt".to_string(),
+            },
+        ];
+        let pdf_bytes =
+            render_audit_report_pdf("ACME GmbH", "07.09.2026 15:00 CEST".to_string(), rows)
+                .expect("PDF-Rendering sollte erfolgreich sein");
+        assert!(pdf_bytes.starts_with(b"%PDF-"));
+    }
+
+    #[test]
+    fn renders_an_empty_report_without_error() {
+        let pdf_bytes =
+            render_audit_report_pdf("ACME GmbH", "07.09.2026 15:00 CEST".to_string(), vec![])
+                .expect("PDF-Rendering ohne Zeilen sollte erfolgreich sein");
         assert!(pdf_bytes.starts_with(b"%PDF-"));
     }
 }
