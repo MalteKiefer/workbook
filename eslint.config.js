@@ -5,7 +5,14 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'src-tauri', 'docs', 'node_modules'] },
+  // '.claude' excludes worktrees background review/implementer agents create
+  // under .claude/worktrees -- those are separate git worktrees (their own
+  // tsconfig.json), and typescript-eslint's project service treats any
+  // tsconfig it finds inside the linted glob as a candidate root, erroring
+  // out entirely ("multiple candidate TSConfigRootDirs") whenever one is
+  // present at lint time. They're a different checkout, not this project's
+  // own source, and were never meant to be linted from here.
+  { ignores: ['dist', 'src-tauri', 'docs', 'node_modules', '.claude'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
