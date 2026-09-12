@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatInvokeError } from "../lib/errors";
@@ -20,6 +20,15 @@ interface SnmpProbeResult {
   sys_name: string | null;
   sys_location: string | null;
   sys_up_time: string | null;
+}
+
+// Local subset of src-tauri/src/db/systems.rs::System -- only the fields
+// needed to match a scanned host against an already-documented System.
+interface KnownSystem {
+  id: number;
+  name: string;
+  hostname: string;
+  ip_address: string;
 }
 
 interface Network {
@@ -52,6 +61,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [results, setResults] = useState<HostScanResult[]>([]);
+  const [knownSystems, setKnownSystems] = useState<KnownSystem[] | null>(null);
   const [previousResults, setPreviousResults] = useState<HostScanResult[] | null>(null);
   const [filterText, setFilterText] = useState("");
   const [selectedIps, setSelectedIps] = useState<Set<string>>(new Set());
@@ -86,6 +96,16 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
       .then(setNmapAvailable)
       .catch(() => setNmapAvailable(false));
   }, []);
+
+  const reloadKnownSystems = useCallback(() => {
+    invoke<KnownSystem[]>("list_systems", { customerId: network.customer_id, includeArchived: true })
+      .then(setKnownSystems)
+      .catch(() => setKnownSystems(null));
+  }, [network.customer_id]);
+
+  useEffect(() => {
+    reloadKnownSystems();
+  }, [reloadKnownSystems]);
 
   async function handleScan() {
     setScanError(null);
@@ -248,6 +268,9 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
         }
       }
       setBulkCreateSummary({ created, errors });
+      if (created > 0) {
+        reloadKnownSystems();
+      }
       setSelectedIps(new Set());
     } finally {
       setBulkCreateBusy(false);
@@ -265,6 +288,17 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
       result.open_ports.some((port) => String(port).includes(needle))
     );
   });
+
+  function findKnownSystem(result: HostScanResult): KnownSystem | null {
+    if (knownSystems === null) return null;
+    const byIp = knownSystems.find((s) => s.ip_address.trim() !== "" && s.ip_address === result.ip);
+    if (byIp) return byIp;
+    const normalizedHostname = result.hostname?.trim().toLowerCase();
+    if (!normalizedHostname) return null;
+    return (
+      knownSystems.find((s) => s.hostname.trim().toLowerCase() === normalizedHostname) ?? null
+    );
+  }
 
   const previousIpSet = new Set((previousResults ?? []).map((r) => r.ip));
   const isNewSinceLastScan = (ip: string) => previousResults !== null && !previousIpSet.has(ip);
@@ -443,6 +477,26 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
                           Neu
                         </span>
                       )}
+                      {(() => {
+                        const knownSystem = findKnownSystem(result);
+                        return (
+                          knownSystem && (
+                            <span
+                              title={`Bereits als System erfasst: ${knownSystem.name}`}
+                              style={{
+                                marginLeft: "0.4rem",
+                                fontSize: "0.7rem",
+                                color: "var(--accent)",
+                                border: "1px solid var(--accent)",
+                                borderRadius: "var(--radius-sm)",
+                                padding: "0.05rem 0.3rem",
+                              }}
+                            >
+                              Erfasst: {knownSystem.name}
+                            </span>
+                          )
+                        );
+                      })()}
                     </span>
                     <HostActionsMenu
                       result={result}
