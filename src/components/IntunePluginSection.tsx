@@ -792,6 +792,9 @@ export default function IntunePluginSection() {
           hostname: device.hostname ?? "",
           ip_address: device.ip_address ?? "",
           notes: buildInitialNotes(device),
+          operating_system: device.operating_system
+            ? `${device.operating_system}${device.os_version ? ` ${device.os_version}` : ""}`
+            : null,
         },
       });
       await invoke("link_system_to_intune", {
@@ -834,6 +837,9 @@ export default function IntunePluginSection() {
               hostname: device.hostname ?? "",
               ip_address: device.ip_address ?? "",
               notes: buildInitialNotes(device),
+              operating_system: device.operating_system
+                ? `${device.operating_system}${device.os_version ? ` ${device.os_version}` : ""}`
+                : null,
             },
           });
           await invoke("link_system_to_intune", {

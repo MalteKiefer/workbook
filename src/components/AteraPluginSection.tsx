@@ -833,6 +833,7 @@ export default function AteraPluginSection() {
           hostname: device.hostname ?? "",
           ip_address: device.ip_address ?? "",
           notes: noteLines.join("\n"),
+          operating_system: device.platform,
         },
       });
       await invoke("link_system_to_atera", {
@@ -878,6 +879,7 @@ export default function AteraPluginSection() {
               hostname: device.hostname ?? "",
               ip_address: device.ip_address ?? "",
               notes: noteLines.join("\n"),
+              operating_system: device.platform,
             },
           });
           await invoke("link_system_to_atera", {

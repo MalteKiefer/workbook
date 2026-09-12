@@ -829,6 +829,7 @@ export default function DattoRmmPluginSection() {
           hostname: device.hostname ?? "",
           ip_address: device.ip_address ?? "",
           notes: noteLines.join("\n"),
+          operating_system: device.operating_system,
         },
       });
       await invoke("link_system_to_dattormm", {
@@ -875,6 +876,7 @@ export default function DattoRmmPluginSection() {
               hostname: device.hostname ?? "",
               ip_address: device.ip_address ?? "",
               notes: noteLines.join("\n"),
+              operating_system: device.operating_system,
             },
           });
           await invoke("link_system_to_dattormm", {

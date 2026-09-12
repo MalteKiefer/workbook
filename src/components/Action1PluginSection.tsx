@@ -823,6 +823,7 @@ export default function Action1PluginSection() {
           hostname: device.name,
           ip_address: device.ip_address ?? "",
           notes: noteLines.join("\n"),
+          operating_system: device.operating_system,
         },
       });
       await invoke("link_system_to_action1", {
@@ -869,6 +870,7 @@ export default function Action1PluginSection() {
               hostname: device.name,
               ip_address: device.ip_address ?? "",
               notes: noteLines.join("\n"),
+              operating_system: device.operating_system,
             },
           });
           await invoke("link_system_to_action1", {

@@ -741,6 +741,7 @@ export default function NetcupPluginSection() {
           hostname: "",
           ip_address: "",
           notes: "",
+          operating_system: device.operating_system,
         },
       });
       await invoke("link_system_to_netcup", {
@@ -783,6 +784,7 @@ export default function NetcupPluginSection() {
               hostname: "",
               ip_address: "",
               notes: "",
+              operating_system: device.operating_system,
             },
           });
           await invoke("link_system_to_netcup", {

@@ -794,6 +794,7 @@ export default function HetznerPluginSection() {
           hostname: device.hostname ?? "",
           ip_address: device.ip_address ?? "",
           notes: buildInitialNotes(device),
+          operating_system: device.operating_system,
         },
       });
       await invoke("link_system_to_hetzner", {
@@ -839,6 +840,7 @@ export default function HetznerPluginSection() {
               hostname: device.hostname ?? "",
               ip_address: device.ip_address ?? "",
               notes: buildInitialNotes(device),
+              operating_system: device.operating_system,
             },
           });
           await invoke("link_system_to_hetzner", {

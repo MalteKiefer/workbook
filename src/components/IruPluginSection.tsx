@@ -781,6 +781,9 @@ export default function IruPluginSection() {
           hostname: device.hostname ?? "",
           ip_address: device.ip_address ?? "",
           notes: noteLines.join("\n"),
+          operating_system: device.platform
+            ? `${device.platform}${device.os_version ? ` ${device.os_version}` : ""}`
+            : device.os_version,
         },
       });
       await invoke("link_system_to_iru", {
@@ -827,6 +830,9 @@ export default function IruPluginSection() {
               hostname: device.hostname ?? "",
               ip_address: device.ip_address ?? "",
               notes: noteLines.join("\n"),
+              operating_system: device.platform
+                ? `${device.platform}${device.os_version ? ` ${device.os_version}` : ""}`
+                : device.os_version,
             },
           });
           await invoke("link_system_to_iru", {

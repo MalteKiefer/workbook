@@ -789,6 +789,7 @@ export default function VultrPluginSection() {
           hostname: "",
           ip_address: instance.ip_address ?? "",
           notes: buildInitialNotes(instance),
+          operating_system: instance.operating_system,
         },
       });
       await invoke("link_system_to_vultr", {
@@ -831,6 +832,7 @@ export default function VultrPluginSection() {
               hostname: "",
               ip_address: instance.ip_address ?? "",
               notes: buildInitialNotes(instance),
+              operating_system: instance.operating_system,
             },
           });
           await invoke("link_system_to_vultr", {
