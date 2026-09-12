@@ -17,7 +17,7 @@ use crate::error::AppError;
 /// spread (SSH, HTTP(S), SMB, RDP, a common alt-HTTP port) to catch most
 /// servers, NAS boxes, printers, hypervisor hosts, and Windows machines
 /// without the scan taking unreasonably long.
-const COMMON_PORTS: &[u16] = &[22, 80, 443, 445, 3389, 8080];
+pub const DEFAULT_PORTS: &[u16] = &[22, 80, 443, 445, 3389, 8080];
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(400);
 
@@ -86,7 +86,7 @@ pub fn parse_cidr(cidr: &str) -> Result<Vec<Ipv4Addr>, AppError> {
     Ok(addrs)
 }
 
-/// Probes every port in `COMMON_PORTS` for `ip` in a single pass, tracking
+/// Probes every port in `ports` for `ip` in a single pass, tracking
 /// both which ports actually opened and whether any port was actively
 /// refused (as opposed to timing out, which is silent evidence of
 /// nothing). The host is reported (`Some`) if either signal fired; it's
@@ -94,10 +94,10 @@ pub fn parse_cidr(cidr: &str) -> Result<Vec<Ipv4Addr>, AppError> {
 /// nothing responded at all. See the brief's note on an earlier two-pass
 /// version of this function -- this single pass keeps the exact same
 /// "alive" semantics without the redundant re-connect.
-fn probe_host(ip: Ipv4Addr) -> Option<HostScanResult> {
+fn probe_host(ip: Ipv4Addr, ports: &[u16]) -> Option<HostScanResult> {
     let mut open_ports = Vec::new();
     let mut saw_refusal = false;
-    for &port in COMMON_PORTS {
+    for &port in ports {
         let addr = SocketAddr::new(IpAddr::V4(ip), port);
         match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT) {
             Ok(_stream) => open_ports.push(port),
@@ -122,7 +122,11 @@ fn probe_host(ip: Ipv4Addr) -> Option<HostScanResult> {
 /// and no existing thread-pool dependency, and a scan is a one-shot,
 /// bounded-size batch of independent work, not a recurring need that
 /// would justify a persistent pool.
-pub fn scan_range(ips: Vec<Ipv4Addr>, max_concurrency: usize) -> Vec<HostScanResult> {
+pub fn scan_range(
+    ips: Vec<Ipv4Addr>,
+    max_concurrency: usize,
+    ports: &[u16],
+) -> Vec<HostScanResult> {
     let (tx, rx) = mpsc::channel();
     let chunks: Vec<Vec<Ipv4Addr>> = ips
         .chunks(ips.len().div_ceil(max_concurrency.max(1)).max(1))
@@ -133,9 +137,10 @@ pub fn scan_range(ips: Vec<Ipv4Addr>, max_concurrency: usize) -> Vec<HostScanRes
         .into_iter()
         .map(|chunk| {
             let tx = tx.clone();
+            let ports = ports.to_vec();
             std::thread::spawn(move || {
                 for ip in chunk {
-                    if let Some(result) = probe_host(ip) {
+                    if let Some(result) = probe_host(ip, &ports) {
                         let _ = tx.send(result);
                     }
                 }
@@ -221,7 +226,7 @@ mod tests {
         // empty) Vec without hanging or panicking, using a tiny, safe,
         // guaranteed-local range.
         let addrs = vec![Ipv4Addr::new(127, 0, 0, 1)];
-        let results = scan_range(addrs, 4);
+        let results = scan_range(addrs, 4, DEFAULT_PORTS);
         // 127.0.0.1 may or may not have anything listening in a CI
         // sandbox -- only assert it terminates and returns a valid Vec.
         let _ = results;

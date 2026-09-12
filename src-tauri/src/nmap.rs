@@ -20,6 +20,18 @@ pub fn is_available() -> bool {
         .unwrap_or(false)
 }
 
+/// Best-effort, platform-specific command to install nmap, shown in Settings
+/// when `is_available()` is false. Purely informational text for the admin
+/// to run themselves in their own terminal -- this app never shells out to a
+/// package manager to install anything itself.
+pub fn install_hint() -> &'static str {
+    match std::env::consts::OS {
+        "windows" => "winget install Insecure.Nmap",
+        "macos" => "brew install nmap",
+        _ => "sudo apt install nmap   (Debian/Ubuntu)\nsudo dnf install nmap   (Fedora/RHEL)",
+    }
+}
+
 fn validate_target(target: &str) -> Result<(), AppError> {
     // Deliberately permissive (IPv4 address, optionally with a /prefix)
     // -- just enough to reject obviously-wrong input (empty string,
@@ -81,5 +93,10 @@ mod tests {
         assert!(validate_target("").is_err());
         assert!(validate_target("not an ip; rm -rf /").is_err());
         assert!(validate_target("http://example.com").is_err());
+    }
+
+    #[test]
+    fn install_hint_is_nonempty_on_every_platform() {
+        assert!(!install_hint().is_empty());
     }
 }

@@ -479,6 +479,13 @@ pub struct Config {
     /// only in the OS keychain, see `cloud_storage::SECRET_ID` usage in
     /// Task 4.
     pub cloud_storage_access_key_id: Option<String>,
+    /// TCP ports probed during a network scan (`network_scan::scan_range`).
+    /// Defaults to `network_scan::DEFAULT_PORTS`; the admin can add/remove ports
+    /// in Settings -> Netzwerk. Never empty in practice -- see
+    /// `commands::network_scan::set_network_scan_settings`'s validation -- but
+    /// treat an empty Vec defensively wherever this is read (a hand-edited
+    /// config.toml could still produce one).
+    pub network_scan_ports: Vec<u16>,
 }
 
 impl Default for Config {
@@ -536,6 +543,7 @@ impl Default for Config {
             cloud_storage_region: None,
             cloud_storage_bucket: None,
             cloud_storage_access_key_id: None,
+            network_scan_ports: crate::network_scan::DEFAULT_PORTS.to_vec(),
         }
     }
 }
