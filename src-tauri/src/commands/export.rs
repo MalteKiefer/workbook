@@ -215,6 +215,8 @@ pub fn export_calendar_ics(state: State<AppState>, dest_path: String) -> Result<
         .get()
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+    let tz = time::system_timezone()?;
+
     let customers = db::customers::list(&conn, false)?;
 
     let mut maintenance_events = Vec::new();
@@ -231,8 +233,18 @@ pub fn export_calendar_ics(state: State<AppState>, dest_path: String) -> Result<
             let Ok(baseline) = chrono::DateTime::parse_from_rfc3339(baseline_str) else {
                 continue;
             };
-            let due_on = (baseline + chrono::Duration::days(interval_days)).date_naive();
+            let Some(duration) = chrono::Duration::try_days(interval_days) else {
+                continue;
+            };
+            let Some(due_on) = baseline
+                .with_timezone(&tz)
+                .checked_add_signed(duration)
+                .map(|dt| dt.date_naive())
+            else {
+                continue;
+            };
             maintenance_events.push(crate::ics::MaintenanceEvent {
+                system_id: system.id,
                 system_name: system.name.clone(),
                 customer_name: customer.name.clone(),
                 due_on,
@@ -240,8 +252,13 @@ pub fn export_calendar_ics(state: State<AppState>, dest_path: String) -> Result<
         }
     }
 
-    let customer_name_by_id: HashMap<i64, String> =
-        customers.iter().map(|c| (c.id, c.name.clone())).collect();
+    // Expiring items intentionally include archived customers' items (see
+    // `db::expiring_items::list_all` below, which is NOT filtered to active
+    // customers -- matching the Dashboard's own unfiltered
+    // `list_expiring_items` behavior), so names must resolve for archived
+    // customers too, not just active ones.
+    let customer_name_by_id: HashMap<i64, String> = db::customers::list(&conn, true)
+        .map(|cs| cs.into_iter().map(|c| (c.id, c.name)).collect())?;
     let mut expiry_events = Vec::new();
     for item in db::expiring_items::list_all(&conn)? {
         let Ok(expires_on) = chrono::NaiveDate::parse_from_str(&item.expires_on, "%Y-%m-%d") else {
@@ -252,6 +269,7 @@ pub fn export_calendar_ics(state: State<AppState>, dest_path: String) -> Result<
             .cloned()
             .unwrap_or_else(|| format!("Kunde #{}", item.customer_id));
         expiry_events.push(crate::ics::ExpiryEvent {
+            item_id: item.id,
             label: item.label.clone(),
             customer_name,
             kind_label: expiring_item_kind_label(item.kind).to_string(),

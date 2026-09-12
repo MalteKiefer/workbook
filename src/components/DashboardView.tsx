@@ -112,6 +112,7 @@ export default function DashboardView() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [icsExportBusy, setIcsExportBusy] = useState(false);
   const [icsExportError, setIcsExportError] = useState<string | null>(null);
+  const [icsExportStatus, setIcsExportStatus] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<Customer[]>("list_customers", { includeArchived: false }).then(setCustomers);
@@ -141,15 +142,17 @@ export default function DashboardView() {
   }, []);
 
   async function handleExportIcs() {
-    setIcsExportBusy(true);
     setIcsExportError(null);
+    setIcsExportStatus(null);
     try {
       const destPath = await save({
         defaultPath: "wartungsdoku-kalender.ics",
         filters: [{ name: "iCalendar", extensions: ["ics"] }],
       });
-      if (destPath === null) return;
+      if (!destPath) return;
+      setIcsExportBusy(true);
       await invoke("export_calendar_ics", { destPath });
+      setIcsExportStatus(`Kalender exportiert: ${destPath}`);
     } catch (e) {
       setIcsExportError(formatInvokeError(e));
     } finally {
@@ -306,6 +309,9 @@ export default function DashboardView() {
         </button>
         {icsExportError && (
           <span style={{ color: "var(--danger)", fontSize: "0.82rem" }}>Fehler: {icsExportError}</span>
+        )}
+        {icsExportStatus && (
+          <span style={{ color: "var(--success)", fontSize: "0.82rem" }}>{icsExportStatus}</span>
         )}
       </div>
 

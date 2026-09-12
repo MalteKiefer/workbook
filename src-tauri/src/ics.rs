@@ -10,12 +10,14 @@
 use chrono::{NaiveDate, Utc};
 
 pub struct MaintenanceEvent {
+    pub system_id: i64,
     pub system_name: String,
     pub customer_name: String,
     pub due_on: NaiveDate,
 }
 
 pub struct ExpiryEvent {
+    pub item_id: i64,
     pub label: String,
     pub customer_name: String,
     pub kind_label: String,
@@ -31,6 +33,8 @@ fn escape_text(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace(',', "\\,")
         .replace(';', "\\;")
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
         .replace('\n', "\\n")
 }
 
@@ -50,16 +54,12 @@ fn fold_line(line: &str) -> String {
         let ch_len = ch.len_utf8();
         if current_len + ch_len > MAX_OCTETS {
             result.push_str("\r\n ");
-            current_len = 0;
+            current_len = 1; // the fold's leading space counts toward the next line's budget
         }
         result.push(ch);
         current_len += ch_len;
     }
     result
-}
-
-fn uid_for(kind: &str, index: usize) -> String {
-    format!("wartungsdoku-{kind}-{index}@wartungsdoku.local")
 }
 
 /// Builds the full `.ics` document as a single CRLF-joined string (RFC 5545
@@ -73,13 +73,16 @@ pub fn build_calendar(maintenance: &[MaintenanceEvent], expiries: &[ExpiryEvent]
         "CALSCALE:GREGORIAN".to_string(),
     ];
 
-    for (i, event) in maintenance.iter().enumerate() {
+    for event in maintenance {
         let summary = escape_text(&format!(
             "Wartung fällig: {} ({})",
             event.system_name, event.customer_name
         ));
         lines.push("BEGIN:VEVENT".to_string());
-        lines.push(format!("UID:{}", uid_for("maintenance", i)));
+        lines.push(format!(
+            "UID:wartungsdoku-maintenance-{}@wartungsdoku.local",
+            event.system_id
+        ));
         lines.push(format!("DTSTAMP:{now_stamp}"));
         lines.push(format!(
             "DTSTART;VALUE=DATE:{}",
@@ -89,13 +92,16 @@ pub fn build_calendar(maintenance: &[MaintenanceEvent], expiries: &[ExpiryEvent]
         lines.push("END:VEVENT".to_string());
     }
 
-    for (i, event) in expiries.iter().enumerate() {
+    for event in expiries {
         let summary = escape_text(&format!(
             "{} läuft ab: {} ({})",
             event.kind_label, event.label, event.customer_name
         ));
         lines.push("BEGIN:VEVENT".to_string());
-        lines.push(format!("UID:{}", uid_for("expiry", i)));
+        lines.push(format!(
+            "UID:wartungsdoku-expiry-{}@wartungsdoku.local",
+            event.item_id
+        ));
         lines.push(format!("DTSTAMP:{now_stamp}"));
         lines.push(format!(
             "DTSTART;VALUE=DATE:{}",
@@ -132,6 +138,7 @@ mod tests {
     fn maintenance_event_produces_an_all_day_vevent() {
         let ics = build_calendar(
             &[MaintenanceEvent {
+                system_id: 1,
                 system_name: "Server1".to_string(),
                 customer_name: "ACME GmbH".to_string(),
                 due_on: NaiveDate::from_ymd_opt(2026, 12, 24).unwrap(),
@@ -150,6 +157,7 @@ mod tests {
         let ics = build_calendar(
             &[],
             &[ExpiryEvent {
+                item_id: 1,
                 label: "example.com".to_string(),
                 customer_name: "ACME GmbH".to_string(),
                 kind_label: "Domain".to_string(),
@@ -167,6 +175,7 @@ mod tests {
         let ics = build_calendar(
             &[],
             &[ExpiryEvent {
+                item_id: 1,
                 label: "example.com".to_string(),
                 customer_name: "ACME GmbH".to_string(),
                 kind_label: "Domain".to_string(),
@@ -180,6 +189,12 @@ mod tests {
     #[test]
     fn escape_text_escapes_commas_semicolons_backslashes_and_newlines() {
         assert_eq!(escape_text("a,b;c\\d\ne"), "a\\,b\\;c\\\\d\\ne");
+    }
+
+    #[test]
+    fn escape_text_normalizes_crlf_and_bare_cr_before_escaping() {
+        assert_eq!(escape_text("line1\r\nline2"), "line1\\nline2");
+        assert_eq!(escape_text("line1\rline2"), "line1\\nline2");
     }
 
     #[test]
