@@ -1,6 +1,7 @@
 import { useAppStore } from "../state/appStore";
 import GeneralSettingsView from "./GeneralSettingsView";
 import BackupView from "./BackupView";
+import StorageSettingsView from "./StorageSettingsView";
 import PluginsView from "./PluginsView";
 import KeymapSettingsView from "./KeymapSettingsView";
 import UpdateSettingsView from "./UpdateSettingsView";
@@ -46,6 +47,9 @@ export default function SettingsView() {
         <TabButton active={settingsTab === "backup"} onClick={() => setSettingsTab("backup")}>
           Backup
         </TabButton>
+        <TabButton active={settingsTab === "storage"} onClick={() => setSettingsTab("storage")}>
+          Speicher
+        </TabButton>
         <TabButton active={settingsTab === "plugins"} onClick={() => setSettingsTab("plugins")}>
           Plugins
         </TabButton>
@@ -78,6 +82,7 @@ export default function SettingsView() {
       </div>
       {settingsTab === "general" && <GeneralSettingsView />}
       {settingsTab === "backup" && <BackupView />}
+      {settingsTab === "storage" && <StorageSettingsView />}
       {settingsTab === "plugins" && <PluginsView />}
       {settingsTab === "keymap" && <KeymapSettingsView />}
       {settingsTab === "templates" && <TemplatesSettingsView />}
