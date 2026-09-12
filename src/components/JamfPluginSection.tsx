@@ -78,6 +78,9 @@ interface ExternalSystemDto {
   ip_address: string | null;
   serial_number: string | null;
   asset_tag: string | null;
+  // Combined from Jamf's `name` + `version` (e.g. "macOS 14.5"), see
+  // plugin::jamf module docs on the Rust side.
+  operating_system: string | null;
   jamf_url: string;
   linked_system_id: number | null;
 }
@@ -120,7 +123,7 @@ interface System {
   operating_system: string | null;
 }
 
-type CompareField = "name" | "hostname" | "ip_address";
+type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 
 // Jamf's own get_jamf_system_details() payload nests fields under `general`/
 // `hardware` sections (`{"general": {"name": ..., "lastIpAddress": ...,
@@ -932,7 +935,7 @@ export default function JamfPluginSection() {
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
           maintenance_interval_days: localSystem.maintenance_interval_days,
-          operating_system: localSystem.operating_system,
+          operating_system: field === "operating_system" ? value : localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
@@ -1154,6 +1157,12 @@ export default function JamfPluginSection() {
                         label: "IP-Adresse",
                         localValue: localSystem.ip_address,
                         externalValue: findExternalValue(data, IP_KEYS),
+                      },
+                      {
+                        field: "operating_system" as const,
+                        label: "Betriebssystem",
+                        localValue: localSystem.operating_system ?? "",
+                        externalValue: device.operating_system,
                       },
                     ] satisfies { field: CompareField; label: string; localValue: string; externalValue: string | null }[]
                   ).map((row) => {
