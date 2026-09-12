@@ -201,6 +201,88 @@ pub fn export_pdf(
         .map_err(|e| AppError::Io(format!("PDF konnte nicht geschrieben werden: {e}")))
 }
 
+/// Exports the aggregated compliance/audit-trail report PDF for one
+/// customer: that customer's own audit-log entries together with every one
+/// of its systems' entries (including archived systems -- a decommissioned
+/// system's history is still part of the compliance record), merged into
+/// one chronological table. Deliberately per-customer only, unlike
+/// `export_pdf`/`export_markdown` above -- no "all customers" batch variant.
+#[tauri::command]
+pub fn export_audit_report_pdf(
+    state: State<AppState>,
+    customer_id: i64,
+    dest_path: String,
+) -> Result<(), AppError> {
+    let conn = state
+        .pool
+        .get()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let customer = db::customers::get(&conn, customer_id)?;
+    // Archived systems included deliberately -- a decommissioned system's
+    // history is still part of the compliance record, unlike the regular
+    // manual/journal exports which default to active-only.
+    let systems = db::systems::list_by_customer(&conn, customer_id, true)?;
+
+    struct RawRow {
+        at_utc: String,
+        at_tz: String,
+        scope_label: String,
+        action: String,
+        summary: String,
+    }
+
+    let mut raw_rows: Vec<RawRow> = Vec::new();
+    for entry in db::audit_log::list_for_entity(&conn, "customer", customer_id)? {
+        raw_rows.push(RawRow {
+            at_utc: entry.at_utc,
+            at_tz: entry.at_tz,
+            scope_label: "Kunde".to_string(),
+            action: entry.action,
+            summary: entry.summary,
+        });
+    }
+    for system in &systems {
+        for entry in db::audit_log::list_for_entity(&conn, "system", system.id)? {
+            raw_rows.push(RawRow {
+                at_utc: entry.at_utc,
+                at_tz: entry.at_tz,
+                scope_label: system.name.clone(),
+                action: entry.action,
+                summary: entry.summary,
+            });
+        }
+    }
+
+    // Sort on the raw RFC3339 UTC string, NOT the display string -- a
+    // formatted "12.09.2026 14:30 CEST" does not sort chronologically as
+    // text, but an untouched RFC3339 UTC timestamp does (fixed-width,
+    // most-significant-first). Ascending (oldest first), matching
+    // export_pdf's own "grown history" reading order for the manual export.
+    raw_rows.sort_by(|a, b| a.at_utc.cmp(&b.at_utc));
+
+    let mut rows = Vec::with_capacity(raw_rows.len());
+    for r in raw_rows {
+        let at_display = time::format_timestamp_for_display(&r.at_utc, &r.at_tz)?;
+        rows.push(export::pdf::AuditReportRow {
+            at_display,
+            scope_label: r.scope_label,
+            action: r.action,
+            summary: r.summary,
+        });
+    }
+
+    let tz = time::system_timezone()?;
+    let (now_utc, now_tz) = time::now_with_tz(&tz);
+    let generated_at_display = time::format_timestamp_for_display(&now_utc, &now_tz)?;
+
+    let pdf_bytes =
+        export::pdf::render_audit_report_pdf(&customer.name, generated_at_display, rows)?;
+
+    std::fs::write(&dest_path, pdf_bytes)
+        .map_err(|e| AppError::Io(format!("PDF konnte nicht geschrieben werden: {e}")))
+}
+
 /// Exports a single `.ics` (iCalendar) file covering every active customer's
 /// systems with a maintenance interval (one all-day event per system, on its
 /// next computed due date) and every tracked expiring item (one all-day
