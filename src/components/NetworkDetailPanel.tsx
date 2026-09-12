@@ -90,6 +90,7 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
       setResults(found);
       setCreatedIps(new Set());
       setCreateErrors({});
+      setQuickConnectErrorByIp({});
       setExpandedIp(null);
     } catch (e) {
       setScanError(formatInvokeError(e));

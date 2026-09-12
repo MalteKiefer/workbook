@@ -12,12 +12,31 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::error::AppError;
 
+/// Schemes this feature actually needs to open. Since `open_url` calls the
+/// opener plugin's method directly and bypasses its own scope restriction,
+/// this allowlist is the actual security boundary against a frontend-supplied
+/// `file://` URL or arbitrary filesystem path being forwarded to the OS.
+const ALLOWED_SCHEMES: &[&str] = &["http", "https", "ssh", "rdp", "smb"];
+
+/// Returns whether `url`'s scheme (the part before `://`) is one of
+/// `ALLOWED_SCHEMES`. Pulled out of `open_url` so it can be unit-tested
+/// without needing a real `AppHandle`.
+fn scheme_is_allowed(url: &str) -> bool {
+    url.split_once("://")
+        .is_some_and(|(scheme, _)| ALLOWED_SCHEMES.contains(&scheme))
+}
+
 /// Opens `url` with whatever the OS has registered for its scheme. Calls
 /// the opener plugin's method directly (not its own scope-restricted Tauri
 /// command) -- see this feature's brief for why that's the correct choice
 /// here, matching `commands::attachments::open_attachment`'s existing use
 /// of `open_path` the same way.
 pub fn open_url(app: &AppHandle, url: &str) -> Result<(), AppError> {
+    if !scheme_is_allowed(url) {
+        return Err(AppError::Validation(format!(
+            "Nicht erlaubtes URL-Schema: \"{url}\""
+        )));
+    }
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|e| AppError::Io(format!("Konnte nicht geöffnet werden: {e}")))
@@ -55,5 +74,26 @@ pub fn open_share(app: &AppHandle, ip: &str) -> Result<(), AppError> {
                 ))
             }),
         _ => open_url(app, &format!("smb://{ip}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scheme_is_allowed_accepts_the_five_schemes_this_feature_uses() {
+        assert!(scheme_is_allowed("http://192.168.1.1"));
+        assert!(scheme_is_allowed("https://192.168.1.1:8443"));
+        assert!(scheme_is_allowed("ssh://192.168.1.1"));
+        assert!(scheme_is_allowed("rdp://192.168.1.1"));
+        assert!(scheme_is_allowed("smb://192.168.1.1"));
+    }
+
+    #[test]
+    fn scheme_is_allowed_rejects_everything_else() {
+        assert!(!scheme_is_allowed("file:///etc/passwd"));
+        assert!(!scheme_is_allowed("javascript:alert(1)"));
+        assert!(!scheme_is_allowed("not-a-url-at-all"));
     }
 }
