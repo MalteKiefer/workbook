@@ -91,11 +91,22 @@ interface System {
   operating_system: string | null;
 }
 
-type CompareField = "name" | "hostname" | "ip_address";
+type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 
 const NAME_KEYS = ["displayName", "display_name", "systemName", "system_name", "name"];
 const HOSTNAME_KEYS = ["hostname", "host_name", "dnsName", "dns_name"];
 const IP_KEYS = ["ipAddress", "ip_address", "ip", "ipv4Address", "ipv4", "primaryIp", "publicIp", "publicIP"];
+
+// NinjaOne's device-detail response nests OS info under an "os" object
+// (verified live: {"os": {"name": "Debian GNU/Linux 12 (bookworm)", ...}}),
+// unlike name/hostname/ip which are flat top-level keys -- so this needs its
+// own extractor rather than reusing findExternalValue's flat key lookup.
+function findExternalOperatingSystem(details: Record<string, unknown>): string | null {
+  const os = details["os"];
+  if (os === null || typeof os !== "object") return null;
+  const name = (os as Record<string, unknown>)["name"];
+  return typeof name === "string" && name.trim() !== "" ? name : null;
+}
 
 // Synthetic <option> value for "+ Neuen Kunden anlegen…" inside an
 // organization's customer-mapping <select>.
@@ -856,7 +867,7 @@ export default function NinjaPluginSection() {
           ip_address: field === "ip_address" ? value : localSystem.ip_address,
           notes: localSystem.notes,
           maintenance_interval_days: localSystem.maintenance_interval_days,
-          operating_system: localSystem.operating_system,
+          operating_system: field === "operating_system" ? value : localSystem.operating_system,
         },
       });
       await refreshLocalSystems(localSystem.customer_id);
@@ -1075,6 +1086,12 @@ export default function NinjaPluginSection() {
                         label: "IP-Adresse",
                         localValue: localSystem.ip_address,
                         externalValue: findExternalValue(data, IP_KEYS),
+                      },
+                      {
+                        field: "operating_system" as const,
+                        label: "Betriebssystem",
+                        localValue: localSystem.operating_system ?? "",
+                        externalValue: findExternalOperatingSystem(data),
                       },
                     ] satisfies { field: CompareField; label: string; localValue: string; externalValue: string | null }[]
                   ).map((row) => {
