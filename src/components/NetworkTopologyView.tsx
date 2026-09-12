@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatInvokeError } from "../lib/errors";
 import { cidrContains } from "../lib/cidr";
+import { DeviceTypeIcon } from "../lib/deviceIcons";
 
 // Mirrors src-tauri/src/db/networks.rs::Network.
 interface Network {
@@ -28,6 +29,7 @@ interface SystemSummary {
   id: number;
   name: string;
   ip_address: string;
+  system_type: string;
 }
 
 const boxStyle = {
@@ -102,8 +104,11 @@ export default function NetworkTopologyView({ customerId }: { customerId: number
         ) : (
           <ul style={{ listStyle: "none", margin: "0.3rem 0 0", padding: 0 }}>
             {matched.map((s) => (
-              <li key={s.id} style={{ fontSize: "0.85rem", padding: "0.15rem 0" }}>
-                {s.name} <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{s.ip_address}</span>
+              <li key={s.id} style={{ fontSize: "0.85rem", padding: "0.15rem 0", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <DeviceTypeIcon type={s.system_type} />
+                <span>
+                  {s.name} <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{s.ip_address}</span>
+                </span>
               </li>
             ))}
           </ul>
@@ -153,11 +158,14 @@ export default function NetworkTopologyView({ customerId }: { customerId: number
           </p>
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {unassignedSystems.map((s) => (
-              <li key={s.id} style={{ fontSize: "0.85rem", padding: "0.15rem 0" }}>
-                {s.name}
-                {s.ip_address && (
-                  <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}> {s.ip_address}</span>
-                )}
+              <li key={s.id} style={{ fontSize: "0.85rem", padding: "0.15rem 0", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <DeviceTypeIcon type={s.system_type} />
+                <span>
+                  {s.name}
+                  {s.ip_address && (
+                    <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}> {s.ip_address}</span>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
