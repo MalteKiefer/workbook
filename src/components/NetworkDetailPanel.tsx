@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatInvokeError } from "../lib/errors";
 
@@ -63,6 +63,16 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
   const [nmapBusy, setNmapBusy] = useState(false);
   const [nmapOutput, setNmapOutput] = useState<string | null>(null);
   const [nmapError, setNmapError] = useState<string | null>(null);
+  const [nmapCopied, setNmapCopied] = useState(false);
+  const nmapCopyResetTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (nmapCopyResetTimeoutRef.current !== null) {
+        window.clearTimeout(nmapCopyResetTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     invoke<boolean>("is_nmap_available")
@@ -149,6 +159,23 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
       setNmapError(formatInvokeError(e));
     } finally {
       setNmapBusy(false);
+    }
+  }
+
+  async function handleCopyNmapOutput() {
+    if (nmapOutput === null) return;
+    try {
+      await navigator.clipboard.writeText(nmapOutput);
+      setNmapCopied(true);
+      if (nmapCopyResetTimeoutRef.current !== null) {
+        window.clearTimeout(nmapCopyResetTimeoutRef.current);
+      }
+      nmapCopyResetTimeoutRef.current = window.setTimeout(() => {
+        setNmapCopied(false);
+        nmapCopyResetTimeoutRef.current = null;
+      }, 2000);
+    } catch (e) {
+      setNmapError(formatInvokeError(e));
     }
   }
 
@@ -335,22 +362,31 @@ export default function NetworkDetailPanel({ network, onBack }: NetworkDetailPan
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: "0.4rem",
-            padding: "0.6rem",
+            gap: "0.5rem",
+            padding: "0.75rem",
             border: "1px solid var(--border)",
             borderRadius: "var(--radius-sm)",
+            background: "var(--bg-surface)",
           }}
         >
-          <h3 style={{ margin: 0, fontSize: "0.85rem" }}>nmap-Ausgabe</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 style={{ margin: 0, fontSize: "0.9rem" }}>nmap-Ausgabe</h3>
+            <button type="button" onClick={() => void handleCopyNmapOutput()}>
+              {nmapCopied ? "Kopiert!" : "Kopieren"}
+            </button>
+          </div>
           <pre
             style={{
               margin: 0,
-              padding: "0.5rem",
+              padding: "0.75rem",
               fontFamily: "var(--font-mono)",
               fontSize: "0.78rem",
-              overflow: "auto",
-              maxHeight: "20rem",
-              background: "var(--bg-surface)",
+              lineHeight: 1.5,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              overflowY: "auto",
+              maxHeight: "60vh",
+              background: "var(--bg-elevated)",
               border: "1px solid var(--border-subtle)",
               borderRadius: "var(--radius-sm)",
             }}
