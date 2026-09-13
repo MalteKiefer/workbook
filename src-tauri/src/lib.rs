@@ -246,6 +246,7 @@ pub fn run() {
             commands::plugins::map_ninja_organization,
             commands::plugins::unmap_ninja_organization,
             commands::plugins::sync_ninja_connection,
+            commands::plugins::sync_all_plugins_for_customer,
             commands::plugins::get_cached_ninja_sync,
             commands::plugins::link_system_to_ninja,
             commands::plugins::unlink_system_from_ninja,
