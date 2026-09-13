@@ -36,6 +36,15 @@ interface ExpiringItemStat {
   reminder_days_before: number;
 }
 
+// Result shape returned by the "sync_all_plugins_for_customer" backend
+// command (one entry per plugin connection mapped to this customer).
+interface CustomerPluginSyncResultDto {
+  plugin: string;
+  connection_label: string;
+  device_count: number | null;
+  error: string | null;
+}
+
 // Same TabButton shape as SettingsView.tsx -- duplicated rather than
 // extracted into a shared component, see this plan's Global Constraints.
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -71,6 +80,13 @@ function deriveShortCode(rawName: string): string {
     .replace(/[^a-zA-ZäöüÄÖÜß0-9]/g, "")
     .slice(0, 4)
     .toUpperCase();
+}
+
+// Same ErrorText shape as the plugin section components (e.g.
+// NinjaPluginSection.tsx) -- duplicated rather than imported since it isn't
+// exported from a shared module there either, same as TabButton above.
+function ErrorText({ children }: { children: React.ReactNode }) {
+  return <p style={{ color: "var(--danger)", fontSize: "0.82rem", margin: 0 }}>Fehler: {children}</p>;
 }
 
 function StatTile({ label, value }: { label: string; value: number | null }) {
@@ -220,6 +236,9 @@ export default function CustomerDetailView() {
   const setCustomerDetailTab = useAppStore((s) => s.setCustomerDetailTab);
 
   const [customerName, setCustomerName] = useState<string | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncResults, setSyncResults] = useState<CustomerPluginSyncResultDto[] | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedCustomerId === null) {
@@ -231,6 +250,28 @@ export default function CustomerDetailView() {
       setCustomerName(match ? match.name : null);
     });
   }, [selectedCustomerId]);
+
+  // Reset stale sync results/error from a previous customer whenever the
+  // selected customer changes, so they don't linger while looking at a
+  // different customer's page. syncBusy is intentionally left alone.
+  useEffect(() => {
+    setSyncResults(null);
+    setSyncError(null);
+  }, [selectedCustomerId]);
+
+  async function handleSyncAll(customerId: number) {
+    setSyncBusy(true);
+    setSyncError(null);
+    setSyncResults(null);
+    try {
+      const results = await invoke<CustomerPluginSyncResultDto[]>("sync_all_plugins_for_customer", { customerId });
+      setSyncResults(results);
+    } catch (err) {
+      setSyncError(formatInvokeError(err));
+    } finally {
+      setSyncBusy(false);
+    }
+  }
 
   if (selectedCustomerId === null) {
     return (
@@ -258,7 +299,43 @@ export default function CustomerDetailView() {
       <button onClick={goToCustomers} style={{ marginBottom: "0.5rem" }}>
         ← Zurück zu Kunden
       </button>
-      <h1 style={{ fontSize: "1.1rem", marginBottom: "0.75rem" }}>{customerName ?? `Kunde #${selectedCustomerId}`}</h1>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+        <h1 style={{ fontSize: "1.1rem", margin: 0 }}>{customerName ?? `Kunde #${selectedCustomerId}`}</h1>
+        <button type="button" disabled={syncBusy} onClick={() => void handleSyncAll(selectedCustomerId)}>
+          {syncBusy ? "Aktualisiere…" : "Aktualisieren"}
+        </button>
+      </div>
+      {syncError && <ErrorText>{syncError}</ErrorText>}
+      {syncResults && (
+        <div
+          style={{
+            marginBottom: "0.75rem",
+            padding: "0.5rem 0.75rem",
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: "var(--radius-sm)",
+            fontSize: "0.85rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.25rem",
+          }}
+        >
+          {syncResults.length === 0 ? (
+            <span style={{ color: "var(--text-muted)" }}>Keine verknüpften Plugin-Verbindungen für diesen Kunden gefunden.</span>
+          ) : (
+            syncResults.map((r, i) => (
+              <span key={i}>
+                {r.plugin} ({r.connection_label}):{" "}
+                {r.error ? (
+                  <span style={{ color: "var(--danger)" }}>{r.error}</span>
+                ) : (
+                  `${r.device_count} Gerät(e) synchronisiert`
+                )}
+              </span>
+            ))
+          )}
+        </div>
+      )}
       <div
         style={{
           display: "flex",
