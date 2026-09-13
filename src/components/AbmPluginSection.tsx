@@ -64,6 +64,7 @@ interface ExternalSystemDto {
   serial_number: string | null;
   device_model: string | null;
   linked_system_id: number | null;
+  product_family: string | null;
 }
 
 interface CachedAbmSyncDto {
@@ -130,6 +131,24 @@ function extractAttributes(details: Record<string, unknown>): Record<string, unk
 const NAME_KEYS = ["deviceModel"];
 const HOSTNAME_KEYS = ["hostname", "host_name"];
 const IP_KEYS = ["ipAddress", "ip_address"];
+
+// Maps Apple's own product-family classification (verified against the
+// real OrgDeviceAttributes schema, already present under the same
+// JSON:API attributes object this file already reads serialNumber/
+// deviceModel from) to this app's own curated Typ list. iPhone/iPad are
+// both "Smartphone/Tablet" in this app's model -- there is no separate
+// tablet category.
+function mapProductFamilyToSystemType(productFamily: string | null): string {
+  switch (productFamily) {
+    case "iPhone":
+    case "iPad":
+      return "Smartphone/Tablet";
+    case "Mac":
+      return "Workstation";
+    default:
+      return "";
+  }
+}
 
 function findExternalValue(details: Record<string, unknown>, candidateKeys: string[]): string | null {
   const attributes = extractAttributes(details);
@@ -801,7 +820,7 @@ export default function AbmPluginSection() {
         input: {
           customer_id: customerId,
           name: device.name,
-          system_type: "",
+          system_type: mapProductFamilyToSystemType(device.product_family),
           hostname: device.hostname ?? "",
           ip_address: device.ip_address ?? "",
           notes: noteLines.join("\n"),
@@ -847,7 +866,7 @@ export default function AbmPluginSection() {
             input: {
               customer_id: customerId,
               name: device.name,
-              system_type: "",
+              system_type: mapProductFamilyToSystemType(device.product_family),
               hostname: device.hostname ?? "",
               ip_address: device.ip_address ?? "",
               notes: noteLines.join("\n"),
