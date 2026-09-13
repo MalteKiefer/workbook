@@ -134,6 +134,20 @@ impl NinjaPlugin {
     /// organization membership and IP address (see `NinjaDevice`). Richer
     /// than the trait method `list_systems`, which deliberately stays with
     /// the narrow, plugin-agnostic `ExternalSystem` type.
+    ///
+    /// Deliberately calls `/v2/devices-detailed`, NOT `/v2/devices` --
+    /// verified against NinjaOne's own live OpenAPI spec
+    /// (`NinjaRMM-API-v2.yaml`, fetched from the tenant's own API domain):
+    /// `/v2/devices` responds with the `NodeWithDetailedReferences` schema
+    /// ("basic node information"), which has NO `ipAddresses`/`publicIP`/
+    /// `macAddresses` fields at all -- it was never going to carry IP data,
+    /// by design, not a regression. `/v2/devices-detailed` responds with
+    /// the `Device` schema, the exact same fields PLUS `ipAddresses`,
+    /// `macAddresses`, `publicIP`, at the identical pagination cost (same
+    /// `df`/`pageSize`/`after` query parameters) -- a same-cost bulk
+    /// endpoint swap, not a per-device N+1 call. `map_ninja_device`'s
+    /// existing parsing (`ipAddresses` array of strings, `publicIP` string
+    /// fallback) already matches this schema exactly and needs no change.
     pub fn list_devices(
         &self,
         credentials: &PluginCredentials,
@@ -141,7 +155,7 @@ impl NinjaPlugin {
         let creds = parse_credentials(credentials)?;
         let agent = build_agent();
         let token = fetch_access_token(&agent, &self.base_url, &creds)?;
-        let json = fetch_json(&agent, &self.base_url, "/v2/devices", &token)?;
+        let json = fetch_json(&agent, &self.base_url, "/v2/devices-detailed", &token)?;
         map_ninja_devices_response(&json)
     }
 }
