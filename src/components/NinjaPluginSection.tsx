@@ -56,6 +56,7 @@ interface ExternalSystemDto {
   ip_address: string | null;
   ninja_url: string;
   linked_system_id: number | null;
+  node_class: string | null;
 }
 
 interface NinjaOrgDeviceGroupDto {
@@ -96,6 +97,46 @@ type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 const NAME_KEYS = ["displayName", "display_name", "systemName", "system_name", "name"];
 const HOSTNAME_KEYS = ["hostname", "host_name", "dnsName", "dns_name"];
 const IP_KEYS = ["ipAddress", "ip_address", "ip", "ipv4Address", "ipv4", "primaryIp", "publicIp", "publicIP"];
+
+// Maps NinjaOne's own device-classification enum (verified against
+// NinjaOne's live OpenAPI spec -- the full ~35-value enum) to this app's
+// own curated Typ list (see SystemForm.tsx's CURATED_SYSTEM_TYPES).
+// Deliberately conservative: only genuinely unambiguous values are
+// mapped; anything else (monitoring/appliance/other NinjaOne-internal
+// classifications with no clean Typ equivalent) falls through to "" so
+// the admin picks a Typ manually, exactly like today's default -- never
+// guess a wrong category.
+const NODE_CLASS_TO_SYSTEM_TYPE: Record<string, string> = {
+  WINDOWS_SERVER: "Server",
+  LINUX_SERVER: "Server",
+  MAC_SERVER: "Server",
+  NMS_SERVER: "Server",
+  WINDOWS_WORKSTATION: "Workstation",
+  LINUX_WORKSTATION: "Workstation",
+  MAC: "Workstation",
+  ANDROID: "Smartphone/Tablet",
+  APPLE_IOS: "Smartphone/Tablet",
+  APPLE_IPADOS: "Smartphone/Tablet",
+  AOSP: "Smartphone/Tablet",
+  VMWARE_VM_HOST: "VM",
+  VMWARE_VM_GUEST: "VM",
+  HYPERV_VMM_HOST: "VM",
+  HYPERV_VMM_GUEST: "VM",
+  NMS_VM_HOST: "VM",
+  NMS_VIRTUAL_MACHINE: "VM",
+  NMS_SWITCH: "Switch",
+  NMS_ROUTER: "Netzwerkgerät",
+  NMS_PRIVATE_NETWORK_GATEWAY: "Netzwerkgerät",
+  NMS_FIREWALL: "Firewall",
+  NMS_PRINTER: "Drucker",
+  NMS_SCANNER: "Scanner",
+  NMS_WAP: "Access Point",
+};
+
+function mapNodeClassToSystemType(nodeClass: string | null): string {
+  if (!nodeClass) return "";
+  return NODE_CLASS_TO_SYSTEM_TYPE[nodeClass] ?? "";
+}
 
 // NinjaOne's device-detail response nests OS info under an "os" object
 // (verified live: {"os": {"name": "Debian GNU/Linux 12 (bookworm)", ...}}),
@@ -431,6 +472,7 @@ export default function NinjaPluginSection() {
   // map (both are set during a bulk run, so a device's own row also shows
   // busy).
   const [bulkCreateBusy, setBulkCreateBusy] = useState<Record<string, boolean>>({});
+  const [bulkCreateProgress, setBulkCreateProgress] = useState<Record<string, { done: number; total: number }>>({});
 
   const [detailsOpenKey, setDetailsOpenKey] = useState<string | null>(null);
   const [detailsBusy, setDetailsBusy] = useState<Record<string, boolean>>({});
@@ -743,14 +785,20 @@ export default function NinjaPluginSection() {
     setCreateLinkBusy((prev) => ({ ...prev, [key]: true }));
     setDeviceError((prev) => ({ ...prev, [key]: null }));
     try {
+      const details = await invoke<Record<string, unknown>>("get_ninja_system_details", {
+        connectionId: connection.id,
+        externalId: device.external_id,
+      }).catch(() => null);
+      const operatingSystem = details ? findExternalOperatingSystem(details) : null;
       const created = await invoke<System>("create_system", {
         input: {
           customer_id: customerId,
           name: device.name,
-          system_type: "",
+          system_type: mapNodeClassToSystemType(device.node_class),
           hostname: device.hostname ?? "",
           ip_address: device.ip_address ?? "",
           notes: "",
+          operating_system: operatingSystem,
         },
       });
       await invoke("link_system_to_ninja", {
@@ -779,20 +827,28 @@ export default function NinjaPluginSection() {
     const customerId = group.customer_id;
     const groupKey = `${connection.id}:${group.organization_id}`;
     setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: true }));
+    setBulkCreateProgress((prev) => ({ ...prev, [groupKey]: { done: 0, total: devices.length } }));
     try {
+      let done = 0;
       for (const device of devices) {
         const key = `${connection.id}:${device.external_id}`;
         setCreateLinkBusy((prev) => ({ ...prev, [key]: true }));
         setDeviceError((prev) => ({ ...prev, [key]: null }));
         try {
+          const details = await invoke<Record<string, unknown>>("get_ninja_system_details", {
+            connectionId: connection.id,
+            externalId: device.external_id,
+          }).catch(() => null);
+          const operatingSystem = details ? findExternalOperatingSystem(details) : null;
           const created = await invoke<System>("create_system", {
             input: {
               customer_id: customerId,
               name: device.name,
-              system_type: "",
+              system_type: mapNodeClassToSystemType(device.node_class),
               hostname: device.hostname ?? "",
               ip_address: device.ip_address ?? "",
               notes: "",
+              operating_system: operatingSystem,
             },
           });
           await invoke("link_system_to_ninja", {
@@ -804,12 +860,19 @@ export default function NinjaPluginSection() {
           setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
         } finally {
           setCreateLinkBusy((prev) => ({ ...prev, [key]: false }));
+          done += 1;
+          setBulkCreateProgress((prev) => ({ ...prev, [groupKey]: { done, total: devices.length } }));
         }
       }
       await refreshLocalSystems(customerId);
       await loadCachedSync(connection);
     } finally {
       setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: false }));
+      setBulkCreateProgress((prev) => {
+        const next = { ...prev };
+        delete next[groupKey];
+        return next;
+      });
     }
   }
 
@@ -1356,7 +1419,9 @@ export default function NinjaPluginSection() {
                         disabled={bulkCreateBusy[groupKey] ?? false}
                         onClick={() => void createAndLinkAll(connection, group, unlinked)}
                       >
-                        {bulkCreateBusy[groupKey] ? "Lege an…" : `Alle anlegen (${unlinked.length})`}
+                        {bulkCreateBusy[groupKey]
+                          ? `Lege an… (${bulkCreateProgress[groupKey]?.done ?? 0}/${bulkCreateProgress[groupKey]?.total ?? unlinked.length})`
+                          : `Alle anlegen (${unlinked.length})`}
                       </button>
                     )}
                   </div>
