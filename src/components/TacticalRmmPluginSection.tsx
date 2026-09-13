@@ -101,6 +101,7 @@ interface ExternalSystemDto {
   // level (see module docs above).
   site_name: string | null;
   linked_system_id: number | null;
+  monitoring_type: string | null;
 }
 
 interface TacticalRmmClientDeviceGroupDto {
@@ -149,6 +150,21 @@ type CompareField = "name" | "hostname" | "ip_address" | "operating_system";
 const NAME_KEYS = ["hostname", "name"];
 const HOSTNAME_KEYS = ["hostname"];
 const IP_KEYS = ["public_ip", "local_ips", "ip_address", "ip"];
+
+// Maps Tactical RMM's own two-value monitoring classification (verified
+// live against amidaware/tacticalrmm's AgentMonType, already present on
+// the same GET /agents/?detail=true response this file already
+// consumes) to this app's own curated Typ list.
+function mapMonitoringTypeToSystemType(monitoringType: string | null): string {
+  switch (monitoringType) {
+    case "server":
+      return "Server";
+    case "workstation":
+      return "Workstation";
+    default:
+      return "";
+  }
+}
 
 // Synthetic <option> value for "+ Neuen Kunden anlegen…" inside a client's
 // Kunde-mapping <select>.
@@ -798,7 +814,7 @@ export default function TacticalRmmPluginSection() {
         input: {
           customer_id: customerId,
           name: device.name,
-          system_type: "",
+          system_type: mapMonitoringTypeToSystemType(device.monitoring_type),
           hostname: device.hostname ?? "",
           ip_address: device.ip_address ?? "",
           notes: noteLines.join("\n"),
@@ -845,7 +861,7 @@ export default function TacticalRmmPluginSection() {
             input: {
               customer_id: customerId,
               name: device.name,
-              system_type: "",
+              system_type: mapMonitoringTypeToSystemType(device.monitoring_type),
               hostname: device.hostname ?? "",
               ip_address: device.ip_address ?? "",
               notes: noteLines.join("\n"),

@@ -67,6 +67,7 @@ interface ExternalSystemDto {
   // the UI falls back to `Gruppe ${group_id}` (see groupLabelFor below).
   group_id: string | null;
   group_name: string | null;
+  role: string | null;
 }
 
 interface CachedLevelSyncDto {
@@ -103,6 +104,23 @@ type CompareField = "name" | "hostname" | "ip_address";
 // rather than loosely-typed like Ninja's.
 const NAME_KEYS = ["nickname", "hostname"];
 const HOSTNAME_KEYS = ["hostname"];
+
+// Maps Level's own device-role classification (verified against Level's
+// real API docs -- a genuine, always-present field on the same bulk
+// /v2/devices call this file already makes, no extra query flag needed)
+// to this app's own curated Typ list. A domain controller is still a
+// server from a Typ-categorization standpoint.
+function mapRoleToSystemType(role: string | null): string {
+  switch (role) {
+    case "server":
+    case "domain_controller":
+      return "Server";
+    case "workstation":
+      return "Workstation";
+    default:
+      return "";
+  }
+}
 
 // Sentinel option value for the customer <select>'s "create a new customer"
 // convenience entry — never a real customer id, so it can't collide.
@@ -894,7 +912,7 @@ export default function LevelPluginSection() {
         input: {
           customer_id: customerId,
           name: device.name,
-          system_type: "",
+          system_type: mapRoleToSystemType(device.role),
           hostname: device.hostname ?? "",
           ip_address: device.ip_address ?? "",
           notes: "",
@@ -938,7 +956,7 @@ export default function LevelPluginSection() {
             input: {
               customer_id: customerId,
               name: device.name,
-              system_type: "",
+              system_type: mapRoleToSystemType(device.role),
               hostname: device.hostname ?? "",
               ip_address: device.ip_address ?? "",
               notes: "",
