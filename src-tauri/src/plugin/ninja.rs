@@ -83,6 +83,14 @@ pub struct NinjaDevice {
     pub name: String,
     pub hostname: Option<String>,
     pub ip_address: Option<String>,
+    /// NinjaOne's own device-classification enum (e.g. "WINDOWS_SERVER",
+    /// "LINUX_WORKSTATION", "NMS_PRINTER") -- present on both `/v2/devices`
+    /// and `/v2/devices-detailed` (confirmed identical against NinjaOne's
+    /// own live OpenAPI spec, same schema location as `ipAddresses`).
+    /// Passed through as a free-form string, not a Rust enum -- NinjaOne's
+    /// own enum has ~35 values and may grow; the frontend decides what (if
+    /// anything) to do with an unrecognized value.
+    pub node_class: Option<String>,
     pub organization_id: String,
 }
 
@@ -396,11 +404,13 @@ fn map_ninja_device(value: &serde_json::Value) -> Option<NinjaDevice> {
         .and_then(|first| first.as_str())
         .map(str::to_string)
         .or_else(|| value["publicIP"].as_str().map(str::to_string));
+    let node_class = value["nodeClass"].as_str().map(str::to_string);
     Some(NinjaDevice {
         external_id,
         name,
         hostname,
         ip_address,
+        node_class,
         organization_id,
     })
 }
@@ -561,7 +571,8 @@ mod tests {
                     "systemName": "SRV-01",
                     "hostname": "srv-01.customer.local",
                     "displayName": "Server 01",
-                    "ipAddresses": ["10.0.0.5", "10.0.0.6"]
+                    "ipAddresses": ["10.0.0.5", "10.0.0.6"],
+                    "nodeClass": "WINDOWS_SERVER"
                 },
                 {
                     "id": 202,
@@ -580,9 +591,11 @@ mod tests {
         assert_eq!(devices[0].organization_id, "1");
         assert_eq!(devices[0].name, "Server 01");
         assert_eq!(devices[0].ip_address.as_deref(), Some("10.0.0.5"));
+        assert_eq!(devices[0].node_class, Some("WINDOWS_SERVER".to_string()));
         assert_eq!(devices[1].external_id, "202");
         assert_eq!(devices[1].organization_id, "2");
         assert_eq!(devices[1].ip_address.as_deref(), Some("203.0.113.9"));
+        assert_eq!(devices[1].node_class, None);
     }
 
     #[test]

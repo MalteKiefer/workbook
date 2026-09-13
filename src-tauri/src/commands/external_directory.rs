@@ -1257,6 +1257,7 @@ mod tests {
             name: format!("Ninja Device {external_id}"),
             hostname: Some(format!("{external_id}.local")),
             ip_address: Some("10.0.0.5".to_string()),
+            node_class: None,
             ninja_url: format!("https://eu.ninjarmm.com/#/deviceDashboard/{external_id}/overview"),
             linked_system_id,
         }

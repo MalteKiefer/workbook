@@ -49,6 +49,8 @@ pub struct ExternalSystemDto {
     /// Direct link to the device dashboard in the Ninja web UI, constructed
     /// from the connection's `base_url` and the external device ID.
     pub ninja_url: String,
+    /// See `plugin::ninja::NinjaDevice::node_class`.
+    pub node_class: Option<String>,
     /// `Some(id)` if any local system is already linked to this external ID
     /// for this connection (an `external_refs` row with matching
     /// `plugin_id`/`external_id`), otherwise `None`. Always `None` for
@@ -255,6 +257,7 @@ fn to_external_system_dto(
         name: device.name,
         hostname: device.hostname,
         ip_address: device.ip_address,
+        node_class: device.node_class,
         linked_system_id,
     }
 }
@@ -729,6 +732,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn to_external_system_dto_carries_node_class_through() {
+        let device = NinjaDevice {
+            external_id: "101".to_string(),
+            name: "Server 01".to_string(),
+            hostname: None,
+            ip_address: None,
+            node_class: Some("WINDOWS_SERVER".to_string()),
+            organization_id: "1".to_string(),
+        };
+
+        let dto = to_external_system_dto("https://eu.ninjarmm.com", device, None);
+
+        assert_eq!(dto.node_class, Some("WINDOWS_SERVER".to_string()));
+    }
+
     fn sample_org(id: &str, name: &str) -> NinjaOrganization {
         NinjaOrganization {
             id: id.to_string(),
@@ -742,6 +761,7 @@ mod tests {
             name: format!("Device {id}"),
             hostname: None,
             ip_address: None,
+            node_class: None,
             organization_id: org_id.to_string(),
         }
     }
@@ -839,6 +859,7 @@ mod tests {
                 name: "Server 01".to_string(),
                 hostname: Some("srv-01.local".to_string()),
                 ip_address: Some("10.0.0.5".to_string()),
+                node_class: Some("WINDOWS_SERVER".to_string()),
                 ninja_url: "https://eu.ninjarmm.com/#/deviceDashboard/101/overview".to_string(),
                 linked_system_id: Some(3),
             }],
