@@ -201,6 +201,13 @@ pub struct TacticalRmmAgent {
     /// `commands::tacticalrmm::group_agents_by_client`.
     pub client_name: String,
     pub site_name: Option<String>,
+    /// Tactical RMM's own two-value monitoring classification (verified
+    /// live against the current `amidaware/tacticalrmm` source,
+    /// `AgentMonType` -- exactly `"server"` or `"workstation"`), already
+    /// present on the same `GET /agents/?detail=true` response
+    /// `map_agent` already parses -- distinct from `platform`, which is
+    /// the OS family (`"windows"`/`"linux"`/`"darwin"`).
+    pub monitoring_type: Option<String>,
 }
 
 /// A plugin object for exactly one configured Tactical RMM connection. `id`
@@ -424,6 +431,7 @@ fn map_agent(value: &serde_json::Value) -> Option<TacticalRmmAgent> {
     let site_name = value["site_name"].as_str().map(str::to_string);
     let status = value["status"].as_str().map(str::to_string);
     let platform = value["plat"].as_str().map(str::to_string);
+    let monitoring_type = value["monitoring_type"].as_str().map(str::to_string);
     let operating_system = value["operating_system"].as_str().map(str::to_string);
     let ip_address = extract_ip_address(value);
     Some(TacticalRmmAgent {
@@ -436,6 +444,7 @@ fn map_agent(value: &serde_json::Value) -> Option<TacticalRmmAgent> {
         operating_system,
         client_name,
         site_name,
+        monitoring_type,
     })
 }
 
@@ -518,6 +527,7 @@ mod tests {
                     "site_name": "Hauptsitz",
                     "status": "online",
                     "plat": "windows",
+                    "monitoring_type": "server",
                     "operating_system": "Windows 10 Pro, 64 bit (build 19042.928)",
                     "public_ip": "203.0.113.9",
                     "local_ips": "10.0.0.5, 10.0.0.6"
@@ -550,6 +560,7 @@ mod tests {
             Some("Windows 10 Pro, 64 bit (build 19042.928)")
         );
         assert_eq!(agents[0].ip_address.as_deref(), Some("10.0.0.5"));
+        assert_eq!(agents[0].monitoring_type, Some("server".to_string()));
         assert_eq!(agents[1].external_id, "def456");
         assert_eq!(agents[1].client_name, "Contoso AG");
         // The linux sample object has no "operating_system" key at all.

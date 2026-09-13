@@ -42,6 +42,10 @@ pub struct ExternalSystemDto {
     /// The device's model name (e.g. `"iMac 21.5\""`), from ABM's
     /// `deviceModel` attribute.
     pub device_model: Option<String>,
+    /// Apple's own product-family classification (see
+    /// `plugin::abm::AbmDevice::product_family` docs) -- `"iPhone"`,
+    /// `"iPad"`, or `"Mac"`, passed through verbatim.
+    pub product_family: Option<String>,
     /// `Some(id)` if any local system is already linked to this external ID
     /// for this connection (an `external_refs` row with matching
     /// `plugin_id`/`external_id`), otherwise `None`.
@@ -198,6 +202,7 @@ fn to_external_system_dto(device: AbmDevice, linked_system_id: Option<i64>) -> E
         ip_address: device.ip_address,
         serial_number: device.serial_number,
         device_model: device.device_model,
+        product_family: device.product_family,
         linked_system_id,
     }
 }
@@ -437,10 +442,12 @@ mod tests {
             ip_address: None,
             serial_number: Some("XABC123X0ABC123X0".to_string()),
             device_model: Some("iMac 21.5\"".to_string()),
+            product_family: Some("Mac".to_string()),
         };
         let dto = to_external_system_dto(device, Some(3));
         assert_eq!(dto.serial_number.as_deref(), Some("XABC123X0ABC123X0"));
         assert_eq!(dto.device_model.as_deref(), Some("iMac 21.5\""));
+        assert_eq!(dto.product_family.as_deref(), Some("Mac"));
         assert_eq!(dto.hostname, None);
         assert_eq!(dto.ip_address, None);
         assert_eq!(dto.linked_system_id, Some(3));
@@ -495,6 +502,7 @@ mod tests {
             ip_address: None,
             serial_number: Some(format!("SN-{id}")),
             device_model: Some("iMac 21.5\"".to_string()),
+            product_family: None,
             linked_system_id: Some(3),
         }
     }

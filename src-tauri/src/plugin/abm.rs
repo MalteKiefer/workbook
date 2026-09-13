@@ -141,6 +141,12 @@ pub struct AbmDevice {
     pub ip_address: Option<String>,
     pub serial_number: Option<String>,
     pub device_model: Option<String>,
+    /// Apple's own product-family classification (verified against the
+    /// real `OrgDeviceAttributes` schema -- `"iPhone"`, `"iPad"`, or
+    /// `"Mac"`), present under the same JSON:API `attributes` object as
+    /// `serialNumber`/`deviceModel`, already on the same `/v1/orgDevices`
+    /// response `map_abm_device` already parses.
+    pub product_family: Option<String>,
 }
 
 /// Claims of the ES256-signed client assertion JWT (see module
@@ -446,6 +452,7 @@ fn map_abm_device(value: &serde_json::Value) -> Option<AbmDevice> {
     let attributes = &value["attributes"];
     let serial_number = attributes["serialNumber"].as_str().map(str::to_string);
     let device_model = attributes["deviceModel"].as_str().map(str::to_string);
+    let product_family = attributes["productFamily"].as_str().map(str::to_string);
     let name = device_model
         .clone()
         .or_else(|| serial_number.clone())
@@ -457,6 +464,7 @@ fn map_abm_device(value: &serde_json::Value) -> Option<AbmDevice> {
         ip_address: None,
         serial_number,
         device_model,
+        product_family,
     })
 }
 
@@ -660,6 +668,7 @@ mod tests {
             Some("XABC123X0ABC123X0")
         );
         assert_eq!(devices[0].device_model.as_deref(), Some("iMac 21.5\""));
+        assert_eq!(devices[0].product_family.as_deref(), Some("Mac"));
         assert_eq!(devices[0].hostname, None);
         assert_eq!(devices[0].ip_address, None);
 
@@ -667,6 +676,7 @@ mod tests {
         // No deviceModel -> falls back to serialNumber.
         assert_eq!(devices[1].name, "YDEF456Y0DEF456Y0");
         assert_eq!(devices[1].device_model, None);
+        assert_eq!(devices[1].product_family, None);
     }
 
     #[test]

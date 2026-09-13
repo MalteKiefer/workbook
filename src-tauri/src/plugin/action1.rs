@@ -681,7 +681,10 @@ fn map_endpoint(
     let name = device_name
         .or(display_name)
         .unwrap_or_else(|| external_id.clone());
-    let ip_address = value["address"].as_str().map(str::to_string);
+    let ip_address = value["address"]
+        .as_str()
+        .map(str::to_string)
+        .or_else(|| value["external_address"].as_str().map(str::to_string));
     let status = value["status"].as_str().map(str::to_string);
     let platform = value["platform"].as_str().map(str::to_string);
     let operating_system = value["OS"].as_str().map(str::to_string);
@@ -826,6 +829,7 @@ mod tests {
                 "device_name": "SRV-01",
                 "name": "Server 01 (Buchhaltung)",
                 "address": "10.0.0.5",
+                "external_address": "203.0.113.99",
                 "status": "Connected",
                 "platform": "Windows",
                 "OS": "Windows 11 (23H2)",
@@ -845,6 +849,9 @@ mod tests {
         assert_eq!(endpoints[0].external_id, "ep-1");
         // device_name preferred over the separate, user-editable `name`.
         assert_eq!(endpoints[0].name, "SRV-01");
+        // `address` is present -> it wins over `external_address`, even
+        // though both are set here (see `endpoint_ip_address_falls_back_to_
+        // external_address_when_address_is_absent` for the fallback case).
         assert_eq!(endpoints[0].ip_address.as_deref(), Some("10.0.0.5"));
         assert_eq!(endpoints[0].status.as_deref(), Some("Connected"));
         assert_eq!(endpoints[0].platform.as_deref(), Some("Windows"));
@@ -875,6 +882,18 @@ mod tests {
         })];
         let endpoints = map_endpoints_response(&items, None);
         assert_eq!(endpoints[0].name, "Laptop von Anna");
+    }
+
+    #[test]
+    fn endpoint_ip_address_falls_back_to_external_address_when_address_is_absent() {
+        let items = vec![serde_json::json!({
+            "id": "ep-4",
+            "organization_id": "org-1",
+            "address": null,
+            "external_address": "203.0.113.9"
+        })];
+        let endpoints = map_endpoints_response(&items, None);
+        assert_eq!(endpoints[0].ip_address.as_deref(), Some("203.0.113.9"));
     }
 
     #[test]

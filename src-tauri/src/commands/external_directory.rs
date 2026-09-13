@@ -1410,6 +1410,7 @@ mod tests {
                 linked_system_id: None,
                 group_id: Some("grp-1".to_string()),
                 group_name: Some("Werkstatt".to_string()),
+                role: None,
             }],
         };
         write_json(&level_cache_path(dir.path(), "level-conn-1"), &cache);
@@ -1442,6 +1443,7 @@ mod tests {
                 linked_system_id: Some(3),
                 group_id: None,
                 group_name: None,
+                role: None,
             }],
         };
         write_json(&level_cache_path(dir.path(), "level-conn-1"), &cache);
@@ -1471,6 +1473,7 @@ mod tests {
                 linked_system_id: None,
                 group_id: None,
                 group_name: None,
+                role: None,
             }],
         };
         write_json(&level_cache_path(dir.path(), "level-conn-1"), &cache);
@@ -1961,6 +1964,7 @@ mod tests {
                 ip_address: None,
                 serial_number: Some("XABC123X0ABC123X0".to_string()),
                 device_model: Some("iMac 21.5\"".to_string()),
+                product_family: None,
                 linked_system_id: None,
             }],
         };
@@ -1994,6 +1998,7 @@ mod tests {
                 ip_address: None,
                 serial_number: Some("XABC123X0ABC123X0".to_string()),
                 device_model: Some("iMac 21.5\"".to_string()),
+                product_family: None,
                 linked_system_id: Some(3),
             }],
         };
@@ -2132,6 +2137,7 @@ mod tests {
                     platform: Some("windows".to_string()),
                     operating_system: None,
                     site_name: Some("Hauptsitz".to_string()),
+                    monitoring_type: None,
                     linked_system_id: None,
                 }],
             }],
@@ -2182,6 +2188,7 @@ mod tests {
                     platform: None,
                     operating_system: None,
                     site_name: None,
+                    monitoring_type: None,
                     linked_system_id: Some(11),
                 }],
             }],
@@ -2247,6 +2254,7 @@ mod tests {
                 ip_address: None,
                 serial_number: None,
                 device_model: None,
+                product_family: None,
                 linked_system_id: None,
             }],
         };
@@ -2334,6 +2342,7 @@ mod tests {
                     platform: None,
                     operating_system: None,
                     site_name: None,
+                    monitoring_type: None,
                     linked_system_id: None,
                 }],
             }],
@@ -2471,6 +2480,7 @@ mod tests {
                     linked_system_id: None,
                     group_id: None,
                     group_name: None,
+                    role: None,
                 }],
             },
         );

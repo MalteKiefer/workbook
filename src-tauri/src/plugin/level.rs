@@ -104,6 +104,11 @@ pub struct LevelDevice {
     pub ip_address: Option<String>,
     pub group_id: Option<String>,
     pub group_name: Option<String>,
+    /// Level's own device-role classification (verified: a real,
+    /// documented field on the bulk `/v2/devices` response already being
+    /// called, no extra flag needed) -- one of `"workstation"`,
+    /// `"server"`, `"domain_controller"`.
+    pub role: Option<String>,
 }
 
 /// A plugin object for exactly one configured Level connection. `id` here is
@@ -411,6 +416,7 @@ fn map_level_device(
     let group_name = group_id
         .as_ref()
         .and_then(|id| group_lookup.get(id).cloned());
+    let role = value["role"].as_str().map(str::to_string);
     Some(LevelDevice {
         external_id,
         name,
@@ -418,6 +424,7 @@ fn map_level_device(
         ip_address,
         group_id,
         group_name,
+        role,
     })
 }
 
@@ -472,7 +479,7 @@ mod tests {
     fn maps_level_devices_json_array_into_level_devices() {
         let json: serde_json::Value = serde_json::from_str(
             r#"[
-                {"id": "dev-1", "hostname": "srv-01.customer.local", "nickname": "Server 01"},
+                {"id": "dev-1", "hostname": "srv-01.customer.local", "nickname": "Server 01", "role": "server"},
                 {"id": "dev-2", "hostname": "fw-edge"}
             ]"#,
         )
@@ -488,8 +495,10 @@ mod tests {
         );
         assert_eq!(devices[0].group_id, None);
         assert_eq!(devices[0].group_name, None);
+        assert_eq!(devices[0].role, Some("server".to_string()));
         assert_eq!(devices[1].external_id, "dev-2");
         assert_eq!(devices[1].name, "fw-edge");
+        assert_eq!(devices[1].role, None);
     }
 
     #[test]

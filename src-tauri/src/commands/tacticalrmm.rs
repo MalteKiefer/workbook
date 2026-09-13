@@ -60,6 +60,10 @@ pub struct ExternalSystemDto {
     /// display, since mapping granularity deliberately stays at the Client
     /// level (see `plugin::tacticalrmm` module docs).
     pub site_name: Option<String>,
+    /// Tactical RMM's own two-value monitoring classification (see
+    /// `plugin::tacticalrmm::TacticalRmmAgent::monitoring_type` docs) --
+    /// exactly `"server"` or `"workstation"`, passed through verbatim.
+    pub monitoring_type: Option<String>,
     /// `Some(id)` if any local system is already linked to this external ID
     /// for this connection (an `external_refs` row with matching
     /// `plugin_id`/`external_id`), otherwise `None`. Always `None` for
@@ -259,6 +263,7 @@ fn to_external_system_dto(
         platform: agent.platform,
         operating_system: agent.operating_system,
         site_name: agent.site_name,
+        monitoring_type: agent.monitoring_type,
         linked_system_id,
     }
 }
@@ -736,6 +741,7 @@ mod tests {
             operating_system: None,
             client_name: client_name.to_string(),
             site_name: None,
+            monitoring_type: None,
         }
     }
 
@@ -833,6 +839,7 @@ mod tests {
                 platform: Some("windows".to_string()),
                 operating_system: Some("windows 11".to_string()),
                 site_name: Some("Hauptsitz".to_string()),
+                monitoring_type: Some("server".to_string()),
                 linked_system_id: Some(3),
             }],
         }

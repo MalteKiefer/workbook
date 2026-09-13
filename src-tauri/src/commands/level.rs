@@ -53,6 +53,10 @@ pub struct ExternalSystemDto {
     /// a group that has since been deleted) -- in the latter case the
     /// frontend falls back to `Gruppe {group_id}`.
     pub group_name: Option<String>,
+    /// Level's own device-role classification (see `plugin::level::LevelDevice::role`
+    /// docs) -- one of `"workstation"`, `"server"`, `"domain_controller"`,
+    /// passed through verbatim, no Rust enum.
+    pub role: Option<String>,
 }
 
 /// Snapshot of the last `sync_level_connection` run, cached under
@@ -208,6 +212,7 @@ fn to_external_system_dto(device: LevelDevice, linked_system_id: Option<i64>) ->
         linked_system_id,
         group_id: device.group_id,
         group_name: device.group_name,
+        role: device.role,
     }
 }
 
@@ -430,10 +435,12 @@ mod tests {
             ip_address: Some("10.0.0.5".to_string()),
             group_id: Some("grp-1".to_string()),
             group_name: Some("Werkstatt".to_string()),
+            role: Some("server".to_string()),
         };
         let dto = to_external_system_dto(device, Some(3));
         assert_eq!(dto.group_id.as_deref(), Some("grp-1"));
         assert_eq!(dto.group_name.as_deref(), Some("Werkstatt"));
+        assert_eq!(dto.role.as_deref(), Some("server"));
         assert_eq!(dto.linked_system_id, Some(3));
     }
 
@@ -446,6 +453,7 @@ mod tests {
             ip_address: None,
             group_id: None,
             group_name: None,
+            role: None,
         };
         let dto = to_external_system_dto(device, None);
         assert_eq!(dto.group_id, None);
@@ -502,6 +510,7 @@ mod tests {
             linked_system_id: Some(3),
             group_id: Some("grp-1".to_string()),
             group_name: Some("Werkstatt".to_string()),
+            role: None,
         }
     }
 
