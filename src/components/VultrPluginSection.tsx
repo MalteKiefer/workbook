@@ -798,6 +798,7 @@ export default function VultrPluginSection() {
         externalId: instance.external_id,
       });
       await refreshLocalSystems(customerId);
+      await invoke("sync_vultr_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } catch (err) {
       setInstanceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
@@ -847,6 +848,7 @@ export default function VultrPluginSection() {
         }
       }
       await refreshLocalSystems(customerId);
+      await invoke("sync_vultr_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } finally {
       setBulkCreateBusy((prev) => ({ ...prev, [connection.id]: false }));

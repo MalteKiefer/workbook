@@ -842,6 +842,7 @@ export default function AteraPluginSection() {
         externalId: device.external_id,
       });
       await refreshLocalSystems(customerId);
+      await invoke("sync_atera_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } catch (err) {
       setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
@@ -894,6 +895,7 @@ export default function AteraPluginSection() {
         }
       }
       await refreshLocalSystems(customerId);
+      await invoke("sync_atera_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } finally {
       setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: false }));

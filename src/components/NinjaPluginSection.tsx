@@ -807,6 +807,7 @@ export default function NinjaPluginSection() {
         externalId: device.external_id,
       });
       await refreshLocalSystems(customerId);
+      await invoke("sync_ninja_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } catch (err) {
       setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
@@ -865,6 +866,7 @@ export default function NinjaPluginSection() {
         }
       }
       await refreshLocalSystems(customerId);
+      await invoke("sync_ninja_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } finally {
       setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: false }));

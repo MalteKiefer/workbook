@@ -792,6 +792,7 @@ export default function IruPluginSection() {
         externalId: device.external_id,
       });
       await refreshLocalSystems(customerId);
+      await invoke("sync_iru_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } catch (err) {
       setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
@@ -847,6 +848,7 @@ export default function IruPluginSection() {
         }
       }
       await refreshLocalSystems(customerId);
+      await invoke("sync_iru_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } finally {
       setBulkCreateBusy((prev) => ({ ...prev, [connection.id]: false }));

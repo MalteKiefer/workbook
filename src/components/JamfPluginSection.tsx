@@ -824,6 +824,7 @@ export default function JamfPluginSection() {
         externalId: device.external_id,
       });
       await refreshLocalSystems(customerId);
+      await invoke("sync_jamf_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } catch (err) {
       setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
@@ -877,6 +878,7 @@ export default function JamfPluginSection() {
         }
       }
       await refreshLocalSystems(customerId);
+      await invoke("sync_jamf_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } finally {
       setBulkCreateBusy((prev) => ({ ...prev, [groupKey]: false }));

@@ -803,6 +803,7 @@ export default function IntunePluginSection() {
         externalId: device.external_id,
       });
       await refreshLocalSystems(customerId);
+      await invoke("sync_intune_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } catch (err) {
       setDeviceError((prev) => ({ ...prev, [key]: formatInvokeError(err) }));
@@ -854,6 +855,7 @@ export default function IntunePluginSection() {
         }
       }
       await refreshLocalSystems(customerId);
+      await invoke("sync_intune_connection", { connectionId: connection.id }).catch(() => {});
       await loadCachedSync(connection);
     } finally {
       setBulkCreateBusy((prev) => ({ ...prev, [connection.id]: false }));
