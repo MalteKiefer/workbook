@@ -40,7 +40,17 @@ pub fn upsert(
     tz: &Tz,
 ) -> Result<ExternalRef, AppError> {
     let (synced_at_utc, synced_at_tz) = now_with_tz(tz);
-    let existing_id: Option<i64> = conn
+    // The whole check-then-write sequence below runs inside one immediate
+    // (write-locking) transaction -- without this, two genuinely concurrent
+    // calls for the same (plugin_id, external_id) could both pass the
+    // conflict check below before either commits its INSERT, recreating the
+    // exact duplicate-link bug this function exists to prevent.
+    // `unchecked_transaction` (rather than `transaction`, which needs
+    // `&mut Connection`) keeps this function's existing `&Connection`
+    // signature -- required since every one of the 17 plugin call sites
+    // already holds only a shared reference from the pooled connection.
+    let tx = conn.unchecked_transaction()?;
+    let existing_id: Option<i64> = tx
         .query_row(
             "SELECT id FROM external_refs WHERE system_id = ?1 AND plugin_id = ?2",
             params![system_id, plugin_id],
@@ -49,7 +59,7 @@ pub fn upsert(
         .optional()?;
     let id = match existing_id {
         Some(id) => {
-            conn.execute(
+            tx.execute(
                 "UPDATE external_refs SET external_id = ?1, payload_json = ?2, synced_at_utc = ?3, synced_at_tz = ?4 WHERE id = ?5",
                 params![external_id, payload_json, synced_at_utc, synced_at_tz, id],
             )?;
@@ -67,7 +77,7 @@ pub fn upsert(
             // DIFFERENT system must go through an explicit unlink first
             // (which deletes the old row via `delete` below), never
             // silently through here.
-            let conflicting_system_id: Option<i64> = conn
+            let conflicting_system_id: Option<i64> = tx
                 .query_row(
                     "SELECT system_id FROM external_refs WHERE plugin_id = ?1 AND external_id = ?2",
                     params![plugin_id, external_id],
@@ -79,13 +89,14 @@ pub fn upsert(
                     "Dieses externe Gerät ist bereits mit System #{other_system_id} verknüpft."
                 )));
             }
-            conn.execute(
+            tx.execute(
                 "INSERT INTO external_refs (system_id, plugin_id, external_id, payload_json, synced_at_utc, synced_at_tz) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![system_id, plugin_id, external_id, payload_json, synced_at_utc, synced_at_tz],
             )?;
-            conn.last_insert_rowid()
+            tx.last_insert_rowid()
         }
     };
+    tx.commit()?;
     get(conn, id)
 }
 
