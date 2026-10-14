@@ -43,7 +43,7 @@ tauri-plugin-updater = "2"
 thiserror = "2.0.20"
 toml = "1.1.5"
 typst = "=0.15.1"
-typst-as-lib = { version = "0.16.0", features = ["typst-kit-fonts", "typst-kit-embed-fonts"] }
+typst-as-lib = { version = "0.17.0", features = ["typst-kit-fonts", "typst-kit-embed-fonts"] }
 typst-layout = "=0.15.1"
 typst-pdf = "0.15.1"
 ureq = { version = "3.4.1", default-features = false, features = ["rustls", "gzip", "json"] }
